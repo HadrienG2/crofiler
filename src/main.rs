@@ -75,12 +75,14 @@ enum TraceEvent {
 
         /// ...optionally using a thread-local clock as well
         tdur: Option<Timestamp>,
+        //
         // Can also specify the stack trace at the end of the event, using the
         // same conventions as the sf/stack of DurationEvent
         esf: Option<StackFrameID>,
         //
         estack: Option<Vec<String>>,
     },
+    // FIXME: Need at least metadata events to move further
     // TODO: Add instant events, counter events, async events, flow events,
     //       sample events, object events, metadata events, memory dump events,
     //       mark events, clock sync events, context events
