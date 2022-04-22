@@ -4,9 +4,9 @@ use std::{collections::HashMap, fs::File, io::Read};
 
 /// Chrome Trace Event Format, per documentation at
 /// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 enum TraceData {
     /// JSON Object Format
     Object(TraceDataObject),
@@ -16,8 +16,11 @@ enum TraceData {
     Array(Vec<TraceEvent>),
 }
 
-/// JSON Object Format, may have extra metadata fields
-#[derive(Debug, Deserialize)]
+/// JSON Object Format
+//
+// May have extra metadata fields, so should not get the
+// #[serde(deny_unknown_fields)] treatment
+#[derive(Debug, Default, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 struct TraceDataObject {
     /// Event objects, may not be in timestamp-sorted order
@@ -40,7 +43,10 @@ struct TraceDataObject {
     /// Dictionary of stack frames, their ids and their parents that allows
     /// compact representation of stack traces throughout the rest of the
     /// trace file.
-    stackFrames: Option<HashMap<StackFrameID, StackFrame>>,
+    ///
+    /// We only accept strings as stack frame IDs here, as this is a JSON
+    /// dictionary and JSON mandates that dict keys be strings.
+    stackFrames: Option<HashMap<String, StackFrame>>,
 
     /// Sampling profiler data from an OS level profiler
     samples: Option<Vec<Sample>>,
@@ -52,7 +58,9 @@ struct TraceDataObject {
 }
 
 /// Event description
-#[derive(Debug, Deserialize)]
+//
+// Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "ph")]
 enum TraceEvent {
     // Duration events, can be nested, timestamps must be in increasing order
@@ -89,11 +97,15 @@ enum TraceEvent {
 }
 
 /// Duration events provide a way to mark a duration of work on a given thread
-#[derive(Debug, Deserialize)]
+//
+// Used in #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 struct DurationEvent {
-    /// Process and thread ID that emitted this event
-    #[serde(flatten)]
-    pid_tid: PidTid,
+    /// Process ID for the process that output this event
+    pid: Pid,
+
+    /// Thread ID for the thread that output this event
+    tid: Tid,
 
     /// Tracing clock timestamp in microseconds
     ts: Timestamp,
@@ -128,15 +140,11 @@ struct DurationEvent {
     stack: Option<Vec<String>>,
 }
 
-/// Process and Thread ID from which an event was emitted
-#[derive(Debug, Deserialize)]
-struct PidTid {
-    /// Process ID for the process that output this event
-    pid: i32,
+/// Process ID (following libc)
+type Pid = i32;
 
-    /// Thread ID for the thread that output this event
-    tid: i32,
-}
+/// Thread ID (following libc)
+type Tid = i32;
 
 /// Clock timestamp with microsecond granularity
 type Timestamp = f64;
@@ -150,7 +158,7 @@ enum StackFrameID {
 }
 
 /// Stack frame object
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StackFrame {
     // DSO ?
@@ -164,14 +172,14 @@ struct StackFrame {
 }
 
 /// Sampling profiler data from an OS level profiler
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 struct Sample {
     /// CPU on which the sample was taken
     cpu: Option<i32>,
 
-    /// Process and thread ID that emitted this event
-    #[serde(flatten)]
-    pid_tid: PidTid,
+    /// Thread ID that emitted this event
+    tid: Tid,
 
     /// Timestamp in fractional microseconds
     ts: Timestamp,
@@ -196,4 +204,130 @@ fn main() {
     // FIXME: Go back to TraceData once parser is debugged
     let value = json::from_str::<TraceDataObject>(&s).unwrap();
     println!("{:?}", value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_array_format_example() {
+        let value = json::from_str::<TraceData>(
+            r#"[ {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
+  {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833} ]"#,
+        )
+        .expect("Deserialization should succeed");
+        assert_eq!(
+            value,
+            TraceData::Array(vec![
+                TraceEvent::B(DurationEvent {
+                    pid: 22630,
+                    tid: 22630,
+                    ts: 829.0,
+                    name: Some("Asub".to_owned()),
+                    cat: Some("PERF".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 22630,
+                    tid: 22630,
+                    ts: 833.0,
+                    name: Some("Asub".to_owned()),
+                    cat: Some("PERF".to_owned()),
+                    ..DurationEvent::default()
+                }),
+            ])
+        );
+    }
+
+    #[test]
+    fn json_object_format_example() {
+        // Top level example from CTF spec with minimal changes to make it
+        // valid CTF JSON.
+        let example = r#"{
+  "traceEvents": [
+    {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
+    {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833}
+  ],
+  "displayTimeUnit": "ns",
+  "systemTraceEvents": "SystemTraceData",
+  "otherData": {
+    "version": "My Application v1.0"
+  },
+  "stackFrames": {
+    "a": {
+      "category": "libchrome.so",
+      "name": "CrRendererMain",
+      "parent": 1
+    },
+    "1": {
+      "category": "libc.so",
+      "name": "_crtmain"
+    },
+    "3": {
+      "category": "libc.so",
+      "name": "_start"
+    }
+  },
+  "samples": [{
+    "cpu": 0, "tid": 1, "ts": 1000.0,
+    "name": "cycles:HG", "sf": 3, "weight": 1
+  }]
+}"#;
+        let expected = TraceDataObject {
+            traceEvents: vec![
+                TraceEvent::B(DurationEvent {
+                    pid: 22630,
+                    tid: 22630,
+                    ts: 829.0,
+                    name: Some("Asub".to_owned()),
+                    cat: Some("PERF".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 22630,
+                    tid: 22630,
+                    ts: 833.0,
+                    name: Some("Asub".to_owned()),
+                    cat: Some("PERF".to_owned()),
+                    ..DurationEvent::default()
+                }),
+            ],
+            displayTimeUnit: Some("ns".to_owned()),
+            systemTraceEvents: Some("SystemTraceData".to_owned()),
+            stackFrames: Some(maplit::hashmap! {
+                "a".to_owned() => StackFrame {
+                    category: "libchrome.so".to_owned(),
+                    name: "CrRendererMain".to_owned(),
+                    parent: Some(StackFrameID::Int(1)),
+                },
+                "1".to_owned() => StackFrame {
+                    category: "libc.so".to_owned(),
+                    name: "_crtmain".to_owned(),
+                    parent: None,
+                },
+                "3".to_owned() => StackFrame {
+                    category: "libc.so".to_owned(),
+                    name: "_start".to_owned(),
+                    parent: None,
+                }
+            }),
+            samples: Some(vec![Sample {
+                cpu: Some(0),
+                tid: 1,
+                ts: 1000.0,
+                name: "cycles:HG".to_owned(),
+                sf: StackFrameID::Int(3),
+                weight: 1,
+            }]),
+            ..TraceDataObject::default()
+        };
+        let actual1 =
+            json::from_str::<TraceDataObject>(example).expect("Deserialization should succeed");
+        assert_eq!(expected, actual1);
+        let actual2 = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
+        assert_eq!(TraceData::Object(expected), actual2);
+    }
+
+    // TODO: Add more examples from the CTF spec
 }
