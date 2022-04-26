@@ -28,7 +28,7 @@ pub struct DurationEvent {
     /// Thread clock timestamp in microseconds
     pub tts: Option<Timestamp>,
 
-    /// No required arguments for duration events
+    /// Extra arguments (none mandated for duration events)
     ///
     /// In the case of B/E events, arguments should be merged during display
     /// with E event taking priority where a key conflict occurs.

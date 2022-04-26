@@ -19,30 +19,36 @@ pub enum MetadataEvent {
     ///
     /// Must contain a "name" arg mapping into a name string
     process_name {
-        /// Common fields
-        #[serde(flatten)]
-        metadata_fields: MetadataFields,
-
         /// Process ID for the process that output this event
         pid: Pid,
 
+        /// Arguments
+        args: NameArgs,
+
         /// Thread ID for the thread that output this event
         tid: Option<Tid>,
+
+        /// Common optional fields
+        #[serde(flatten)]
+        options: MetadataOptions,
     },
 
     /// Sets the extra process labels for the provided pid
     ///
     /// Must contain a "labels" arg mapping into a list of string labels.
     process_labels {
-        /// Common fields
-        #[serde(flatten)]
-        metadata_fields: MetadataFields,
-
         /// Process ID for the process that output this event
         pid: Pid,
 
+        /// Arguments
+        args: LabelsArgs,
+
         /// Thread ID for the thread that output this event
         tid: Option<Tid>,
+
+        /// Common optional fields
+        #[serde(flatten)]
+        options: MetadataOptions,
     },
 
     /// Sets the process sort order position
@@ -51,30 +57,36 @@ pub enum MetadataEvent {
     /// represents the relative sorting position. Processes with identical
     /// keys are sorted by name, then by pid.
     process_sort_index {
-        /// Common fields
-        #[serde(flatten)]
-        metadata_fields: MetadataFields,
-
         /// Process ID for the process that output this event
         pid: Pid,
 
+        /// Arguments
+        args: SortIndexArgs,
+
         /// Thread ID for the thread that output this event
         tid: Option<Tid>,
+
+        /// Common optional fields
+        #[serde(flatten)]
+        options: MetadataOptions,
     },
 
     /// Sets the display name for the provided tid
     ///
     /// Must contain a "name" arg mapping into a name string
     thread_name {
-        /// Common fields
-        #[serde(flatten)]
-        metadata_fields: MetadataFields,
-
         /// Thread ID for the thread that output this event
         tid: Tid,
 
+        /// Arguments
+        args: NameArgs,
+
         /// Process ID for the process that output this event
         pid: Option<Pid>,
+
+        /// Common optional fields
+        #[serde(flatten)]
+        options: MetadataOptions,
     },
 
     /// Sets the thread sort order position
@@ -83,29 +95,26 @@ pub enum MetadataEvent {
     /// represents the relative sorting position. Threads with identical
     /// keys are sorted by name, then by tid.
     thread_sort_index {
-        /// Common fields
-        #[serde(flatten)]
-        metadata_fields: MetadataFields,
-
         /// Thread ID for the thread that output this event
         tid: Tid,
 
+        /// Arguments
+        args: SortIndexArgs,
+
         /// Process ID for the process that output this event
         pid: Option<Pid>,
+
+        /// Common optional fields
+        #[serde(flatten)]
+        options: MetadataOptions,
     },
 }
 
-/// Common fields for all MetadataEvents
+/// Common optional fields for all MetadataEvents
 //
 // Used in #[serde(flatten)] so no #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-pub struct MetadataFields {
-    /// Event arguments
-    ///
-    /// All MetadataEvents have one required argument that you should check in
-    /// their documentation.
-    pub args: HashMap<String, json::Value>,
-
+pub struct MetadataOptions {
     /// Comma-separated list of categories (for filtering)
     pub cat: Option<String>,
 
@@ -114,6 +123,47 @@ pub struct MetadataFields {
 
     /// Thread clock timestamp in microseconds
     pub tts: Option<Timestamp>,
+}
+
+/// Arguments for MetadataEvents that name something (a process, a thread...)
+//
+// Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct NameArgs {
+    /// Name to be attributed to target entity
+    pub name: String,
+
+    /// Extra arguments not specified by the Trace Event Format spec
+    #[serde(flatten)]
+    pub extra: HashMap<String, json::Value>,
+}
+
+/// Arguments for MetadataEvent::process_labels
+//
+// Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct LabelsArgs {
+    /// Labels to be attributed to the target process
+    pub labels: Vec<String>,
+
+    /// Extra arguments not specified by the Trace Event Format spec
+    #[serde(flatten)]
+    pub extra: HashMap<String, json::Value>,
+}
+
+/// Arguments for MetadataEvents provide a sort order position
+//
+// Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct SortIndexArgs {
+    /// Relative sorting position
+    ///
+    /// Entities with identical sort order are sorted by name, then by tid.
+    pub sort_order: i64,
+
+    /// Extra arguments not specified by the Trace Event Format spec
+    #[serde(flatten)]
+    pub extra: HashMap<String, json::Value>,
 }
 
 #[cfg(test)]
@@ -133,12 +183,11 @@ mod tests {
         let expected = TraceEvent::M(MetadataEvent::thread_name {
             pid: Some(2343),
             tid: 2347,
-            metadata_fields: MetadataFields {
-                args: maplit::hashmap! {
-                    "name".to_owned() => json::json!("RendererThread")
-                },
-                ..MetadataFields::default()
+            args: NameArgs {
+                name: "RendererThread".to_owned(),
+                ..NameArgs::default()
             },
+            options: MetadataOptions::default(),
         });
         check_trace_event(example, expected);
     }

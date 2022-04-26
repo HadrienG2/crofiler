@@ -29,8 +29,7 @@ pub enum TraceData {
 
 /// JSON Object Format
 //
-// May have extra metadata fields, so should not get the
-// #[serde(deny_unknown_fields)] treatment
+// Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 pub struct TraceDataObject {
@@ -66,6 +65,10 @@ pub struct TraceDataObject {
     /// should be the key for that specific trace data, e.g. "traceEvents".
     /// Mainly used for clock synchronization.
     pub controllerTraceDataKey: Option<String>,
+
+    /// Extra trace metadata not specified by the Trace Event Format spec
+    #[serde(flatten)]
+    extra: HashMap<String, json::Value>,
 }
 
 /// Event description
@@ -336,6 +339,11 @@ pub(crate) mod tests {
                 sf: StackFrameID::Int(3),
                 weight: 1,
             }]),
+            extra: maplit::hashmap! {
+                "otherData".to_owned() => json::json!({
+                    "version": "My Application v1.0"
+                })
+            },
             ..TraceDataObject::default()
         };
         check_trace_data_object(example, expected);
