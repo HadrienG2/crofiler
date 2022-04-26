@@ -1,3 +1,7 @@
+//! Parser for the Chrome Trace Event format
+
+#![deny(missing_docs)]
+
 use serde::Deserialize;
 use serde_json as json;
 use std::{collections::HashMap, fs::File, io::Read};
@@ -81,13 +85,13 @@ enum TraceEvent {
         /// Can track duration of complete events
         dur: Timestamp,
 
-        /// ...optionally using a thread-local clock as well
+        /// Like dur, but using the tts thread-local clock instead ot the global ts clock
         tdur: Option<Timestamp>,
-        //
-        // Can also specify the stack trace at the end of the event, using the
-        // same conventions as the sf/stack of DurationEvent
+
+        /// Global stack trace at end of event, see DurationEvent::sf
         esf: Option<StackFrameID>,
-        //
+
+        /// Inline stack trace at end of event, see DurationEvent::estack
         estack: Option<Vec<String>>,
     },
 
@@ -276,10 +280,10 @@ struct MetadataFields {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StackFrame {
-    // DSO ?
+    /// Usually a DSO
     category: String,
 
-    // Symbol name ?
+    /// Symbol name
     name: String,
 
     /// Parent stack frame, if not at the root of the stack
