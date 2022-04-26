@@ -5,12 +5,13 @@
 
 #![deny(missing_docs)]
 
-mod duration;
-mod metadata;
-mod stack;
+mod events;
+pub mod stack;
 
-pub use crate::stack::{EndStackTrace, StackFrame, StackFrameId, StackTrace};
-use crate::{duration::DurationEvent, metadata::MetadataEvent};
+use crate::{
+    events::{duration::DurationEvent, metadata::MetadataEvent},
+    stack::{EndStackTrace, StackFrame, StackFrameId},
+};
 use serde::Deserialize;
 use serde_json as json;
 use std::{collections::HashMap, fs::File, io::Read};
@@ -193,7 +194,7 @@ fn main() {
         .read_to_string(&mut s)
         .unwrap();
     let value = json::from_str::<TraceData>(&s).unwrap();
-    println!("{:?}", value);
+    println!("{:#?}", value);
 }
 
 #[cfg(test)]

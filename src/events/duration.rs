@@ -1,6 +1,6 @@
 //! Duration event handling
 
-use crate::{EventCategories, Pid, StackTrace, Tid, Timestamp};
+use crate::{stack::StackTrace, EventCategories, Pid, Tid, Timestamp};
 use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
@@ -43,7 +43,10 @@ pub struct DurationEvent {
 mod tests {
     use super::*;
     use crate::tests::*;
-    use crate::{StackFrame, StackFrameId, TraceDataObject, TraceEvent};
+    use crate::{
+        stack::{StackFrame, StackFrameId},
+        TraceDataObject, TraceEvent,
+    };
 
     #[test]
     fn begin_end() {
