@@ -1,6 +1,6 @@
 //! Metadata event handling
 
-use crate::{Pid, Tid, Timestamp};
+use crate::{EventCategories, Pid, Tid, Timestamp};
 use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
@@ -16,8 +16,6 @@ use std::collections::HashMap;
 #[serde(tag = "name")]
 pub enum MetadataEvent {
     /// Sets the display name for the provided pid
-    ///
-    /// Must contain a "name" arg mapping into a name string
     process_name {
         /// Process ID for the process that output this event
         pid: Pid,
@@ -33,9 +31,7 @@ pub enum MetadataEvent {
         options: MetadataOptions,
     },
 
-    /// Sets the extra process labels for the provided pid
-    ///
-    /// Must contain a "labels" arg mapping into a list of string labels.
+    /// Sets one extra process label for the provided pid
     process_labels {
         /// Process ID for the process that output this event
         pid: Pid,
@@ -52,10 +48,6 @@ pub enum MetadataEvent {
     },
 
     /// Sets the process sort order position
-    ///
-    /// Must contain a "sort_index" arg mapping into a number that
-    /// represents the relative sorting position. Processes with identical
-    /// keys are sorted by name, then by pid.
     process_sort_index {
         /// Process ID for the process that output this event
         pid: Pid,
@@ -72,8 +64,6 @@ pub enum MetadataEvent {
     },
 
     /// Sets the display name for the provided tid
-    ///
-    /// Must contain a "name" arg mapping into a name string
     thread_name {
         /// Thread ID for the thread that output this event
         tid: Tid,
@@ -90,10 +80,6 @@ pub enum MetadataEvent {
     },
 
     /// Sets the thread sort order position
-    ///
-    /// Must contain a "sort_index" arg mapping into a number that
-    /// represents the relative sorting position. Threads with identical
-    /// keys are sorted by name, then by tid.
     thread_sort_index {
         /// Thread ID for the thread that output this event
         tid: Tid,
@@ -115,8 +101,8 @@ pub enum MetadataEvent {
 // Used in #[serde(flatten)] so no #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct MetadataOptions {
-    /// Comma-separated list of categories (for filtering)
-    pub cat: Option<String>,
+    /// Event categories (for filtering)
+    pub cat: Option<EventCategories>,
 
     /// Tracing clock timestamp in microseconds
     pub ts: Option<Timestamp>,
@@ -143,8 +129,8 @@ pub struct NameArgs {
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct LabelsArgs {
-    /// Labels to be attributed to the target process
-    pub labels: Vec<String>,
+    /// Extra label to be attributed to the target process
+    pub labels: String,
 
     /// Extra arguments not specified by the Trace Event Format spec
     #[serde(flatten)]

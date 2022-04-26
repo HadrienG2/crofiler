@@ -36,26 +36,29 @@ pub struct TraceDataObject {
     /// Event objects, may not be in timestamp-sorted order
     pub traceEvents: Vec<TraceEvent>,
 
-    /// Unit in which timestamps should be displayed.
-    ///
-    /// "ms" or "ns" ("ms" by default)
-    pub displayTimeUnit: Option<String>,
+    /// Unit in which timestamps should be displayed
+    #[serde(default)]
+    pub displayTimeUnit: DisplayTimeUnit,
 
     /// Linux ftrace data or Windows ETW trace data.
     ///
     /// If this starts with "# tracer:", this is Linux ftrace data,
     /// otherwise this is Windows ETW data.
+    //
+    // TODO: Consider parsing this further in a future version
     pub systemTraceEvents: Option<String>,
 
     /// String of BattOr power data
+    //
+    // TODO: Consider parsing this further in a future version
     pub powerTraceAsString: Option<String>,
 
     /// Dictionary of stack frames, their ids and their parents that allows
     /// compact representation of stack traces throughout the rest of the
     /// trace file.
-    ///
-    /// We only accept strings as stack frame IDs here, as this is a JSON
-    /// dictionary and JSON mandates that dict keys be strings.
+    //
+    // NOTE: We only accept strings as stack frame IDs here, as this is a JSON
+    //       dictionary and JSON actually mandates that dict keys be strings.
     pub stackFrames: Option<HashMap<String, StackFrame>>,
 
     /// Sampling profiler data from an OS level profiler
@@ -93,16 +96,14 @@ pub enum TraceEvent {
         duration_event: DurationEvent,
 
         /// Can track duration of complete events
-        dur: Timestamp,
+        dur: Duration,
 
         /// Like dur, but using the tts thread-local clock instead ot the global ts clock
-        tdur: Option<Timestamp>,
+        tdur: Option<Duration>,
 
-        /// Global stack trace at end of event, see DurationEvent::sf
-        esf: Option<StackFrameID>,
-
-        /// Inline stack trace at end of event, see DurationEvent::estack
-        estack: Option<Vec<String>>,
+        /// Stack trace at the end of the event
+        #[serde(flatten)]
+        end_stack_trace: Option<EndStackTrace>,
     },
 
     /// Metadata event associates extra information with the events
@@ -113,35 +114,80 @@ pub enum TraceEvent {
     //       mark events, clock sync events, context events
 }
 
-/// Process ID (following libc)
-pub type Pid = i32;
-
-/// Thread ID (following libc)
-pub type Tid = i32;
-
 /// Clock timestamp with microsecond granularity
 pub type Timestamp = f64;
 
-/// Global stack frame ID (may be either an integer or a string)
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
+/// Durations are just a difference of timestamps
+pub type Duration = Timestamp;
+
+/// Stack trace at the end of a complete event
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[allow(non_camel_case_types)]
+pub enum EndStackTrace {
+    /// id for a stackFrame object in the TraceDataObject::stackFrames map
+    esf(StackFrameId),
+
+    /// Inline stack trace, as a list of symbols/addresses starting from the root
+    estack(Vec<String>),
+}
+
+/// Global stack frame ID
+///
+/// The Chrome Trace Event format allows stack frame IDs to be either integers
+/// or strings, but in the end that's a bit pointless since stackFrames keys
+/// _must_ be strings to comply with the JSON spec. So we convert everything to
+/// strings for convenience.
+//
+// TODO: Use a string interner instead for improved efficiency
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(from = "RawStackFrameId")]
+pub struct StackFrameId(String);
+//
+impl From<RawStackFrameId> for StackFrameId {
+    fn from(i: RawStackFrameId) -> Self {
+        Self(match i {
+            RawStackFrameId::Int(i) => i.to_string(),
+            RawStackFrameId::Str(s) => s,
+        })
+    }
+}
+//
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum StackFrameID {
+pub enum RawStackFrameId {
     Int(i64),
     Str(String),
+}
+
+/// Unit in which timestamps should be displayed
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[allow(non_camel_case_types)]
+pub enum DisplayTimeUnit {
+    /// Milliseconds
+    ms,
+
+    /// Nanoseconds
+    ns,
+}
+//
+impl Default for DisplayTimeUnit {
+    fn default() -> Self {
+        Self::ms
+    }
 }
 
 /// Stack frame object
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StackFrame {
-    /// Usually a DSO
+    /// Usually a DSO or process name
     pub category: String,
 
-    /// Symbol name
+    /// Symbol name or address
     pub name: String,
 
     /// Parent stack frame, if not at the root of the stack
-    pub parent: Option<StackFrameID>,
+    pub parent: Option<StackFrameId>,
 }
 
 /// Sampling profiler data from an OS level profiler
@@ -161,7 +207,7 @@ pub struct Sample {
     pub name: String,
 
     /// Stack frame
-    pub sf: StackFrameID,
+    pub sf: StackFrameId,
 
     /// Weight for relative impact assessment
     pub weight: SampleWeight,
@@ -170,8 +216,25 @@ pub struct Sample {
 /// CPU identifier
 pub type CpuId = i32;
 
+/// Thread ID (following libc)
+pub type Tid = i32;
+
 /// Sample weight
 pub type SampleWeight = i64;
+
+/// Process ID (following libc)
+pub type Pid = i32;
+
+/// Event categories
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(from = "String")]
+pub struct EventCategories(Vec<String>);
+//
+impl From<String> for EventCategories {
+    fn from(s: String) -> Self {
+        Self(s.split(',').map(|sub| sub.to_owned()).collect())
+    }
+}
 
 fn main() {
     const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
@@ -245,7 +308,7 @@ pub(crate) mod tests {
                 tid: 22630,
                 ts: 829.0,
                 name: Some("Asub".to_owned()),
-                cat: Some("PERF".to_owned()),
+                cat: Some(EventCategories(vec!["PERF".to_owned()])),
                 ..DurationEvent::default()
             }),
             TraceEvent::E(DurationEvent {
@@ -253,7 +316,7 @@ pub(crate) mod tests {
                 tid: 22630,
                 ts: 833.0,
                 name: Some("Asub".to_owned()),
-                cat: Some("PERF".to_owned()),
+                cat: Some(EventCategories(vec!["PERF".to_owned()])),
                 ..DurationEvent::default()
             }),
         ];
@@ -300,7 +363,7 @@ pub(crate) mod tests {
                     tid: 22630,
                     ts: 829.0,
                     name: Some("Asub".to_owned()),
-                    cat: Some("PERF".to_owned()),
+                    cat: Some(EventCategories(vec!["PERF".to_owned()])),
                     ..DurationEvent::default()
                 }),
                 TraceEvent::E(DurationEvent {
@@ -308,17 +371,17 @@ pub(crate) mod tests {
                     tid: 22630,
                     ts: 833.0,
                     name: Some("Asub".to_owned()),
-                    cat: Some("PERF".to_owned()),
+                    cat: Some(EventCategories(vec!["PERF".to_owned()])),
                     ..DurationEvent::default()
                 }),
             ],
-            displayTimeUnit: Some("ns".to_owned()),
+            displayTimeUnit: DisplayTimeUnit::ns,
             systemTraceEvents: Some("SystemTraceData".to_owned()),
             stackFrames: Some(maplit::hashmap! {
                 "a".to_owned() => StackFrame {
                     category: "libchrome.so".to_owned(),
                     name: "CrRendererMain".to_owned(),
-                    parent: Some(StackFrameID::Int(1)),
+                    parent: Some(StackFrameId("1".to_owned())),
                 },
                 "1".to_owned() => StackFrame {
                     category: "libc.so".to_owned(),
@@ -336,7 +399,7 @@ pub(crate) mod tests {
                 tid: 1,
                 ts: 1000.0,
                 name: "cycles:HG".to_owned(),
-                sf: StackFrameID::Int(3),
+                sf: StackFrameId("3".to_owned()),
                 weight: 1,
             }]),
             extra: maplit::hashmap! {
