@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs::File, io::Read};
 
 /// Chrome Trace Event Format, per documentation at
 /// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 #[serde(untagged, deny_unknown_fields)]
 enum TraceData {
@@ -20,7 +20,7 @@ enum TraceData {
 //
 // May have extra metadata fields, so should not get the
 // #[serde(deny_unknown_fields)] treatment
-#[derive(Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 struct TraceDataObject {
     /// Event objects, may not be in timestamp-sorted order
@@ -60,7 +60,7 @@ struct TraceDataObject {
 /// Event description
 //
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "ph")]
 enum TraceEvent {
     // Duration events, can be nested, timestamps must be in increasing order
@@ -99,7 +99,7 @@ enum TraceEvent {
 /// Duration events provide a way to mark a duration of work on a given thread
 //
 // Used in #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
-#[derive(Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 struct DurationEvent {
     /// Process ID for the process that output this event
     pid: Pid,
@@ -150,7 +150,7 @@ type Tid = i32;
 type Timestamp = f64;
 
 /// Global stack frame ID (may be either an integer or a string)
-#[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(untagged, deny_unknown_fields)]
 enum StackFrameID {
     Int(i64),
@@ -158,7 +158,7 @@ enum StackFrameID {
 }
 
 /// Stack frame object
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StackFrame {
     // DSO ?
@@ -172,7 +172,7 @@ struct StackFrame {
 }
 
 /// Sampling profiler data from an OS level profiler
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct Sample {
     /// CPU on which the sample was taken
@@ -209,38 +209,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
-    #[test]
-    fn json_array_format() {
-        // Example from spec
-        let value = json::from_str::<TraceData>(
-            r#"[ {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
-  {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833} ]"#,
-        )
-        .expect("Deserialization should succeed");
-        assert_eq!(
-            value,
-            TraceData::Array(vec![
-                TraceEvent::B(DurationEvent {
-                    pid: 22630,
-                    tid: 22630,
-                    ts: 829.0,
-                    name: Some("Asub".to_owned()),
-                    cat: Some("PERF".to_owned()),
-                    ..DurationEvent::default()
-                }),
-                TraceEvent::E(DurationEvent {
-                    pid: 22630,
-                    tid: 22630,
-                    ts: 833.0,
-                    name: Some("Asub".to_owned()),
-                    cat: Some("PERF".to_owned()),
-                    ..DurationEvent::default()
-                }),
-            ])
-        );
-    }
-
+    /// Check that a TraceDataObject is correctly parsed
     fn check_trace_data_object(json_str: &str, expected: TraceDataObject) {
         // Start by parsing as TraceDateObject as this will result in better
         // error messages in case of failure, but check that TraceData parsing
@@ -251,6 +222,49 @@ mod tests {
         let actual2 =
             json::from_str::<TraceData>(json_str).expect("Deserialization should succeed");
         assert_eq!(TraceData::Object(expected), actual2);
+    }
+
+    /// Check that a TraceData array is correctly parsed, including in object format
+    fn check_trace_data_array(json_str: &str, expected: &[TraceEvent]) {
+        // Direct parsing
+        let value = json::from_str::<TraceData>(json_str).expect("Deserialization should succeed");
+        assert_eq!(value, TraceData::Array(expected.to_vec()),);
+
+        // Parsing of corresponding TraceDataObject
+        let mut object_str = r#"{"traceEvents":"#.to_owned();
+        object_str.push_str(json_str);
+        object_str.push('}');
+        let expected = TraceDataObject {
+            traceEvents: expected.to_vec(),
+            ..TraceDataObject::default()
+        };
+        check_trace_data_object(&object_str, expected);
+    }
+
+    #[test]
+    fn json_array_format() {
+        // Example from spec
+        let example = r#"[ {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
+  {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833} ]"#;
+        let expected = &[
+            TraceEvent::B(DurationEvent {
+                pid: 22630,
+                tid: 22630,
+                ts: 829.0,
+                name: Some("Asub".to_owned()),
+                cat: Some("PERF".to_owned()),
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                pid: 22630,
+                tid: 22630,
+                ts: 833.0,
+                name: Some("Asub".to_owned()),
+                cat: Some("PERF".to_owned()),
+                ..DurationEvent::default()
+            }),
+        ];
+        check_trace_data_array(example, expected);
     }
 
     #[test]
@@ -352,33 +366,30 @@ mod tests {
    "second": 2
  }
 }]"#;
-        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
-        assert_eq!(
-            value,
-            TraceData::Array(vec![
-                TraceEvent::B(DurationEvent {
-                    name: Some("myFunction".to_owned()),
-                    cat: Some("foo".to_owned()),
-                    ts: 123.0,
-                    pid: 2343,
-                    tid: 2347,
-                    args: Some(maplit::hashmap! {
-                        "first".to_owned() => json::json!(1usize)
-                    }),
-                    ..DurationEvent::default()
+        let expected = &[
+            TraceEvent::B(DurationEvent {
+                name: Some("myFunction".to_owned()),
+                cat: Some("foo".to_owned()),
+                ts: 123.0,
+                pid: 2343,
+                tid: 2347,
+                args: Some(maplit::hashmap! {
+                    "first".to_owned() => json::json!(1usize)
                 }),
-                TraceEvent::E(DurationEvent {
-                    ts: 145.0,
-                    pid: 2343,
-                    tid: 2347,
-                    args: Some(maplit::hashmap! {
-                        "first".to_owned() => json::json!(4usize),
-                        "second".to_owned() => json::json!(2usize)
-                    }),
-                    ..DurationEvent::default()
-                })
-            ])
-        );
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                ts: 145.0,
+                pid: 2343,
+                tid: 2347,
+                args: Some(maplit::hashmap! {
+                    "first".to_owned() => json::json!(4usize),
+                    "second".to_owned() => json::json!(2usize)
+                }),
+                ..DurationEvent::default()
+            }),
+        ];
+        check_trace_data_array(example, expected);
     }
 
     #[test]
@@ -389,38 +400,35 @@ mod tests {
 { "pid": 1, "ts": 1.1, "tid": 1, "ph": "B", "name": "Asub"},
 { "pid": 1, "ts": 3.9, "tid": 1, "ph": "E"},
 { "pid": 1, "ts": 4.0, "tid": 1, "ph": "E"}]"#;
-        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
-        assert_eq!(
-            value,
-            TraceData::Array(vec![
-                TraceEvent::B(DurationEvent {
-                    pid: 1,
-                    ts: 1.0,
-                    tid: 1,
-                    name: Some("A".to_owned()),
-                    ..DurationEvent::default()
-                }),
-                TraceEvent::B(DurationEvent {
-                    pid: 1,
-                    ts: 1.1,
-                    tid: 1,
-                    name: Some("Asub".to_owned()),
-                    ..DurationEvent::default()
-                }),
-                TraceEvent::E(DurationEvent {
-                    pid: 1,
-                    ts: 3.9,
-                    tid: 1,
-                    ..DurationEvent::default()
-                }),
-                TraceEvent::E(DurationEvent {
-                    pid: 1,
-                    ts: 4.0,
-                    tid: 1,
-                    ..DurationEvent::default()
-                })
-            ])
-        );
+        let expected = &[
+            TraceEvent::B(DurationEvent {
+                pid: 1,
+                ts: 1.0,
+                tid: 1,
+                name: Some("A".to_owned()),
+                ..DurationEvent::default()
+            }),
+            TraceEvent::B(DurationEvent {
+                pid: 1,
+                ts: 1.1,
+                tid: 1,
+                name: Some("Asub".to_owned()),
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                pid: 1,
+                ts: 3.9,
+                tid: 1,
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                pid: 1,
+                ts: 4.0,
+                tid: 1,
+                ..DurationEvent::default()
+            }),
+        ];
+        check_trace_data_array(example, expected);
     }
 
     #[test]
@@ -431,38 +439,96 @@ mod tests {
 { "pid": 1, "ts": 0.9, "tid": 2, "ph": "B", "name": "B"},
 { "pid": 1, "ts": 1.1, "tid": 1, "ph": "E"},
 { "pid": 1, "ts": 4.0, "tid": 2, "ph": "E"}]"#;
-        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
-        assert_eq!(
-            value,
-            TraceData::Array(vec![
+        let expected = &[
+            TraceEvent::B(DurationEvent {
+                pid: 1,
+                ts: 1.0,
+                tid: 1,
+                name: Some("A".to_owned()),
+                ..DurationEvent::default()
+            }),
+            TraceEvent::B(DurationEvent {
+                pid: 1,
+                ts: 0.9,
+                tid: 2,
+                name: Some("B".to_owned()),
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                pid: 1,
+                ts: 1.1,
+                tid: 1,
+                ..DurationEvent::default()
+            }),
+            TraceEvent::E(DurationEvent {
+                pid: 1,
+                ts: 4.0,
+                tid: 2,
+                ..DurationEvent::default()
+            }),
+        ];
+        check_trace_data_array(example, expected);
+    }
+
+    #[test]
+    fn duration_with_global_stack() {
+        // Example from spec with minimal changes to make it valid
+        let example = r#"{
+  "traceEvents": [
+    { "pid": 1, "tid": 1, "ts": 0.1, "ph": "B", "name": "A", "sf": 7},
+    { "pid": 1, "tid": 1, "ts": 0.2, "ph": "E", "name": "A", "sf": 9}
+  ],
+  "stackFrames": {
+    "5": { "name": "main", "category": "my app" },
+    "7": { "parent": "5", "name": "SomeFunction", "category": "my app" },
+    "9": { "parent": "5", "name": "SomeFunction", "category": "my app" }
+  }
+}"#;
+        let expected = TraceDataObject {
+            traceEvents: vec![
                 TraceEvent::B(DurationEvent {
                     pid: 1,
-                    ts: 1.0,
                     tid: 1,
+                    ts: 0.1,
                     name: Some("A".to_owned()),
-                    ..DurationEvent::default()
-                }),
-                TraceEvent::B(DurationEvent {
-                    pid: 1,
-                    ts: 0.9,
-                    tid: 2,
-                    name: Some("B".to_owned()),
+                    sf: Some(StackFrameID::Int(7)),
                     ..DurationEvent::default()
                 }),
                 TraceEvent::E(DurationEvent {
                     pid: 1,
-                    ts: 1.1,
                     tid: 1,
+                    ts: 0.2,
+                    name: Some("A".to_owned()),
+                    sf: Some(StackFrameID::Int(9)),
                     ..DurationEvent::default()
                 }),
-                TraceEvent::E(DurationEvent {
-                    pid: 1,
-                    ts: 4.0,
-                    tid: 2,
-                    ..DurationEvent::default()
-                })
-            ])
-        );
+            ],
+            stackFrames: Some(maplit::hashmap! {
+                "5".to_owned() => StackFrame {
+                    name: "main".to_owned(),
+                    category: "my app".to_owned(),
+                    parent: None,
+                },
+                "7".to_owned() => StackFrame {
+                    parent: Some(StackFrameID::Str("5".to_owned())),
+                    category: "my app".to_owned(),
+                    name: "SomeFunction".to_owned(),
+                },
+                "9".to_owned() => StackFrame {
+                    parent: Some(StackFrameID::Str("5".to_owned())),
+                    category: "my app".to_owned(),
+                    name: "SomeFunction".to_owned(),
+                }
+            }),
+            ..TraceDataObject::default()
+        };
+        check_trace_data_object(example, expected);
+    }
+
+    #[test]
+    fn duration_with_inline_stack() {
+        // Example from spec with minimal changes to make it valid
+        todo!()
     }
 
     // TODO: Add more examples from the CTF spec
