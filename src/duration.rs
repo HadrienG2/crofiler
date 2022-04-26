@@ -1,4 +1,4 @@
-//! Duration event commonalities
+//! Duration event handling
 
 use crate::{Pid, StackFrameID, Tid, Timestamp};
 use serde::Deserialize;
@@ -57,7 +57,7 @@ mod tests {
     use crate::{StackFrame, TraceDataObject, TraceEvent};
 
     #[test]
-    fn duration_event() {
+    fn begin_end() {
         // Example from spec with minimal changes to make it valid
         let example = r#"[
 {"name": "myFunction", "cat": "foo", "ph": "B", "ts": 123, "pid": 2343, "tid": 2347,
@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_duration_event() {
+    fn nested_event() {
         // Example from spec with minimal changes to make it valid
         let example = r#"[
 { "pid": 1, "ts": 1.0, "tid": 1, "ph": "B", "name": "A"},
@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn thread_interleaving_duration_event() {
+    fn thread_interleaving() {
         // Example from spec with minimal changes to make it valid
         let example = r#"[
 { "pid": 1, "ts": 1.0, "tid": 1, "ph": "B", "name": "A"},
@@ -176,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn duration_with_global_stack() {
+    fn global_stack() {
         // Example from spec with minimal changes to make it valid
         let example = r#"{
   "traceEvents": [
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn duration_with_inline_stack() {
+    fn inline_stack() {
         // Example from spec with minimal changes to make it valid
         let example = r#"{
             "pid": 1, "tid": 1, "ts": 1.0, "ph": "B", "name": "A", "stack": ["0x1", "0x2"]}"#;
