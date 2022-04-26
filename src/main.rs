@@ -90,9 +90,12 @@ enum TraceEvent {
         //
         estack: Option<Vec<String>>,
     },
-    // FIXME: Need at least metadata events to move further
+
+    /// Metadata event associates extra information with the events
+    M(MetadataEvent),
+    //
     // TODO: Add instant events, counter events, async events, flow events,
-    //       sample events, object events, metadata events, memory dump events,
+    //       sample events, object events, memory dump events,
     //       mark events, clock sync events, context events
 }
 
@@ -121,7 +124,8 @@ struct DurationEvent {
 
     /// No required arguments for duration events
     ///
-    /// In the case of B/E events, arguments should be merged during display.
+    /// In the case of B/E events, arguments should be merged during display
+    /// with E event taking priority where a key conflict occurs.
     args: Option<HashMap<String, json::Value>>,
 
     /// Can provide a stack trace using a global stack frame ID
@@ -157,6 +161,117 @@ enum StackFrameID {
     Str(String),
 }
 
+/// Metadata events are used to associate extra information with the events in
+/// the trace file. This information can be things like process names, or thread
+/// names. Metadata events are denoted by the M phase type. The argument list
+/// may be empty.
+//
+// Uses #[serde(flatten)] so no #[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[allow(non_camel_case_types)]
+#[serde(tag = "name")]
+enum MetadataEvent {
+    /// Sets the display name for the provided pid
+    ///
+    /// Must contain a "name" arg mapping into a name string
+    process_name {
+        /// Common fields
+        #[serde(flatten)]
+        metadata_fields: MetadataFields,
+
+        /// Process ID for the process that output this event
+        pid: Pid,
+
+        /// Thread ID for the thread that output this event
+        tid: Option<Tid>,
+    },
+
+    /// Sets the extra process labels for the provided pid
+    ///
+    /// Must contain a "labels" arg mapping into a list of string labels.
+    process_labels {
+        /// Common fields
+        #[serde(flatten)]
+        metadata_fields: MetadataFields,
+
+        /// Process ID for the process that output this event
+        pid: Pid,
+
+        /// Thread ID for the thread that output this event
+        tid: Option<Tid>,
+    },
+
+    /// Sets the process sort order position
+    ///
+    /// Must contain a "sort_index" arg mapping into a number that
+    /// represents the relative sorting position. Processes with identical
+    /// keys are sorted by name, then by pid.
+    process_sort_index {
+        /// Common fields
+        #[serde(flatten)]
+        metadata_fields: MetadataFields,
+
+        /// Process ID for the process that output this event
+        pid: Pid,
+
+        /// Thread ID for the thread that output this event
+        tid: Option<Tid>,
+    },
+
+    /// Sets the display name for the provided tid
+    ///
+    /// Must contain a "name" arg mapping into a name string
+    thread_name {
+        /// Common fields
+        #[serde(flatten)]
+        metadata_fields: MetadataFields,
+
+        /// Thread ID for the thread that output this event
+        tid: Tid,
+
+        /// Process ID for the process that output this event
+        pid: Option<Pid>,
+    },
+
+    /// Sets the thread sort order position
+    ///
+    /// Must contain a "sort_index" arg mapping into a number that
+    /// represents the relative sorting position. Threads with identical
+    /// keys are sorted by name, then by tid.
+    thread_sort_index {
+        /// Common fields
+        #[serde(flatten)]
+        metadata_fields: MetadataFields,
+
+        /// Thread ID for the thread that output this event
+        tid: Tid,
+
+        /// Process ID for the process that output this event
+        pid: Option<Pid>,
+    },
+}
+
+/// Common fields for all MetadataEvents
+//
+// Used in #[serde(flatten)] so no #[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+struct MetadataFields {
+    /// Event arguments
+    ///
+    /// All MetadataEvents have one required argument that you should check in
+    /// their documentation.
+    args: HashMap<String, json::Value>,
+
+    /// Comma-separated list of categories (for filtering)
+    cat: Option<String>,
+
+    /// Tracing clock timestamp in microseconds
+    ts: Option<Timestamp>,
+
+    /// Thread clock timestamp in microseconds
+    tts: Option<Timestamp>,
+}
+
 /// Stack frame object
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -176,7 +291,7 @@ struct StackFrame {
 #[serde(deny_unknown_fields)]
 struct Sample {
     /// CPU on which the sample was taken
-    cpu: Option<i32>,
+    cpu: Option<CpuId>,
 
     /// Thread ID that emitted this event
     tid: Tid,
@@ -191,8 +306,14 @@ struct Sample {
     sf: StackFrameID,
 
     /// Weight for relative impact assessment
-    weight: i64,
+    weight: SampleWeight,
 }
+
+/// CPU identifier
+type CpuId = i32;
+
+/// Sample weight
+type SampleWeight = i64;
 
 fn main() {
     const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
@@ -201,8 +322,7 @@ fn main() {
         .unwrap()
         .read_to_string(&mut s)
         .unwrap();
-    // FIXME: Go back to TraceData once parser is debugged
-    let value = json::from_str::<TraceDataObject>(&s).unwrap();
+    let value = json::from_str::<TraceData>(&s).unwrap();
     println!("{:?}", value);
 }
 
@@ -582,6 +702,27 @@ mod tests {
             esf: None,
             estack: None,
         };
+        check_trace_event(example, expected);
+    }
+
+    #[test]
+    fn metadata_event() {
+        // Example from spec
+        let example = r#"{"name": "thread_name", "ph": "M", "pid": 2343, "tid": 2347,
+ "args": {
+  "name" : "RendererThread"
+ }
+}"#;
+        let expected = TraceEvent::M(MetadataEvent::thread_name {
+            pid: Some(2343),
+            tid: 2347,
+            metadata_fields: MetadataFields {
+                args: maplit::hashmap! {
+                    "name".to_owned() => json::json!("RendererThread")
+                },
+                ..MetadataFields::default()
+            },
+        });
         check_trace_event(example, expected);
     }
 
