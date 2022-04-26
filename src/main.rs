@@ -228,7 +228,7 @@ mod tests {
     fn check_trace_data_array(json_str: &str, expected: &[TraceEvent]) {
         // Direct parsing
         let value = json::from_str::<TraceData>(json_str).expect("Deserialization should succeed");
-        assert_eq!(value, TraceData::Array(expected.to_vec()),);
+        assert_eq!(value, TraceData::Array(expected.to_vec()));
 
         // Parsing of corresponding TraceDataObject
         let mut object_str = r#"{"traceEvents":"#.to_owned();
@@ -239,6 +239,21 @@ mod tests {
             ..TraceDataObject::default()
         };
         check_trace_data_object(&object_str, expected);
+    }
+
+    /// Check that a single TraceEvent is correctly parsed, as well as the
+    /// matching TraceData array and TraceDataObject
+    fn check_trace_event(json_str: &str, expected: TraceEvent) {
+        // Direct parsing
+        let value = json::from_str::<TraceEvent>(json_str).expect("Deserialization should succeed");
+        assert_eq!(value, expected);
+
+        // Parsing of corresponding TraceData array
+        let mut array_str = "[".to_owned();
+        array_str.push_str(json_str);
+        array_str.push(']');
+        let expected = &[expected];
+        check_trace_data_array(&array_str, expected);
     }
 
     #[test]
@@ -528,7 +543,46 @@ mod tests {
     #[test]
     fn duration_with_inline_stack() {
         // Example from spec with minimal changes to make it valid
-        todo!()
+        let example = r#"{
+            "pid": 1, "tid": 1, "ts": 1.0, "ph": "B", "name": "A", "stack": ["0x1", "0x2"]}"#;
+        let expected = TraceEvent::B(DurationEvent {
+            pid: 1,
+            tid: 1,
+            ts: 1.0,
+            name: Some("A".to_owned()),
+            stack: Some(vec!["0x1".to_owned(), "0x2".to_owned()]),
+            ..DurationEvent::default()
+        });
+        check_trace_event(example, expected);
+    }
+
+    #[test]
+    fn complete_event() {
+        // Example from spec with minimal changes to make it valid
+        let example = r#"{
+ "name": "myFunction", "cat": "foo", "ph": "X", "ts": 123, "dur": 234, "pid": 2343, "tid": 2347,
+ "args": {
+   "first": 1
+ }
+}"#;
+        let expected = TraceEvent::X {
+            duration_event: DurationEvent {
+                name: Some("myFunction".to_owned()),
+                cat: Some("foo".to_owned()),
+                ts: 123.0,
+                pid: 2343,
+                tid: 2347,
+                args: Some(maplit::hashmap! {
+                    "first".to_owned() => json::json!(1usize)
+                }),
+                ..DurationEvent::default()
+            },
+            dur: 234.0,
+            tdur: None,
+            esf: None,
+            estack: None,
+        };
+        check_trace_event(example, expected);
     }
 
     // TODO: Add more examples from the CTF spec
