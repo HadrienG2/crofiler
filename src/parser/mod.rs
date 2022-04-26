@@ -76,7 +76,7 @@ pub struct TraceDataObject {
 
     /// Extra trace metadata not specified by the Trace Event Format spec
     #[serde(flatten)]
-    extra: HashMap<String, json::Value>,
+    pub extra: HashMap<String, json::Value>,
 }
 
 /// Event description

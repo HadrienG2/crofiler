@@ -13,6 +13,14 @@ fn main() {
         .unwrap();
     let value = json::from_str::<TraceDataObject>(&s).unwrap();
 
+    dbg!(value.displayTimeUnit);
+    dbg!(value.systemTraceEvents);
+    dbg!(value.powerTraceAsString);
+    dbg!(value.stackFrames);
+    dbg!(value.samples);
+    dbg!(value.controllerTraceDataKey);
+    dbg!(value.extra);
+
     let mut display_period = 1;
     let display_period_increment = 10;
     let display_increment_period = 10;
