@@ -7,7 +7,9 @@
 
 mod duration;
 mod metadata;
+mod stack;
 
+pub use crate::stack::{EndStackTrace, StackFrame, StackFrameId, StackTrace};
 use crate::{duration::DurationEvent, metadata::MetadataEvent};
 use serde::Deserialize;
 use serde_json as json;
@@ -120,45 +122,6 @@ pub type Timestamp = f64;
 /// Durations are just a difference of timestamps
 pub type Duration = Timestamp;
 
-/// Stack trace at the end of a complete event
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[allow(non_camel_case_types)]
-pub enum EndStackTrace {
-    /// id for a stackFrame object in the TraceDataObject::stackFrames map
-    esf(StackFrameId),
-
-    /// Inline stack trace, as a list of symbols/addresses starting from the root
-    estack(Vec<String>),
-}
-
-/// Global stack frame ID
-///
-/// The Chrome Trace Event format allows stack frame IDs to be either integers
-/// or strings, but in the end that's a bit pointless since stackFrames keys
-/// _must_ be strings to comply with the JSON spec. So we convert everything to
-/// strings for convenience.
-//
-// TODO: Use a string interner instead for improved efficiency
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(from = "RawStackFrameId")]
-pub struct StackFrameId(String);
-//
-impl From<RawStackFrameId> for StackFrameId {
-    fn from(i: RawStackFrameId) -> Self {
-        Self(match i {
-            RawStackFrameId::Int(i) => i.to_string(),
-            RawStackFrameId::Str(s) => s,
-        })
-    }
-}
-//
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(untagged, deny_unknown_fields)]
-pub enum RawStackFrameId {
-    Int(i64),
-    Str(String),
-}
-
 /// Unit in which timestamps should be displayed
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
@@ -174,20 +137,6 @@ impl Default for DisplayTimeUnit {
     fn default() -> Self {
         Self::ms
     }
-}
-
-/// Stack frame object
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct StackFrame {
-    /// Usually a DSO or process name
-    pub category: String,
-
-    /// Symbol name or address
-    pub name: String,
-
-    /// Parent stack frame, if not at the root of the stack
-    pub parent: Option<StackFrameId>,
 }
 
 /// Sampling profiler data from an OS level profiler

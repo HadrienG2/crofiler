@@ -1,6 +1,6 @@
 //! Duration event handling
 
-use crate::{EventCategories, Pid, StackFrameId, Tid, Timestamp};
+use crate::{EventCategories, Pid, StackTrace, Tid, Timestamp};
 use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
@@ -39,24 +39,11 @@ pub struct DurationEvent {
     pub stack_trace: Option<StackTrace>,
 }
 
-/// Stack trace associated with a duration event
-///
-/// For complete events, this is the stack trace at the start of the event
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[allow(non_camel_case_types)]
-pub enum StackTrace {
-    /// id for a stackFrame object in the TraceDataObject::stackFrames map
-    sf(StackFrameId),
-
-    /// Inline stack trace, as a list of symbols/addresses starting from the root
-    stack(Vec<String>),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tests::*;
-    use crate::{StackFrame, TraceDataObject, TraceEvent};
+    use crate::{StackFrame, StackFrameId, TraceDataObject, TraceEvent};
 
     #[test]
     fn begin_end() {
