@@ -11,7 +11,7 @@ use std::{collections::HashMap, fs::File, io::Read};
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 #[serde(untagged, deny_unknown_fields)]
-enum TraceData {
+pub enum TraceData {
     /// JSON Object Format
     Object(TraceDataObject),
 
@@ -26,23 +26,23 @@ enum TraceData {
 // #[serde(deny_unknown_fields)] treatment
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
-struct TraceDataObject {
+pub struct TraceDataObject {
     /// Event objects, may not be in timestamp-sorted order
-    traceEvents: Vec<TraceEvent>,
+    pub traceEvents: Vec<TraceEvent>,
 
     /// Unit in which timestamps should be displayed.
     ///
     /// "ms" or "ns" ("ms" by default)
-    displayTimeUnit: Option<String>,
+    pub displayTimeUnit: Option<String>,
 
     /// Linux ftrace data or Windows ETW trace data.
     ///
     /// If this starts with "# tracer:", this is Linux ftrace data,
     /// otherwise this is Windows ETW data.
-    systemTraceEvents: Option<String>,
+    pub systemTraceEvents: Option<String>,
 
     /// String of BattOr power data
-    powerTraceAsString: Option<String>,
+    pub powerTraceAsString: Option<String>,
 
     /// Dictionary of stack frames, their ids and their parents that allows
     /// compact representation of stack traces throughout the rest of the
@@ -50,15 +50,15 @@ struct TraceDataObject {
     ///
     /// We only accept strings as stack frame IDs here, as this is a JSON
     /// dictionary and JSON mandates that dict keys be strings.
-    stackFrames: Option<HashMap<String, StackFrame>>,
+    pub stackFrames: Option<HashMap<String, StackFrame>>,
 
     /// Sampling profiler data from an OS level profiler
-    samples: Option<Vec<Sample>>,
+    pub samples: Option<Vec<Sample>>,
 
     /// Specifies which trace data comes from tracing controller. Its value
     /// should be the key for that specific trace data, e.g. "traceEvents".
     /// Mainly used for clock synchronization.
-    controllerTraceDataKey: Option<String>,
+    pub controllerTraceDataKey: Option<String>,
 }
 
 /// Event description
@@ -66,7 +66,7 @@ struct TraceDataObject {
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "ph")]
-enum TraceEvent {
+pub enum TraceEvent {
     // Duration events, can be nested, timestamps must be in increasing order
     // for a given thread.
     //
@@ -76,7 +76,7 @@ enum TraceEvent {
     /// End of some work, must come after corresponding B event
     E(DurationEvent),
 
-    /// Complete event = B+E with duration
+    /// Complete event = combines two consecutive B and E events
     X {
         /// Most fields are shared with duration events
         #[serde(flatten)]
@@ -107,37 +107,37 @@ enum TraceEvent {
 //
 // Used in #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-struct DurationEvent {
+pub struct DurationEvent {
     /// Process ID for the process that output this event
-    pid: Pid,
+    pub pid: Pid,
 
     /// Thread ID for the thread that output this event
-    tid: Tid,
+    pub tid: Tid,
 
     /// Tracing clock timestamp in microseconds
-    ts: Timestamp,
+    pub ts: Timestamp,
 
     /// Name of the event (for display)
-    name: Option<String>,
+    pub name: Option<String>,
 
     /// Comma-separated list of categories (for filtering)
-    cat: Option<String>,
+    pub cat: Option<String>,
 
     /// Thread clock timestamp in microseconds
-    tts: Option<Timestamp>,
+    pub tts: Option<Timestamp>,
 
     /// No required arguments for duration events
     ///
     /// In the case of B/E events, arguments should be merged during display
     /// with E event taking priority where a key conflict occurs.
-    args: Option<HashMap<String, json::Value>>,
+    pub args: Option<HashMap<String, json::Value>>,
 
     /// Can provide a stack trace using a global stack frame ID
     ///
     /// For complete events, this is the stack trace at the start of the event
     ///
     /// This is mutually exclusive with "stack", you should never see both set
-    sf: Option<StackFrameID>,
+    pub sf: Option<StackFrameID>,
 
     /// Can provide a stack trace inline, as a list of stack frames starting
     /// from the root of the call stack.
@@ -145,22 +145,22 @@ struct DurationEvent {
     /// For complete events, this is the stack trace at the start of the event
     ///
     /// This is mutually exclusive with "sf", you should never see both set
-    stack: Option<Vec<String>>,
+    pub stack: Option<Vec<String>>,
 }
 
 /// Process ID (following libc)
-type Pid = i32;
+pub type Pid = i32;
 
 /// Thread ID (following libc)
-type Tid = i32;
+pub type Tid = i32;
 
 /// Clock timestamp with microsecond granularity
-type Timestamp = f64;
+pub type Timestamp = f64;
 
 /// Global stack frame ID (may be either an integer or a string)
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(untagged, deny_unknown_fields)]
-enum StackFrameID {
+pub enum StackFrameID {
     Int(i64),
     Str(String),
 }
@@ -174,7 +174,7 @@ enum StackFrameID {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 #[serde(tag = "name")]
-enum MetadataEvent {
+pub enum MetadataEvent {
     /// Sets the display name for the provided pid
     ///
     /// Must contain a "name" arg mapping into a name string
@@ -259,65 +259,65 @@ enum MetadataEvent {
 //
 // Used in #[serde(flatten)] so no #[serde(deny_unknown_fields)]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-struct MetadataFields {
+pub struct MetadataFields {
     /// Event arguments
     ///
     /// All MetadataEvents have one required argument that you should check in
     /// their documentation.
-    args: HashMap<String, json::Value>,
+    pub args: HashMap<String, json::Value>,
 
     /// Comma-separated list of categories (for filtering)
-    cat: Option<String>,
+    pub cat: Option<String>,
 
     /// Tracing clock timestamp in microseconds
-    ts: Option<Timestamp>,
+    pub ts: Option<Timestamp>,
 
     /// Thread clock timestamp in microseconds
-    tts: Option<Timestamp>,
+    pub tts: Option<Timestamp>,
 }
 
 /// Stack frame object
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-struct StackFrame {
+pub struct StackFrame {
     /// Usually a DSO
-    category: String,
+    pub category: String,
 
     /// Symbol name
-    name: String,
+    pub name: String,
 
     /// Parent stack frame, if not at the root of the stack
-    parent: Option<StackFrameID>,
+    pub parent: Option<StackFrameID>,
 }
 
 /// Sampling profiler data from an OS level profiler
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-struct Sample {
+pub struct Sample {
     /// CPU on which the sample was taken
-    cpu: Option<CpuId>,
+    pub cpu: Option<CpuId>,
 
     /// Thread ID that emitted this event
-    tid: Tid,
+    pub tid: Tid,
 
     /// Timestamp in fractional microseconds
-    ts: Timestamp,
+    pub ts: Timestamp,
 
     /// Name of the event that was sampled
-    name: String,
+    pub name: String,
 
     /// Stack frame
-    sf: StackFrameID,
+    pub sf: StackFrameID,
 
     /// Weight for relative impact assessment
-    weight: SampleWeight,
+    pub weight: SampleWeight,
 }
 
 /// CPU identifier
-type CpuId = i32;
+pub type CpuId = i32;
 
 /// Sample weight
-type SampleWeight = i64;
+pub type SampleWeight = i64;
 
 fn main() {
     const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
