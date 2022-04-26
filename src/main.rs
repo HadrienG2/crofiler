@@ -211,7 +211,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn json_array_format_example() {
+    fn json_array_format() {
+        // Example from spec
         let value = json::from_str::<TraceData>(
             r#"[ {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
   {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833} ]"#,
@@ -240,10 +241,21 @@ mod tests {
         );
     }
 
+    fn check_trace_data_object(json_str: &str, expected: TraceDataObject) {
+        // Start by parsing as TraceDateObject as this will result in better
+        // error messages in case of failure, but check that TraceData parsing
+        // works as well.
+        let actual1 =
+            json::from_str::<TraceDataObject>(json_str).expect("Deserialization should succeed");
+        assert_eq!(expected, actual1);
+        let actual2 =
+            json::from_str::<TraceData>(json_str).expect("Deserialization should succeed");
+        assert_eq!(TraceData::Object(expected), actual2);
+    }
+
     #[test]
-    fn json_object_format_example() {
-        // Top level example from CTF spec with minimal changes to make it
-        // valid CTF JSON.
+    fn json_object_format() {
+        // Example from spec with minimal changes to make it valid
         let example = r#"{
   "traceEvents": [
     {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
@@ -322,11 +334,135 @@ mod tests {
             }]),
             ..TraceDataObject::default()
         };
-        let actual1 =
-            json::from_str::<TraceDataObject>(example).expect("Deserialization should succeed");
-        assert_eq!(expected, actual1);
-        let actual2 = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
-        assert_eq!(TraceData::Object(expected), actual2);
+        check_trace_data_object(example, expected);
+    }
+
+    #[test]
+    fn duration_event() {
+        // Example from spec with minimal changes to make it valid
+        let example = r#"[
+{"name": "myFunction", "cat": "foo", "ph": "B", "ts": 123, "pid": 2343, "tid": 2347,
+ "args": {
+   "first": 1
+ }
+},
+{"ph": "E", "ts": 145, "pid": 2343, "tid": 2347,
+ "args": {
+   "first": 4,
+   "second": 2
+ }
+}]"#;
+        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
+        assert_eq!(
+            value,
+            TraceData::Array(vec![
+                TraceEvent::B(DurationEvent {
+                    name: Some("myFunction".to_owned()),
+                    cat: Some("foo".to_owned()),
+                    ts: 123.0,
+                    pid: 2343,
+                    tid: 2347,
+                    args: Some(maplit::hashmap! {
+                        "first".to_owned() => json::json!(1usize)
+                    }),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    ts: 145.0,
+                    pid: 2343,
+                    tid: 2347,
+                    args: Some(maplit::hashmap! {
+                        "first".to_owned() => json::json!(4usize),
+                        "second".to_owned() => json::json!(2usize)
+                    }),
+                    ..DurationEvent::default()
+                })
+            ])
+        );
+    }
+
+    #[test]
+    fn nested_duration_event() {
+        // Example from spec with minimal changes to make it valid
+        let example = r#"[
+{ "pid": 1, "ts": 1.0, "tid": 1, "ph": "B", "name": "A"},
+{ "pid": 1, "ts": 1.1, "tid": 1, "ph": "B", "name": "Asub"},
+{ "pid": 1, "ts": 3.9, "tid": 1, "ph": "E"},
+{ "pid": 1, "ts": 4.0, "tid": 1, "ph": "E"}]"#;
+        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
+        assert_eq!(
+            value,
+            TraceData::Array(vec![
+                TraceEvent::B(DurationEvent {
+                    pid: 1,
+                    ts: 1.0,
+                    tid: 1,
+                    name: Some("A".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::B(DurationEvent {
+                    pid: 1,
+                    ts: 1.1,
+                    tid: 1,
+                    name: Some("Asub".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 1,
+                    ts: 3.9,
+                    tid: 1,
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 1,
+                    ts: 4.0,
+                    tid: 1,
+                    ..DurationEvent::default()
+                })
+            ])
+        );
+    }
+
+    #[test]
+    fn thread_interleaving_duration_event() {
+        // Example from spec with minimal changes to make it valid
+        let example = r#"[
+{ "pid": 1, "ts": 1.0, "tid": 1, "ph": "B", "name": "A"},
+{ "pid": 1, "ts": 0.9, "tid": 2, "ph": "B", "name": "B"},
+{ "pid": 1, "ts": 1.1, "tid": 1, "ph": "E"},
+{ "pid": 1, "ts": 4.0, "tid": 2, "ph": "E"}]"#;
+        let value = json::from_str::<TraceData>(example).expect("Deserialization should succeed");
+        assert_eq!(
+            value,
+            TraceData::Array(vec![
+                TraceEvent::B(DurationEvent {
+                    pid: 1,
+                    ts: 1.0,
+                    tid: 1,
+                    name: Some("A".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::B(DurationEvent {
+                    pid: 1,
+                    ts: 0.9,
+                    tid: 2,
+                    name: Some("B".to_owned()),
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 1,
+                    ts: 1.1,
+                    tid: 1,
+                    ..DurationEvent::default()
+                }),
+                TraceEvent::E(DurationEvent {
+                    pid: 1,
+                    ts: 4.0,
+                    tid: 2,
+                    ..DurationEvent::default()
+                })
+            ])
+        );
     }
 
     // TODO: Add more examples from the CTF spec
