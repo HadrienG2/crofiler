@@ -1,32 +1,32 @@
 mod parser;
 
-use crate::parser::{TraceDataObject, TraceEvent};
+use crate::parser::{DisplayTimeUnit, TraceDataObject, TraceEvent};
 use serde_json as json;
-use std::{fs::File, io::Read};
+use std::{collections::HashMap, fs::File, io::Read};
 
 fn main() {
     const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
-    let mut s = String::new();
+    let mut profile_str = String::new();
     File::open(FILENAME)
         .unwrap()
-        .read_to_string(&mut s)
+        .read_to_string(&mut profile_str)
         .unwrap();
-    let value = json::from_str::<TraceDataObject>(&s).unwrap();
+    let profile_ctf = json::from_str::<TraceDataObject>(&profile_str).unwrap();
 
-    dbg!(value.displayTimeUnit);
-    dbg!(value.systemTraceEvents);
-    dbg!(value.powerTraceAsString);
-    dbg!(value.stackFrames);
-    dbg!(value.samples);
-    dbg!(value.controllerTraceDataKey);
-    dbg!(value.extra);
+    assert_eq!(profile_ctf.displayTimeUnit, DisplayTimeUnit::ms);
+    assert_eq!(profile_ctf.systemTraceEvents, None);
+    assert_eq!(profile_ctf.powerTraceAsString, None);
+    assert_eq!(profile_ctf.stackFrames, None);
+    assert_eq!(profile_ctf.samples, None);
+    assert_eq!(profile_ctf.controllerTraceDataKey, None);
+    assert_eq!(profile_ctf.extra, HashMap::new());
 
     let mut display_period = 1;
     let display_period_increment = 10;
     let display_increment_period = 10;
     let mut displayed_events = 0;
     let mut current_event = 0;
-    for e in value.traceEvents {
+    for e in profile_ctf.traceEvents {
         match e {
             TraceEvent::M(_) => println!("{:#?}", e),
             TraceEvent::X { .. } => {
