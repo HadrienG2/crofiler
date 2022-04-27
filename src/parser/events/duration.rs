@@ -66,7 +66,7 @@ mod tests {
         let expected = &[
             TraceEvent::B(DurationEvent {
                 name: Some("myFunction".to_owned()),
-                cat: Some(EventCategories(vec!["foo".to_owned()])),
+                cat: Some(EventCategories(vec!["foo".to_owned()].into_boxed_slice())),
                 ts: 123.0,
                 pid: 2343,
                 tid: 2347,
@@ -199,7 +199,8 @@ mod tests {
                     stack_trace: Some(StackTrace::sf(StackFrameId("9".to_owned()))),
                     ..DurationEvent::default()
                 }),
-            ],
+            ]
+            .into_boxed_slice(),
             stackFrames: Some(maplit::hashmap! {
                 "5".to_owned() => StackFrame {
                     name: "main".to_owned(),
@@ -232,7 +233,9 @@ mod tests {
             tid: 1,
             ts: 1.0,
             name: Some("A".to_owned()),
-            stack_trace: Some(StackTrace::stack(vec!["0x1".to_owned(), "0x2".to_owned()])),
+            stack_trace: Some(StackTrace::stack(
+                vec!["0x1".to_owned(), "0x2".to_owned()].into_boxed_slice(),
+            )),
             ..DurationEvent::default()
         });
         check_trace_event(example, expected);
@@ -250,7 +253,7 @@ mod tests {
         let expected = TraceEvent::X {
             duration_event: DurationEvent {
                 name: Some("myFunction".to_owned()),
-                cat: Some(EventCategories(vec!["foo".to_owned()])),
+                cat: Some(EventCategories(vec!["foo".to_owned()].into_boxed_slice())),
                 ts: 123.0,
                 pid: 2343,
                 tid: 2347,

@@ -12,7 +12,7 @@ pub enum StackTrace {
     sf(StackFrameId),
 
     /// Inline stack trace, as a list of symbols/addresses starting from the root
-    stack(Vec<String>),
+    stack(Box<[String]>),
 }
 
 /// Stack trace at the end of a complete event
@@ -26,7 +26,7 @@ pub enum EndStackTrace {
     esf(StackFrameId),
 
     /// Inline stack trace, as a list of symbols/addresses starting from the root
-    estack(Vec<String>),
+    estack(Box<[String]>),
 }
 
 /// Global stack frame ID

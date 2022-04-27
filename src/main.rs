@@ -26,7 +26,7 @@ fn main() {
     let display_increment_period = 10;
     let mut displayed_events = 0;
     let mut current_event = 0;
-    for e in profile_ctf.traceEvents {
+    for e in profile_ctf.traceEvents.into_iter() {
         match e {
             TraceEvent::M(_) => println!("{:#?}", e),
             TraceEvent::X { .. } => {

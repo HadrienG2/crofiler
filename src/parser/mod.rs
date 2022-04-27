@@ -29,7 +29,7 @@ pub enum TraceData {
 
     /// JSON Array Format, essentially an array of event objects, may not be in
     /// timestamp-sorted order, may lack trailing ]
-    Array(Vec<TraceEvent>),
+    Array(Box<[TraceEvent]>),
 }
 
 /// JSON Object Format
@@ -39,7 +39,7 @@ pub enum TraceData {
 #[allow(non_snake_case)]
 pub struct TraceDataObject {
     /// Event objects, may not be in timestamp-sorted order
-    pub traceEvents: Vec<TraceEvent>,
+    pub traceEvents: Box<[TraceEvent]>,
 
     /// Unit in which timestamps should be displayed
     #[serde(default)]
@@ -67,7 +67,7 @@ pub struct TraceDataObject {
     pub stackFrames: Option<HashMap<String, StackFrame>>,
 
     /// Sampling profiler data from an OS level profiler
-    pub samples: Option<Vec<Sample>>,
+    pub samples: Option<Box<[Sample]>>,
 
     /// Specifies which trace data comes from tracing controller. Its value
     /// should be the key for that specific trace data, e.g. "traceEvents".
@@ -180,7 +180,7 @@ pub type Pid = i32;
 /// Event categories
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(from = "String")]
-pub struct EventCategories(Vec<String>);
+pub struct EventCategories(Box<[String]>);
 //
 impl From<String> for EventCategories {
     fn from(s: String) -> Self {
@@ -215,14 +215,17 @@ pub(crate) mod tests {
     pub fn check_trace_data_array(json_str: &str, expected: &[TraceEvent]) {
         // Direct parsing
         let value = json::from_str::<TraceData>(json_str).expect("Deserialization should succeed");
-        assert_eq!(value, TraceData::Array(expected.to_vec()));
+        assert_eq!(
+            value,
+            TraceData::Array(expected.to_vec().into_boxed_slice())
+        );
 
         // Parsing of corresponding TraceDataObject
         let mut object_str = r#"{"traceEvents":"#.to_owned();
         object_str.push_str(json_str);
         object_str.push('}');
         let expected = TraceDataObject {
-            traceEvents: expected.to_vec(),
+            traceEvents: expected.to_vec().into_boxed_slice(),
             ..TraceDataObject::default()
         };
         check_trace_data_object(&object_str, expected);
@@ -254,7 +257,7 @@ pub(crate) mod tests {
                 tid: 22630,
                 ts: 829.0,
                 name: Some("Asub".to_owned()),
-                cat: Some(EventCategories(vec!["PERF".to_owned()])),
+                cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
                 ..DurationEvent::default()
             }),
             TraceEvent::E(DurationEvent {
@@ -262,7 +265,7 @@ pub(crate) mod tests {
                 tid: 22630,
                 ts: 833.0,
                 name: Some("Asub".to_owned()),
-                cat: Some(EventCategories(vec!["PERF".to_owned()])),
+                cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
                 ..DurationEvent::default()
             }),
         ];
@@ -309,7 +312,7 @@ pub(crate) mod tests {
                     tid: 22630,
                     ts: 829.0,
                     name: Some("Asub".to_owned()),
-                    cat: Some(EventCategories(vec!["PERF".to_owned()])),
+                    cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
                     ..DurationEvent::default()
                 }),
                 TraceEvent::E(DurationEvent {
@@ -317,10 +320,11 @@ pub(crate) mod tests {
                     tid: 22630,
                     ts: 833.0,
                     name: Some("Asub".to_owned()),
-                    cat: Some(EventCategories(vec!["PERF".to_owned()])),
+                    cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
                     ..DurationEvent::default()
                 }),
-            ],
+            ]
+            .into_boxed_slice(),
             displayTimeUnit: DisplayTimeUnit::ns,
             systemTraceEvents: Some("SystemTraceData".to_owned()),
             stackFrames: Some(maplit::hashmap! {
@@ -340,14 +344,17 @@ pub(crate) mod tests {
                     parent: None,
                 }
             }),
-            samples: Some(vec![Sample {
-                cpu: Some(0),
-                tid: 1,
-                ts: 1000.0,
-                name: "cycles:HG".to_owned(),
-                sf: StackFrameId("3".to_owned()),
-                weight: 1,
-            }]),
+            samples: Some(
+                vec![Sample {
+                    cpu: Some(0),
+                    tid: 1,
+                    ts: 1000.0,
+                    name: "cycles:HG".to_owned(),
+                    sf: StackFrameId("3".to_owned()),
+                    weight: 1,
+                }]
+                .into_boxed_slice(),
+            ),
             extra: maplit::hashmap! {
                 "otherData".to_owned() => json::json!({
                     "version": "My Application v1.0"
