@@ -133,6 +133,7 @@ impl TimeTrace {
                     // that a parent activity follows the sequence of its
                     // transitive children, which simplifies tree building).
                     let end = ts + dur;
+                    // FIXME: No assertion
                     assert!(end >= last_end, "Bad -ftime-trace logic guess");
                     last_end = end;
 
@@ -181,6 +182,7 @@ impl TimeTrace {
                 }
 
                 // No other CTF record is expected from -ftime-trace
+                // FIXME: No assertion
                 _ => panic!("Unexpected event {:#?}", event),
             }
         }
@@ -201,6 +203,7 @@ impl TimeTrace {
 
         // After this, activity_tree should contain as many nodes as activities,
         // since each node is either a root or a child of another node
+        // FIXME: No assertion
         assert_eq!(activities.len(), activity_tree.len());
 
         // Build the final TimeTrace
