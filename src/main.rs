@@ -13,6 +13,7 @@ use std::{
     fs::File,
     io::Read,
     ops::{Bound, Range, RangeBounds},
+    path::Path,
     slice::SliceIndex,
 };
 
@@ -42,7 +43,248 @@ pub struct TimeTrace {
 }
 //
 impl TimeTrace {
-    // TODO: Constructor from file, with clean error handling
+    /// Load from clang -ftime-trace output
+    // FIXME: Modularize and add proper error handling
+    pub fn load(path: impl AsRef<Path>) -> Self {
+        let mut profile_str = String::new();
+        File::open(path)
+            .unwrap()
+            .read_to_string(&mut profile_str)
+            .unwrap();
+        let profile_ctf = json::from_str::<TraceDataObject>(&profile_str).unwrap();
+
+        // Clang's -ftime-trace uses the Trace Data Object format but does not
+        // leverage any of its extra fields...
+        assert_eq!(profile_ctf.displayTimeUnit, DisplayTimeUnit::ms);
+        assert_eq!(profile_ctf.systemTraceEvents, None);
+        assert_eq!(profile_ctf.powerTraceAsString, None);
+        assert_eq!(profile_ctf.stackFrames, None);
+        assert_eq!(profile_ctf.samples, None);
+        assert_eq!(profile_ctf.controllerTraceDataKey, None);
+        assert_eq!(profile_ctf.extra, HashMap::new());
+
+        // Process the trace events
+        let mut process_name = None;
+        let mut last_end = Timestamp::MIN;
+        let mut activities: Vec<ActivityData> =
+            Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
+        let mut activity_tree = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
+        let mut global_stats = HashMap::new();
+        let mut children_accumulator = Vec::new();
+        //
+        'event_loop: for event in profile_ctf.traceEvents.into_iter() {
+            match event {
+                // Process name metadata with lots of defaulted fields
+                TraceEvent::M(MetadataEvent::process_name {
+                    pid: 1,
+                    args: NameArgs { name, extra },
+                    tid: Some(0),
+                    options:
+                        MetadataOptions {
+                            cat: Some(cat),
+                            ts: Some(ts),
+                            tts: None,
+                        },
+                }) => {
+                    assert_eq!(extra, &HashMap::new(), "Unexpected extra arguments");
+                    assert_eq!(cat.0, vec![].into_boxed_slice(), "Unexpected categories");
+                    assert_eq!(ts, &0.0, "Unexpected timestamp");
+                    assert_eq!(process_name, None, "Expected only one process name");
+                    process_name = Some(name.clone());
+                }
+
+                // Duration event
+                TraceEvent::X {
+                    duration_event:
+                        DurationEvent {
+                            pid: 1,
+                            tid,
+                            ts,
+                            name: Some(name),
+                            cat: None,
+                            tts: None,
+                            args,
+                            stack_trace: None,
+                        },
+                    dur,
+                    tdur: None,
+                    end_stack_trace: None,
+                } => {
+                    // Events with a nonzero thread ID should be global stats
+                    if *tid != 0 {
+                        // Events with a nonzero thread ID should be global stats
+                        assert_eq!(*ts, 0.0, "Bad -ftime-trace logic guess");
+                        assert!(name.starts_with("Total "), "Bad -ftime-trace logic guess");
+                        let args = args.as_ref().expect("Global stats should have arguments");
+                        let mut keys = args.keys().collect::<Vec<&String>>();
+                        keys.sort();
+                        assert_eq!(
+                            keys,
+                            vec![&"avg ms".to_owned(), &"count".to_owned()],
+                            "Bad -ftime-trace logic guess"
+                        );
+
+                        // Keep track of it to allow further examination
+                        let old = global_stats.insert(
+                            name.clone(),
+                            GlobalStat {
+                                total_duration: *dur,
+                                count: args["count"].as_u64().expect("Expected an integer count")
+                                    as usize,
+                            },
+                        );
+                        assert_eq!(
+                            old, None,
+                            "Value {name} appeared twice with values {old:?} and {:?}",
+                            global_stats[name]
+                        );
+                        continue 'event_loop;
+                    }
+
+                    // Other events with a zero thread ID should be activities
+                    // Among those, PerformPendingInstantiations is special by
+                    // virtue of taking no arguments, everyone else does.
+                    let activity = match &**name {
+                        "PerformPendingInstantiations" => Activity::PerformPendingInstantiations,
+                        "Frontend" => Activity::Frontend,
+                        "PerFunctionPasses" => Activity::PerFunctionPasses,
+                        "PerModulePasses" => Activity::PerModulePasses,
+                        "CodeGenPasses" => Activity::CodeGenPasses,
+                        "Backend" => Activity::Backend,
+                        "ExecuteCompiler" => Activity::ExecuteCompiler,
+                        _ => {
+                            if let Some(args) = args {
+                                let mut args_iter = args.iter();
+                                let (k, v) = args_iter.next().expect("Expected an argument");
+                                assert_eq!(k, "detail", "Unexpected argument {k}: {v}");
+                                let v = if let json::Value::String(s) = v {
+                                    s
+                                } else {
+                                    panic!("Detail argument should be a string, but got {v}")
+                                };
+                                assert_eq!(
+                                    args_iter.next(),
+                                    None,
+                                    "Unexpected extra arguments beyond \"detail\" in {args:?}"
+                                );
+                                match &**name {
+                                    "Source" => Activity::Source(v.clone()),
+                                    "ParseClass" => Activity::ParseClass(v.clone()),
+                                    "InstantiateClass" => Activity::InstantiateClass(v.clone()),
+                                    "InstantiateTemplate" => {
+                                        Activity::InstantiateTemplate(v.clone())
+                                    }
+                                    "ParseTemplate" => Activity::ParseTemplate(v.clone()),
+                                    "InstantiateFunction" => {
+                                        Activity::InstantiateFunction(v.clone())
+                                    }
+                                    "DebugType" => Activity::DebugType(v.clone()),
+                                    "DebugGlobalVariable" => {
+                                        Activity::DebugGlobalVariable(v.clone())
+                                    }
+                                    "CodeGen Function" => Activity::CodeGenFunction(v.clone()),
+                                    "DebugFunction" => Activity::DebugFunction(v.clone()),
+                                    "RunPass" => Activity::RunPass(v.clone()),
+                                    "OptFunction" => Activity::OptFunction(v.clone()),
+                                    "RunLoopPass" => Activity::RunLoopPass(v.clone()),
+                                    "OptModule" => Activity::OptModule(v.clone()),
+                                    _ => panic!("Unexpected activity: {name} with parameter {v}"),
+                                }
+                            } else {
+                                panic!("Unexpected activity: {name}")
+                            }
+                        }
+                    };
+
+                    // Check assumption that clang -ftime-trace activities are
+                    // sorted in order of increasing end timestamp (this means
+                    // that a parent activity follows the sequence of its
+                    // transitive children, which simplifies tree building).
+                    let end = ts + dur;
+                    assert!(end >= last_end, "Bad -ftime-trace logic guess");
+                    last_end = end;
+
+                    // Collect the list of this activity's children (if any)
+                    let mut first_related_idx = activities.len();
+                    let mut child_candidates = &activities[..];
+                    let mut children_duration = 0.0;
+                    children_accumulator.clear();
+                    while let Some((candidate, next_candidates)) = child_candidates.split_last() {
+                        // Abort once we find a candidate which starts before we
+                        // do: that's not a child, and we know no further child
+                        // will come before that by the above ordering property.
+                        let candidate_idx = next_candidates.len();
+                        if candidate.start < *ts {
+                            debug_assert!(candidate.start + candidate.duration <= *ts);
+                            break;
+                        }
+                        debug_assert!(candidate.start + candidate.duration <= end);
+
+                        // This is a child, add its index to our child list and
+                        // accumulate its duration for self-duration computation
+                        children_accumulator.push(candidate_idx);
+                        children_duration += candidate.duration;
+
+                        // Ignore transitive children of this child and add them to
+                        // our own set of transitive children.
+                        first_related_idx = candidate.first_related_idx;
+                        child_candidates = &next_candidates[..first_related_idx];
+                    }
+
+                    // Append this children list at the end of the tree and
+                    // reset the accumulator.
+                    let first_child_index = activity_tree.len();
+                    activity_tree.extend_from_slice(&children_accumulator[..]);
+                    let children_indices = first_child_index..activity_tree.len();
+
+                    // Fill profile
+                    activities.push(ActivityData {
+                        activity,
+                        start: *ts,
+                        duration: *dur,
+                        first_related_idx,
+                        children_indices,
+                        self_duration: *dur - children_duration,
+                    });
+                }
+
+                // No other CTF record is expected of -ftime-trace
+                _ => panic!("Unexpected event {:#?}", event),
+            }
+        }
+
+        // Collect the list of tree roots
+        let mut root_accumulator = children_accumulator;
+        root_accumulator.clear();
+        let mut root_candidates = &activities[..];
+        while let Some((root, next_candidates)) = root_candidates.split_last() {
+            // This is a root, add its index to our root list.
+            root_accumulator.push(next_candidates.len());
+
+            // Skip transitive children to find the previous root
+            root_candidates = &next_candidates[..root.first_related_idx];
+        }
+        let first_root_idx = activity_tree.len();
+        activity_tree.extend_from_slice(&root_accumulator[..]);
+
+        // After this, activity_tree should contain as many nodes as activities,
+        // since each node is either a root or a child of another node.
+        println!(
+            "From {} trace events, collected {} activities in a tree",
+            profile_ctf.traceEvents.len(),
+            activities.len()
+        );
+        assert_eq!(activities.len(), activity_tree.len());
+
+        // Build the final TimeTrace
+        Self {
+            process_name: process_name.expect("No process name found"),
+            activities: activities.into_boxed_slice(),
+            activity_tree: activity_tree.into_boxed_slice(),
+            first_root_idx,
+            global_stats,
+        }
+    }
 
     /// Name of the clang process that acquired this data
     pub fn process_name(&self) -> &str {
@@ -294,236 +536,5 @@ impl GlobalStat {
 }
 
 fn main() {
-    const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
-    let mut profile_str = String::new();
-    File::open(FILENAME)
-        .unwrap()
-        .read_to_string(&mut profile_str)
-        .unwrap();
-    let profile_ctf = json::from_str::<TraceDataObject>(&profile_str).unwrap();
-
-    // Clang's -ftime-trace uses the Trace Data Object format but does not
-    // leverage any of its extra fields...
-    assert_eq!(profile_ctf.displayTimeUnit, DisplayTimeUnit::ms);
-    assert_eq!(profile_ctf.systemTraceEvents, None);
-    assert_eq!(profile_ctf.powerTraceAsString, None);
-    assert_eq!(profile_ctf.stackFrames, None);
-    assert_eq!(profile_ctf.samples, None);
-    assert_eq!(profile_ctf.controllerTraceDataKey, None);
-    assert_eq!(profile_ctf.extra, HashMap::new());
-
-    // Process the trace events
-    let mut process_name = None;
-    let mut last_end = Timestamp::MIN;
-    let mut activities: Vec<ActivityData> = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
-    let mut activity_tree = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
-    let mut global_stats = HashMap::new();
-    let mut children_accumulator = Vec::new();
-    //
-    'event_loop: for event in profile_ctf.traceEvents.into_iter() {
-        match event {
-            // Process name metadata with lots of defaulted fields
-            TraceEvent::M(MetadataEvent::process_name {
-                pid: 1,
-                args: NameArgs { name, extra },
-                tid: Some(0),
-                options:
-                    MetadataOptions {
-                        cat: Some(cat),
-                        ts: Some(ts),
-                        tts: None,
-                    },
-            }) => {
-                assert_eq!(extra, &HashMap::new(), "Unexpected extra arguments");
-                assert_eq!(cat.0, vec![].into_boxed_slice(), "Unexpected categories");
-                assert_eq!(ts, &0.0, "Unexpected timestamp");
-                assert_eq!(process_name, None, "Expected only one process name");
-                process_name = Some(name.clone());
-            }
-
-            // Duration event
-            TraceEvent::X {
-                duration_event:
-                    DurationEvent {
-                        pid: 1,
-                        tid,
-                        ts,
-                        name: Some(name),
-                        cat: None,
-                        tts: None,
-                        args,
-                        stack_trace: None,
-                    },
-                dur,
-                tdur: None,
-                end_stack_trace: None,
-            } => {
-                // Events with a nonzero thread ID should be global stats
-                if *tid != 0 {
-                    // Events with a nonzero thread ID should be global stats
-                    assert_eq!(*ts, 0.0, "Bad -ftime-trace logic guess");
-                    assert!(name.starts_with("Total "), "Bad -ftime-trace logic guess");
-                    let args = args.as_ref().expect("Global stats should have arguments");
-                    let mut keys = args.keys().collect::<Vec<&String>>();
-                    keys.sort();
-                    assert_eq!(
-                        keys,
-                        vec![&"avg ms".to_owned(), &"count".to_owned()],
-                        "Bad -ftime-trace logic guess"
-                    );
-
-                    // Keep track of it to allow further examination
-                    let old = global_stats.insert(
-                        name.clone(),
-                        GlobalStat {
-                            total_duration: *dur,
-                            count: args["count"].as_u64().expect("Expected an integer count")
-                                as usize,
-                        },
-                    );
-                    assert_eq!(
-                        old, None,
-                        "Value {name} appeared twice with values {old:?} and {:?}",
-                        global_stats[name]
-                    );
-                    continue 'event_loop;
-                }
-
-                // Other events with a zero thread ID should be activities
-                // Among those, PerformPendingInstantiations is special by
-                // virtue of taking no arguments, everyone else does.
-                let activity = match &**name {
-                    "PerformPendingInstantiations" => Activity::PerformPendingInstantiations,
-                    "Frontend" => Activity::Frontend,
-                    "PerFunctionPasses" => Activity::PerFunctionPasses,
-                    "PerModulePasses" => Activity::PerModulePasses,
-                    "CodeGenPasses" => Activity::CodeGenPasses,
-                    "Backend" => Activity::Backend,
-                    "ExecuteCompiler" => Activity::ExecuteCompiler,
-                    _ => {
-                        if let Some(args) = args {
-                            let mut args_iter = args.iter();
-                            let (k, v) = args_iter.next().expect("Expected an argument");
-                            assert_eq!(k, "detail", "Unexpected argument {k}: {v}");
-                            let v = if let json::Value::String(s) = v {
-                                s
-                            } else {
-                                panic!("Detail argument should be a string, but got {v}")
-                            };
-                            assert_eq!(
-                                args_iter.next(),
-                                None,
-                                "Unexpected extra arguments beyond \"detail\" in {args:?}"
-                            );
-                            match &**name {
-                                "Source" => Activity::Source(v.clone()),
-                                "ParseClass" => Activity::ParseClass(v.clone()),
-                                "InstantiateClass" => Activity::InstantiateClass(v.clone()),
-                                "InstantiateTemplate" => Activity::InstantiateTemplate(v.clone()),
-                                "ParseTemplate" => Activity::ParseTemplate(v.clone()),
-                                "InstantiateFunction" => Activity::InstantiateFunction(v.clone()),
-                                "DebugType" => Activity::DebugType(v.clone()),
-                                "DebugGlobalVariable" => Activity::DebugGlobalVariable(v.clone()),
-                                "CodeGen Function" => Activity::CodeGenFunction(v.clone()),
-                                "DebugFunction" => Activity::DebugFunction(v.clone()),
-                                "RunPass" => Activity::RunPass(v.clone()),
-                                "OptFunction" => Activity::OptFunction(v.clone()),
-                                "RunLoopPass" => Activity::RunLoopPass(v.clone()),
-                                "OptModule" => Activity::OptModule(v.clone()),
-                                _ => panic!("Unexpected activity: {name} with parameter {v}"),
-                            }
-                        } else {
-                            panic!("Unexpected activity: {name}")
-                        }
-                    }
-                };
-
-                // Check assumption that clang -ftime-trace activities are
-                // sorted in order of increasing end timestamp (this means
-                // that a parent activity follows the sequence of its
-                // transitive children, which simplifies tree building).
-                let end = ts + dur;
-                assert!(end >= last_end, "Bad -ftime-trace logic guess");
-                last_end = end;
-
-                // Collect the list of this activity's children (if any)
-                let mut first_related_idx = activities.len();
-                let mut child_candidates = &activities[..];
-                let mut children_duration = 0.0;
-                children_accumulator.clear();
-                while let Some((candidate, next_candidates)) = child_candidates.split_last() {
-                    // Abort once we find a candidate which starts before we
-                    // do: that's not a child, and we know no further child
-                    // will come before that by the above ordering property.
-                    let candidate_idx = next_candidates.len();
-                    if candidate.start < *ts {
-                        debug_assert!(candidate.start + candidate.duration <= *ts);
-                        break;
-                    }
-                    debug_assert!(candidate.start + candidate.duration <= end);
-
-                    // This is a child, add its index to our child list and
-                    // accumulate its duration for self-duration computation
-                    children_accumulator.push(candidate_idx);
-                    children_duration += candidate.duration;
-
-                    // Ignore transitive children of this child and add them to
-                    // our own set of transitive children.
-                    first_related_idx = candidate.first_related_idx;
-                    child_candidates = &next_candidates[..first_related_idx];
-                }
-
-                // Append this children list at the end of the tree and
-                // reset the accumulator.
-                let first_child_index = activity_tree.len();
-                activity_tree.extend_from_slice(&children_accumulator[..]);
-                let children_indices = first_child_index..activity_tree.len();
-
-                // Fill profile
-                activities.push(ActivityData {
-                    activity,
-                    start: *ts,
-                    duration: *dur,
-                    first_related_idx,
-                    children_indices,
-                    self_duration: *dur - children_duration,
-                });
-            }
-
-            // No other CTF record is expected of -ftime-trace
-            _ => panic!("Unexpected event {:#?}", event),
-        }
-    }
-
-    // Collect the list of tree roots
-    let mut root_accumulator = children_accumulator;
-    root_accumulator.clear();
-    let mut root_candidates = &activities[..];
-    while let Some((root, next_candidates)) = root_candidates.split_last() {
-        // This is a root, add its index to our root list.
-        root_accumulator.push(next_candidates.len());
-
-        // Skip transitive children to find the previous root
-        root_candidates = &next_candidates[..root.first_related_idx];
-    }
-    let first_root_idx = activity_tree.len();
-    activity_tree.extend_from_slice(&root_accumulator[..]);
-
-    // After this, activity_tree should contain as many nodes as activities,
-    // since each node is either a root or a child of another node.
-    println!(
-        "From {} trace events, collected {} activities in a tree",
-        profile_ctf.traceEvents.len(),
-        activities.len()
-    );
-    assert_eq!(activities.len(), activity_tree.len());
-
-    // Build the final TimeTrace"
-    let trace = TimeTrace {
-        process_name: process_name.expect("No process name found"),
-        activities: activities.into_boxed_slice(),
-        activity_tree: activity_tree.into_boxed_slice(),
-        first_root_idx,
-        global_stats,
-    };
+    let trace = TimeTrace::load("2020-05-25_CombinatorialKalmanFilterTests.cpp.json");
 }
