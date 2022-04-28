@@ -11,7 +11,7 @@ use self::{
             duration::DurationEvent,
             metadata::{MetadataEvent, MetadataOptions, NameArgs},
         },
-        DisplayTimeUnit, Duration, Timestamp, TraceDataObject, TraceEvent,
+        Duration, Timestamp, TraceDataObject, TraceEvent,
     },
 };
 use serde_json as json;
@@ -60,14 +60,16 @@ impl TimeTrace {
         let profile_ctf = json::from_str::<TraceDataObject>(&profile_str)?;
 
         // Clang's -ftime-trace uses the Trace Data Object format but does not
-        // leverage any of its extra fields...
-        assert_eq!(profile_ctf.displayTimeUnit, DisplayTimeUnit::ms);
-        assert_eq!(profile_ctf.systemTraceEvents, None);
-        assert_eq!(profile_ctf.powerTraceAsString, None);
-        assert_eq!(profile_ctf.stackFrames, None);
-        assert_eq!(profile_ctf.samples, None);
-        assert_eq!(profile_ctf.controllerTraceDataKey, None);
-        assert_eq!(profile_ctf.extra, HashMap::new());
+        // leverage any of its extra fields
+        let profile_wo_events = TraceDataObject {
+            traceEvents: Box::default(),
+            ..profile_ctf
+        };
+        if profile_wo_events != TraceDataObject::default() {
+            return Err(TimeTraceLoadError::UnexpectedGlobalMetadata(
+                profile_wo_events,
+            ));
+        }
 
         // Process the trace events
         let mut process_name = None;
@@ -93,7 +95,7 @@ impl TimeTrace {
                         },
                 }) => {
                     assert_eq!(extra, &HashMap::new(), "Unexpected extra arguments");
-                    assert_eq!(cat.0, vec![].into_boxed_slice(), "Unexpected categories");
+                    assert_eq!(cat.0, Box::default(), "Unexpected categories");
                     assert_eq!(ts, &0.0, "Unexpected timestamp");
                     assert_eq!(process_name, None, "Expected only one process name");
                     process_name = Some(name.clone());
@@ -237,6 +239,8 @@ impl TimeTrace {
         })
     }
 
+    ///
+
     /// Name of the clang process that acquired this data
     pub fn process_name(&self) -> &str {
         &self.process_name
@@ -294,10 +298,12 @@ impl TimeTrace {
 /// Things that can go wrong while loading clang's -ftime-trace data
 #[derive(Error, Debug)]
 pub enum TimeTraceLoadError {
-    #[error("failed to load JSON data from file")]
+    #[error("failed to load JSON data from file ({0})")]
     Io(#[from] io::Error),
-    #[error("failed to parse data as CTF JSON")]
+    #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
+    #[error("unexpected global metadata ({0:?})")]
+    UnexpectedGlobalMetadata(TraceDataObject),
     #[error("failed to parse an activity from CTF JSON")]
     ActivityParseError(#[from] activities::ActivityParseError),
 }
