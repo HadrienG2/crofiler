@@ -18,11 +18,12 @@ use serde_json as json;
 use std::{
     collections::HashMap,
     fs::File,
-    io::Read,
+    io::{self, Read},
     ops::{Bound, Range, RangeBounds},
     path::Path,
     slice::SliceIndex,
 };
+use thiserror::Error;
 
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
@@ -51,14 +52,12 @@ pub struct TimeTrace {
 //
 impl TimeTrace {
     /// Load from clang -ftime-trace output
-    // FIXME: Modularize and add proper error handling
-    pub fn load(path: impl AsRef<Path>) -> Self {
+    // FIXME/WIP: Modularize and add proper error handling
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, TimeTraceLoadError> {
+        // Load JSON data from the input file and parse it as CTF JSON
         let mut profile_str = String::new();
-        File::open(path)
-            .unwrap()
-            .read_to_string(&mut profile_str)
-            .unwrap();
-        let profile_ctf = json::from_str::<TraceDataObject>(&profile_str).unwrap();
+        File::open(path)?.read_to_string(&mut profile_str)?;
+        let profile_ctf = json::from_str::<TraceDataObject>(&profile_str)?;
 
         // Clang's -ftime-trace uses the Trace Data Object format but does not
         // leverage any of its extra fields...
@@ -151,8 +150,7 @@ impl TimeTrace {
                     }
 
                     // Other events with a zero thread ID should be activities
-                    // TODO: Propagate error
-                    let activity = Activity::parse(name, args).expect("Failed to parse activity");
+                    let activity = Activity::parse(name, args)?;
 
                     // Check assumption that clang -ftime-trace activities are
                     // sorted in order of increasing end timestamp (this means
@@ -235,13 +233,13 @@ impl TimeTrace {
         assert_eq!(activities.len(), activity_tree.len());
 
         // Build the final TimeTrace
-        Self {
+        Ok(Self {
             process_name: process_name.expect("No process name found"),
             activities: activities.into_boxed_slice(),
             activity_tree: activity_tree.into_boxed_slice(),
             first_root_idx,
             global_stats,
-        }
+        })
     }
 
     /// Name of the clang process that acquired this data
@@ -291,6 +289,22 @@ impl TimeTrace {
                 }
             })
     }
+
+    /// Expose the global statistics
+    pub fn global_stats(&self) -> &HashMap<String, GlobalStat> {
+        &self.global_stats
+    }
+}
+
+/// Things that can go wrong while loading clang's -ftime-trace data
+#[derive(Error, Debug)]
+pub enum TimeTraceLoadError {
+    #[error("failed to load JSON data from file")]
+    Io(#[from] io::Error),
+    #[error("failed to parse data as CTF JSON")]
+    CtfParseError(#[from] json::Error),
+    #[error("failed to parse an activity from CTF JSON")]
+    ActivityParseError(#[from] activities::ActivityParseError),
 }
 
 /// View over an activity and its children
