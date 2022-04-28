@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Read,
-    ops::{Bound, Range, RangeBounds, RangeInclusive},
+    ops::{Bound, Range, RangeBounds},
     slice::SliceIndex,
 };
 
@@ -36,6 +36,9 @@ pub struct TimeTrace {
 
     /// Start of the list of root activities, at the end of the activity_tree
     first_root_idx: usize,
+
+    /// Global statistics
+    global_stats: HashMap<String, GlobalStat>,
 }
 //
 impl TimeTrace {
@@ -141,11 +144,6 @@ impl ActivityProfile<'_> {
             .hierarchy_iter_impl(self.activity_data.children_indices.clone())
     }
 
-    /// Tree indices of all child activities transitively spawned by this activity
-    fn flat_children_indices(&self) -> RangeInclusive<usize> {
-        self.activity_data.first_related_idx..=self.tree_idx
-    }
-
     /// Iterate over all transitively spawned children and their self time
     ///
     /// If you sort activites by decreasing self time, you get a flat profile.
@@ -153,7 +151,7 @@ impl ActivityProfile<'_> {
     /// grouping beforehand (e.g. by activity type, by file, by namespace...)
     ///
     pub fn child_flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
-        self.top_profile.activity_tree[self.flat_children_indices()]
+        self.top_profile.activity_tree[self.activity_data.first_related_idx..=self.tree_idx]
             .iter()
             .map(|&child_idx| {
                 let activity_data = &self.top_profile.activities[child_idx];
@@ -264,6 +262,37 @@ pub enum Activity {
     ExecuteCompiler,
 }
 
+/// Global clang execution statistics for a certain kind of activity
+///
+/// The precise semantics are unknown: are we talking about top-level entities?
+/// all entities? self time? children time?
+///
+#[derive(Debug, PartialEq)]
+pub struct GlobalStat {
+    /// Execution duration
+    total_duration: Duration,
+
+    /// Number of occurences of this event
+    count: usize,
+}
+//
+impl GlobalStat {
+    /// Total execution duration across all events
+    pub fn total_duration(&self) -> Duration {
+        self.total_duration
+    }
+
+    /// Number of occurences of this event
+    pub fn count(&self) -> usize {
+        self.count
+    }
+
+    /// Average duration of this event
+    pub fn avg_duration(&self) -> Duration {
+        self.total_duration / (self.count as Duration)
+    }
+}
+
 fn main() {
     const FILENAME: &str = "2020-05-25_CombinatorialKalmanFilterTests.cpp.json";
     let mut profile_str = String::new();
@@ -288,14 +317,8 @@ fn main() {
     let mut last_end = Timestamp::MIN;
     let mut activities: Vec<ActivityData> = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
     let mut activity_tree = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
+    let mut global_stats = HashMap::new();
     let mut children_accumulator = Vec::new();
-    //
-    // Debug display to be thrown away
-    let mut display_period = 1;
-    let display_period_increment = 10;
-    let display_increment_period = 10;
-    let mut displayed_events = 0;
-    let mut current_event = 0;
     //
     'event_loop: for event in profile_ctf.traceEvents.into_iter() {
         match event {
@@ -316,7 +339,6 @@ fn main() {
                 assert_eq!(ts, &0.0, "Unexpected timestamp");
                 assert_eq!(process_name, None, "Expected only one process name");
                 process_name = Some(name.clone());
-                println!("Process name is {name:#?}");
             }
 
             // Duration event
@@ -350,11 +372,19 @@ fn main() {
                         "Bad -ftime-trace logic guess"
                     );
 
-                    // Debug display to be thrown away
-                    // TODO: Extract this data and put it in TimeTrace
-                    println!(
-                        "Found global stat {name}: {dur}µs, {} occurence(s), avg. {}ms/occurence",
-                        args["count"], args["avg ms"]
+                    // Keep track of it to allow further examination
+                    let old = global_stats.insert(
+                        name.clone(),
+                        GlobalStat {
+                            total_duration: *dur,
+                            count: args["count"].as_u64().expect("Expected an integer count")
+                                as usize,
+                        },
+                    );
+                    assert_eq!(
+                        old, None,
+                        "Value {name} appeared twice with values {old:?} and {:?}",
+                        global_stats[name]
                     );
                     continue 'event_loop;
                 }
@@ -407,20 +437,6 @@ fn main() {
                         }
                     }
                 };
-
-                // Debug display to be thrown away
-                if current_event % display_period == 0 {
-                    if (displayed_events > 0) && (display_period > 1) {
-                        println!("... skipped {display_period} activities ...");
-                    }
-                    println!("{activity:#?} started at T={ts}µs, lasted {dur}µs");
-                    displayed_events += 1;
-                    if displayed_events % display_increment_period == 0 {
-                        display_period *= display_period_increment;
-                        println!("... will now only display 1 in {display_period} activities ...");
-                    }
-                }
-                current_event += 1;
 
                 // Check assumption that clang -ftime-trace activities are
                 // sorted in order of increasing end timestamp (this means
@@ -503,10 +519,11 @@ fn main() {
     assert_eq!(activities.len(), activity_tree.len());
 
     // Build the final TimeTrace"
-    let profile = TimeTrace {
+    let trace = TimeTrace {
         process_name: process_name.expect("No process name found"),
         activities: activities.into_boxed_slice(),
         activity_tree: activity_tree.into_boxed_slice(),
         first_root_idx,
+        global_stats,
     };
 }
