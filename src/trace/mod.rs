@@ -82,23 +82,17 @@ impl TimeTrace {
         //
         'event_loop: for event in profile_ctf.traceEvents.into_iter() {
             match event {
-                // Process name metadata with lots of defaulted fields
-                TraceEvent::M(MetadataEvent::process_name {
-                    pid: 1,
-                    args: NameArgs { name, extra },
-                    tid: Some(0),
-                    options:
-                        MetadataOptions {
-                            cat: Some(cat),
-                            ts: Some(ts),
-                            tts: None,
-                        },
-                }) => {
-                    assert_eq!(extra, &HashMap::new(), "Unexpected extra arguments");
-                    assert_eq!(cat.0, Box::default(), "Unexpected categories");
-                    assert_eq!(ts, &0.0, "Unexpected timestamp");
-                    assert_eq!(process_name, None, "Expected only one process name");
-                    process_name = Some(name.clone());
+                // Process name metadata
+                TraceEvent::M(m) => {
+                    let proc_name = Self::decode_process_name(m)?;
+                    if let Some(process_name) = process_name {
+                        return Err(TimeTraceLoadError::DuplicateProcessName(
+                            process_name,
+                            proc_name,
+                        ));
+                    } else {
+                        process_name = Some(proc_name);
+                    }
                 }
 
                 // Complete duration event
@@ -239,7 +233,24 @@ impl TimeTrace {
         })
     }
 
-    ///
+    /// Decode the clang process name (which is currently the only metadata
+    /// event that has been observed in -ftime-trace data)
+    fn decode_process_name(m: &MetadataEvent) -> Result<String, TimeTraceLoadError> {
+        match m {
+            MetadataEvent::process_name {
+                pid: 1,
+                args: NameArgs { name, extra },
+                tid: Some(0),
+                options:
+                    MetadataOptions {
+                        cat: Some(cat),
+                        ts: Some(ts),
+                        tts: None,
+                    },
+            } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
+            _ => Err(TimeTraceLoadError::UnexpectedMetadataEvent(m.clone())),
+        }
+    }
 
     /// Name of the clang process that acquired this data
     pub fn process_name(&self) -> &str {
@@ -302,8 +313,12 @@ pub enum TimeTraceLoadError {
     Io(#[from] io::Error),
     #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
-    #[error("unexpected global metadata ({0:?})")]
+    #[error("unexpected global metadata ({0:#?})")]
     UnexpectedGlobalMetadata(TraceDataObject),
+    #[error("unexpected {0:#?}")]
+    UnexpectedMetadataEvent(MetadataEvent),
+    #[error("multiple process names (\"{0}\" then \"{1}\")")]
+    DuplicateProcessName(String, String),
     #[error("failed to parse an activity from CTF JSON")]
     ActivityParseError(#[from] activities::ActivityParseError),
 }
