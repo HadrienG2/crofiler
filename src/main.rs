@@ -8,21 +8,29 @@ use crate::parser::{
     DisplayTimeUnit, Duration, Timestamp, TraceDataObject, TraceEvent,
 };
 use serde_json as json;
-use std::{collections::HashMap, fs::File, io::Read, ops::Range};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Read,
+    ops::{Bound, Range, RangeBounds, RangeInclusive},
+    slice::SliceIndex,
+};
 
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
-struct ClangProfile {
-    /// Name of the clang process (TODO: figure out if it always has a version)
+pub struct ClangProfile {
+    /// Name of the clang process
     process_name: String,
 
     /// Clang activities recorded by -ftime-trace
-    activities: Box<[ActivityProfile]>,
+    activities: Box<[ActivityData]>,
 
     /// Parent/child relationship of activities
     ///
     /// For each activity, we get a slice of indices inside of this array
     /// corresponding to other activities that were triggered by doing it.
+    /// At the end, there is also a slice of root activity indices which were
+    /// directly triggered by toplevel clang logic.
     ///
     activity_tree: Box<[usize]>,
 
@@ -30,13 +38,133 @@ struct ClangProfile {
     first_root_idx: usize,
 }
 //
-// TODO: Provide an iterator over all (activity, self_duration) for flat
-//       profiles and a hierarchical iterators over roots that allows iterating
-//       over the children of each node.
+impl ClangProfile {
+    // TODO: Constructor from file, with clean error handling
+
+    /// Name of the clang process that acquired this data
+    pub fn process_name(&self) -> &str {
+        &self.process_name
+    }
+
+    /// Iterate over all activities and their self time
+    ///
+    /// If you sort activites by decreasing self time, you get a flat profile.
+    /// But we don't do it automatically because you may want to do some
+    /// grouping beforehand (e.g. by activity type, by file, by namespace...)
+    ///
+    pub fn flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
+        self.activities
+            .iter()
+            .map(|prof| (&prof.activity, prof.self_duration))
+    }
+
+    /// Iterate over top-level activities, enabling iteration over their
+    /// children as the caller desires
+    pub fn hierarchy_iter(&self) -> impl Iterator<Item = ActivityProfile> {
+        self.hierarchy_iter_impl(self.first_root_idx..)
+    }
+
+    /// Generalization of hierarchy_iter that works with any contiguous subset
+    /// of the activity tree, which makes it usable for children of nodes in
+    /// addition to tree roots.
+    fn hierarchy_iter_impl<'_self>(
+        &'_self self,
+        node_set: impl RangeBounds<usize> + SliceIndex<[usize], Output = [usize]>,
+    ) -> impl Iterator<Item = ActivityProfile> + '_self {
+        let idx_shift = match node_set.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(&s) => s,
+            Bound::Excluded(&s) => s + 1,
+        };
+        self.activity_tree[node_set]
+            .iter()
+            .enumerate()
+            .map(move |(shifted_idx, &activity_idx)| {
+                let tree_idx = shifted_idx + idx_shift;
+                ActivityProfile {
+                    top_profile: self,
+                    activity_data: &self.activities[activity_idx],
+                    tree_idx,
+                }
+            })
+    }
+}
+
+/// View over an activity and its children
+#[derive(Debug)]
+pub struct ActivityProfile<'a> {
+    /// Which profile this activity comes from
+    top_profile: &'a ClangProfile,
+
+    /// Which activity we are looking at
+    activity_data: &'a ActivityData,
+
+    /// What is the index of this activity in the ClangProfile::tree array
+    tree_idx: usize,
+}
+//
+impl ActivityProfile<'_> {
+    /// What is going on
+    pub fn activity(&self) -> &Activity {
+        &self.activity_data.activity
+    }
+
+    /// When this activity started
+    pub fn start(&self) -> Timestamp {
+        self.activity_data.start
+    }
+
+    /// How much time was spent on it
+    pub fn duration(&self) -> Duration {
+        self.activity_data.duration
+    }
+
+    /// ...excluding transitively spawned children activity
+    pub fn self_duration(&self) -> Duration {
+        self.activity_data.self_duration
+    }
+
+    /// ...only accounting for transitively spawned children activity
+    pub fn children_duration(&self) -> Duration {
+        self.activity_data.duration - self.activity_data.self_duration
+    }
+
+    /// When this activity ended
+    pub fn end(&self) -> Timestamp {
+        self.activity_data.start + self.activity_data.duration
+    }
+
+    /// Iterate over children of this activity, enabling iteration over their
+    /// children as the caller desires
+    pub fn child_hierarchy_iter(&self) -> impl Iterator<Item = ActivityProfile> {
+        self.top_profile
+            .hierarchy_iter_impl(self.activity_data.children_indices.clone())
+    }
+
+    /// Tree indices of all child activities transitively spawned by this activity
+    fn flat_children_indices(&self) -> RangeInclusive<usize> {
+        self.activity_data.first_related_idx..=self.tree_idx
+    }
+
+    /// Iterate over all transitively spawned children and their self time
+    ///
+    /// If you sort activites by decreasing self time, you get a flat profile.
+    /// But we don't do it automatically because you may want to do some
+    /// grouping beforehand (e.g. by activity type, by file, by namespace...)
+    ///
+    pub fn child_flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
+        self.top_profile.activity_tree[self.flat_children_indices()]
+            .iter()
+            .map(|&child_idx| {
+                let activity_data = &self.top_profile.activities[child_idx];
+                (&activity_data.activity, activity_data.self_duration)
+            })
+    }
+}
 
 /// Clang activity with -ftime-trace profiling information
 #[derive(Debug, PartialEq)]
-struct ActivityProfile {
+struct ActivityData {
     /// What activity we are talking about
     activity: Activity,
 
@@ -56,16 +184,10 @@ struct ActivityProfile {
     /// Indices of the child activities in the global ClangProfile::tree array
     children_indices: Range<usize>,
 }
-//
-impl ActivityProfile {
-    pub fn end(&self) -> Timestamp {
-        self.start + self.duration
-    }
-}
 
 /// Clang activity without profiling information
 #[derive(Debug, PartialEq)]
-enum Activity {
+pub enum Activity {
     /// Processing a source file
     // TODO: Switch to Path + normalize
     Source(String),
@@ -164,8 +286,7 @@ fn main() {
     // Process the trace events
     let mut process_name = None;
     let mut last_end = Timestamp::MIN;
-    let mut activities: Vec<ActivityProfile> =
-        Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
+    let mut activities: Vec<ActivityData> = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
     let mut activity_tree = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
     let mut children_accumulator = Vec::new();
     //
@@ -343,7 +464,7 @@ fn main() {
                 let children_indices = first_child_index..activity_tree.len();
 
                 // Fill profile
-                activities.push(ActivityProfile {
+                activities.push(ActivityData {
                     activity,
                     start: *ts,
                     duration: *dur,
