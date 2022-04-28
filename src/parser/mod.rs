@@ -178,9 +178,9 @@ pub type SampleWeight = i64;
 pub type Pid = i32;
 
 /// Event categories
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(from = "String")]
-pub struct EventCategories(Box<[String]>);
+pub struct EventCategories(pub Box<[String]>);
 //
 impl From<String> for EventCategories {
     fn from(s: String) -> Self {
