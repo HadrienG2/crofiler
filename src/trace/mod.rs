@@ -311,14 +311,19 @@ impl TimeTrace {
 pub enum TimeTraceLoadError {
     #[error("failed to load JSON data from file ({0})")]
     Io(#[from] io::Error),
+
     #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
+
     #[error("unexpected global metadata ({0:#?})")]
     UnexpectedGlobalMetadata(TraceDataObject),
+
     #[error("unexpected {0:#?}")]
     UnexpectedMetadataEvent(MetadataEvent),
+
     #[error("multiple process names (\"{0}\" then \"{1}\")")]
     DuplicateProcessName(String, String),
+
     #[error("failed to parse an activity from CTF JSON")]
     ActivityParseError(#[from] activities::ActivityParseError),
 }

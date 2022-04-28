@@ -162,10 +162,13 @@ impl Activity {
 pub enum ActivityParseError {
     #[error("encountered unknown activity \"{0}\"")]
     UnknownActivity(String),
+
     #[error("expected activity argument \"{0}\" was not found")]
     MissingArgument(&'static str),
+
     #[error("Got unexpected value for argument \"{0}\": {1:?}")]
     UnexpectedArgumentValue(&'static str, json::Value),
+
     #[error("received unexpected activity arguments {0:?}")]
     UnexpectedArguments(HashMap<String, json::Value>),
 }
