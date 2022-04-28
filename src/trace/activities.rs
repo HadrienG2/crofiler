@@ -20,10 +20,6 @@ pub enum Activity {
     // TODO: Switch to a namespace + AST representation
     InstantiateClass(String),
 
-    /// Instantiating a template
-    // TODO: Switch to a namespace + AST representation, beware that this can contain "<unknown>", check for others
-    InstantiateTemplate(String),
-
     /// Parsing a template
     // TODO: Switch to a namespace + AST representation
     ParseTemplate(String),
@@ -143,26 +139,20 @@ impl Activity {
             "CodeGenPasses" => assert_nullary(Activity::CodeGenPasses),
             "Backend" => assert_nullary(Activity::Backend),
             "ExecuteCompiler" => assert_nullary(Activity::ExecuteCompiler),
-            _ => {
-                let arg = unary_argument()?;
-                match &**name {
-                    "Source" => Ok(Activity::Source(arg)),
-                    "ParseClass" => dbg!(Ok(Activity::ParseClass(arg))),
-                    "InstantiateClass" => Ok(Activity::InstantiateClass(arg)),
-                    "InstantiateTemplate" => Ok(Activity::InstantiateTemplate(arg)),
-                    "ParseTemplate" => Ok(Activity::ParseTemplate(arg)),
-                    "InstantiateFunction" => Ok(Activity::InstantiateFunction(arg)),
-                    "DebugType" => Ok(Activity::DebugType(arg)),
-                    "DebugGlobalVariable" => Ok(Activity::DebugGlobalVariable(arg)),
-                    "CodeGen Function" => Ok(Activity::CodeGenFunction(arg)),
-                    "DebugFunction" => Ok(Activity::DebugFunction(arg)),
-                    "RunPass" => Ok(Activity::RunPass(arg)),
-                    "OptFunction" => Ok(Activity::OptFunction(arg)),
-                    "RunLoopPass" => Ok(Activity::RunLoopPass(arg)),
-                    "OptModule" => Ok(Activity::OptModule(arg)),
-                    _ => Err(ActivityParseError::UnknownActivity(name.clone())),
-                }
-            }
+            "Source" => Ok(Activity::Source(unary_argument()?)),
+            "ParseClass" => Ok(Activity::ParseClass(unary_argument()?)),
+            "InstantiateClass" => Ok(Activity::InstantiateClass(unary_argument()?)),
+            "ParseTemplate" => Ok(Activity::ParseTemplate(unary_argument()?)),
+            "InstantiateFunction" => Ok(Activity::InstantiateFunction(unary_argument()?)),
+            "DebugType" => Ok(Activity::DebugType(unary_argument()?)),
+            "DebugGlobalVariable" => Ok(Activity::DebugGlobalVariable(unary_argument()?)),
+            "CodeGen Function" => Ok(Activity::CodeGenFunction(unary_argument()?)),
+            "DebugFunction" => Ok(Activity::DebugFunction(unary_argument()?)),
+            "RunPass" => Ok(Activity::RunPass(unary_argument()?)),
+            "OptFunction" => Ok(Activity::OptFunction(unary_argument()?)),
+            "RunLoopPass" => Ok(Activity::RunLoopPass(unary_argument()?)),
+            "OptModule" => Ok(Activity::OptModule(unary_argument()?)),
+            _ => Err(ActivityParseError::UnknownActivity(name.clone())),
         }
     }
 }
@@ -183,6 +173,15 @@ pub enum ActivityParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_activity() {
+        let activity = "ThisIsMadness".to_owned();
+        assert_eq!(
+            Activity::parse(&activity, &None),
+            Err(ActivityParseError::UnknownActivity(activity))
+        );
+    }
 
     fn nullary_test(name: &str, a: Activity) {
         let name = name.to_owned();
@@ -270,18 +269,105 @@ mod tests {
         unary_test("Source", PATH, Activity::Source(PATH.to_owned()));
     }
 
-    /* TODO
-    "ParseClass" => Ok(Activity::ParseClass(arg)),
-    "InstantiateClass" => Ok(Activity::InstantiateClass(arg)),
-    "InstantiateTemplate" => Ok(Activity::InstantiateTemplate(arg)),
-    "ParseTemplate" => Ok(Activity::ParseTemplate(arg)),
-    "InstantiateFunction" => Ok(Activity::InstantiateFunction(arg)),
-    "DebugType" => Ok(Activity::DebugType(arg)),
-    "DebugGlobalVariable" => Ok(Activity::DebugGlobalVariable(arg)),
-    "CodeGen Function" => Ok(Activity::CodeGenFunction(arg)),
-    "DebugFunction" => Ok(Activity::DebugFunction(arg)),
-    "RunPass" => Ok(Activity::RunPass(arg)),
-    "OptFunction" => Ok(Activity::OptFunction(arg)),
-    "RunLoopPass" => Ok(Activity::RunLoopPass(arg)),
-    "OptModule" => Ok(Activity::OptModule(arg)), */
+    #[test]
+    fn parse_class() {
+        const CLASS: &'static str = "Acts::Test::MeasurementCreator";
+        unary_test("ParseClass", CLASS, Activity::ParseClass(CLASS.to_owned()));
+    }
+
+    #[test]
+    fn instantiate_class() {
+        const CLASS: &'static str = "std::invoke_result<(lambda at /mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp:354:40), Acts::detail_lt::TrackStateProxy<Acts::Test::ExtendedMinimalSourceLink, 6, 6, true> >";
+        unary_test(
+            "InstantiateClass",
+            CLASS,
+            Activity::InstantiateClass(CLASS.to_owned()),
+        );
+    }
+
+    #[test]
+    fn parse_template() {
+        const TEMPLATE: &'static str = "<unknown>"; // Yes, clang can do that
+        unary_test(
+            "ParseTemplate",
+            TEMPLATE,
+            Activity::ParseTemplate(TEMPLATE.to_owned()),
+        );
+    }
+
+    #[test]
+    fn instantiate_function() {
+        const FUNCTION: &'static str = "boost::unit_test::lazy_ostream_impl<boost::unit_test::lazy_ostream, boost::unit_test::basic_cstring<const char>, const boost::unit_test::basic_cstring<const char> &>::operator()";
+        unary_test(
+            "InstantiateFunction",
+            FUNCTION,
+            Activity::InstantiateFunction(FUNCTION.to_owned()),
+        );
+    }
+
+    #[test]
+    fn debug_type() {
+        const TYPE: &'static str = "generic_dense_assignment_kernel<DstEvaluatorType, SrcEvaluatorType, Eigen::internal::add_assign_op<double, double> >";
+        unary_test("DebugType", TYPE, Activity::DebugType(TYPE.to_owned()));
+    }
+
+    #[test]
+    fn debug_global_variable() {
+        const VAR: &'static str = "std::__detail::__variant::__gen_vtable<true, void, (lambda at /mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp:819:11) &&, std::variant<Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime> > &&>::_S_vtable";
+        unary_test(
+            "DebugGlobalVariable",
+            VAR,
+            Activity::DebugGlobalVariable(VAR.to_owned()),
+        );
+    }
+
+    #[test]
+    fn code_gen_function() {
+        const FUNCTION: &'static str =
+            "boost::unit_test::operator<<<char, std::char_traits<char>, const char>";
+        unary_test(
+            "CodeGen Function",
+            FUNCTION,
+            Activity::CodeGenFunction(FUNCTION.to_owned()),
+        );
+    }
+
+    #[test]
+    fn debug_function() {
+        const FUNCTION: &'static str = "Eigen::operator*<Eigen::PermutationMatrix<6, 6, int>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 6, 6, 1, 6, 6> > >";
+        unary_test(
+            "DebugFunction",
+            FUNCTION,
+            Activity::DebugFunction(FUNCTION.to_owned()),
+        );
+    }
+
+    #[test]
+    fn run_pass() {
+        const PASS: &'static str = "X86 DAG->DAG Instruction Selection";
+        unary_test("RunPass", PASS, Activity::RunPass(PASS.to_owned()));
+    }
+
+    #[test]
+    fn opt_function() {
+        const FUNCTION: &'static str = "_GLOBAL__sub_I_CombinatorialKalmanFilterTests.cpp";
+        unary_test(
+            "OptFunction",
+            FUNCTION,
+            Activity::OptFunction(FUNCTION.to_owned()),
+        );
+    }
+
+    #[test]
+    fn run_loop_pass() {
+        const PASS: &'static str = "Induction Variable Users";
+        unary_test("RunLoopPass", PASS, Activity::RunLoopPass(PASS.to_owned()));
+    }
+
+    #[test]
+    fn opt_module() {
+        const MODULE: &'static str =
+            "/mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp";
+        unary_test("OptModule", MODULE, Activity::OptModule(MODULE.to_owned()));
+    }
 }

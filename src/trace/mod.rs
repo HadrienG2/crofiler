@@ -121,7 +121,9 @@ impl TimeTrace {
                     if *tid != 0 {
                         // Events with a nonzero thread ID should be global stats
                         assert_eq!(*ts, 0.0, "Bad -ftime-trace logic guess");
+                        const PREFIX: &'static str = "Total ";
                         assert!(name.starts_with("Total "), "Bad -ftime-trace logic guess");
+                        let name = name.strip_prefix(PREFIX).expect("Should work");
                         let args = args.as_ref().expect("Global stats should have arguments");
                         let mut keys = args.keys().collect::<Vec<&String>>();
                         keys.sort();
@@ -133,7 +135,7 @@ impl TimeTrace {
 
                         // Keep track of it to allow further examination
                         let old = global_stats.insert(
-                            name.clone(),
+                            name.to_owned(),
                             GlobalStat {
                                 total_duration: *dur,
                                 count: args["count"].as_u64().expect("Expected an integer count")
@@ -142,7 +144,7 @@ impl TimeTrace {
                         );
                         assert_eq!(
                             old, None,
-                            "Value {name} appeared twice with values {old:?} and {:?}",
+                            "Global statistic {name} appeared twice with values {old:?} and {:?}",
                             global_stats[name]
                         );
                         continue 'event_loop;
