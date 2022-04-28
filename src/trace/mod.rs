@@ -1,14 +1,18 @@
 //! Ergonomic representation of the output from clang's -ftime-trace, with a
 //! mechanism to load and parse it.
 
+mod activities;
 mod parser;
 
-use parser::{
-    events::{
-        duration::DurationEvent,
-        metadata::{MetadataEvent, MetadataOptions, NameArgs},
+use self::{
+    activities::Activity,
+    parser::{
+        events::{
+            duration::DurationEvent,
+            metadata::{MetadataEvent, MetadataOptions, NameArgs},
+        },
+        DisplayTimeUnit, Duration, Timestamp, TraceDataObject, TraceEvent,
     },
-    DisplayTimeUnit, Duration, Timestamp, TraceDataObject, TraceEvent,
 };
 use serde_json as json;
 use std::{
@@ -96,7 +100,7 @@ impl TimeTrace {
                     process_name = Some(name.clone());
                 }
 
-                // Duration event
+                // Complete duration event
                 TraceEvent::X {
                     duration_event:
                         DurationEvent {
@@ -145,59 +149,8 @@ impl TimeTrace {
                     }
 
                     // Other events with a zero thread ID should be activities
-                    // Among those, PerformPendingInstantiations is special by
-                    // virtue of taking no arguments, everyone else does.
-                    let activity = match &**name {
-                        "PerformPendingInstantiations" => Activity::PerformPendingInstantiations,
-                        "Frontend" => Activity::Frontend,
-                        "PerFunctionPasses" => Activity::PerFunctionPasses,
-                        "PerModulePasses" => Activity::PerModulePasses,
-                        "CodeGenPasses" => Activity::CodeGenPasses,
-                        "Backend" => Activity::Backend,
-                        "ExecuteCompiler" => Activity::ExecuteCompiler,
-                        _ => {
-                            if let Some(args) = args {
-                                let mut args_iter = args.iter();
-                                let (k, v) = args_iter.next().expect("Expected an argument");
-                                assert_eq!(k, "detail", "Unexpected argument {k}: {v}");
-                                let v = if let json::Value::String(s) = v {
-                                    s
-                                } else {
-                                    panic!("Detail argument should be a string, but got {v}")
-                                };
-                                assert_eq!(
-                                    args_iter.next(),
-                                    None,
-                                    "Unexpected extra arguments beyond \"detail\" in {args:?}"
-                                );
-                                match &**name {
-                                    "Source" => Activity::Source(v.clone()),
-                                    "ParseClass" => Activity::ParseClass(v.clone()),
-                                    "InstantiateClass" => Activity::InstantiateClass(v.clone()),
-                                    "InstantiateTemplate" => {
-                                        Activity::InstantiateTemplate(v.clone())
-                                    }
-                                    "ParseTemplate" => Activity::ParseTemplate(v.clone()),
-                                    "InstantiateFunction" => {
-                                        Activity::InstantiateFunction(v.clone())
-                                    }
-                                    "DebugType" => Activity::DebugType(v.clone()),
-                                    "DebugGlobalVariable" => {
-                                        Activity::DebugGlobalVariable(v.clone())
-                                    }
-                                    "CodeGen Function" => Activity::CodeGenFunction(v.clone()),
-                                    "DebugFunction" => Activity::DebugFunction(v.clone()),
-                                    "RunPass" => Activity::RunPass(v.clone()),
-                                    "OptFunction" => Activity::OptFunction(v.clone()),
-                                    "RunLoopPass" => Activity::RunLoopPass(v.clone()),
-                                    "OptModule" => Activity::OptModule(v.clone()),
-                                    _ => panic!("Unexpected activity: {name} with parameter {v}"),
-                                }
-                            } else {
-                                panic!("Unexpected activity: {name}")
-                            }
-                        }
-                    };
+                    // TODO: Propagate error
+                    let activity = Activity::parse(name, args).expect("Failed to parse activity");
 
                     // Check assumption that clang -ftime-trace activities are
                     // sorted in order of increasing end timestamp (this means
@@ -339,7 +292,7 @@ impl TimeTrace {
 }
 
 /// View over an activity and its children
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ActivityProfile<'a> {
     /// Which profile this activity comes from
     top_profile: &'a TimeTrace,
@@ -426,85 +379,6 @@ struct ActivityData {
 
     /// Indices of the child activities in the global TimeTrace::tree array
     children_indices: Range<usize>,
-}
-
-/// Clang activity without profiling information
-#[derive(Debug, PartialEq)]
-pub enum Activity {
-    /// Processing a source file
-    // TODO: Switch to Path + normalize
-    Source(String),
-
-    /// Parsing a class
-    // TODO: Switch to a namespace + AST representation
-    ParseClass(String),
-
-    /// Instantiating a class
-    // TODO: Switch to a namespace + AST representation
-    InstantiateClass(String),
-
-    /// Instantiating a template
-    // TODO: Switch to a namespace + AST representation, beware that this can contain "<unknown>", check for others
-    InstantiateTemplate(String),
-
-    /// Parsing a template
-    // TODO: Switch to a namespace + AST representation
-    ParseTemplate(String),
-
-    /// Instantiating a function
-    // TODO: Switch to a namespace + AST representation
-    InstantiateFunction(String),
-
-    /// Generating debug info for a type
-    // TODO: Switch to a namespace + AST representation
-    DebugType(String),
-
-    /// Generating debug info for a global variable
-    // TODO: Switch to a namespace + AST representation
-    DebugGlobalVariable(String),
-
-    /// Generate a function's code
-    // TODO: Switch to a namespace + AST representation
-    CodeGenFunction(String),
-
-    /// Generating debug info for a function
-    // TODO: Switch to a namespace + AST representation
-    DebugFunction(String),
-
-    /// Perform pending instantiations (as the name suggests)
-    PerformPendingInstantiations,
-
-    /// Compiler front-end work
-    Frontend,
-
-    /// Running a named compiler pass
-    RunPass(String),
-
-    /// Optimizing code
-    // TODO: Demangle then switch to a namespace + AST representation
-    OptFunction(String),
-
-    /// Per-function compiler passes
-    PerFunctionPasses,
-
-    /// Running a named loop compiler pass
-    RunLoopPass(String),
-
-    /// Optimizing a module
-    // TODO: Switch to Path + normalize
-    OptModule(String),
-
-    /// Per-module compiler passes
-    PerModulePasses,
-
-    /// Code generation passes
-    CodeGenPasses,
-
-    /// Compiler back-end work
-    Backend,
-
-    /// Compiler execution
-    ExecuteCompiler,
 }
 
 /// Global clang execution statistics for a certain kind of activity
