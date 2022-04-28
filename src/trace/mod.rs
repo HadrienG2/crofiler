@@ -224,12 +224,7 @@ impl TimeTrace {
         activity_tree.extend_from_slice(&root_accumulator[..]);
 
         // After this, activity_tree should contain as many nodes as activities,
-        // since each node is either a root or a child of another node.
-        println!(
-            "From {} trace events, collected {} activities in a tree",
-            profile_ctf.traceEvents.len(),
-            activities.len()
-        );
+        // since each node is either a root or a child of another node
         assert_eq!(activities.len(), activity_tree.len());
 
         // Build the final TimeTrace
