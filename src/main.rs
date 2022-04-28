@@ -18,7 +18,7 @@ use std::{
 
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
-pub struct ClangProfile {
+pub struct TimeTrace {
     /// Name of the clang process
     process_name: String,
 
@@ -38,7 +38,7 @@ pub struct ClangProfile {
     first_root_idx: usize,
 }
 //
-impl ClangProfile {
+impl TimeTrace {
     // TODO: Constructor from file, with clean error handling
 
     /// Name of the clang process that acquired this data
@@ -94,12 +94,12 @@ impl ClangProfile {
 #[derive(Debug)]
 pub struct ActivityProfile<'a> {
     /// Which profile this activity comes from
-    top_profile: &'a ClangProfile,
+    top_profile: &'a TimeTrace,
 
     /// Which activity we are looking at
     activity_data: &'a ActivityData,
 
-    /// What is the index of this activity in the ClangProfile::tree array
+    /// What is the index of this activity in the TimeTrace::tree array
     tree_idx: usize,
 }
 //
@@ -177,11 +177,11 @@ struct ActivityData {
     /// ...excluding children activities
     self_duration: Duration,
 
-    /// Index of the first event which, within ClangProfile::activities, belongs
+    /// Index of the first event which, within TimeTrace::activities, belongs
     /// to the set composed of this event and all of its transitive children.
     first_related_idx: usize,
 
-    /// Indices of the child activities in the global ClangProfile::tree array
+    /// Indices of the child activities in the global TimeTrace::tree array
     children_indices: Range<usize>,
 }
 
@@ -351,7 +351,7 @@ fn main() {
                     );
 
                     // Debug display to be thrown away
-                    // TODO: Extract this data and put it in ClangProfile
+                    // TODO: Extract this data and put it in TimeTrace
                     println!(
                         "Found global stat {name}: {dur}µs, {} occurence(s), avg. {}ms/occurence",
                         args["count"], args["avg ms"]
@@ -502,8 +502,8 @@ fn main() {
     );
     assert_eq!(activities.len(), activity_tree.len());
 
-    // Build the final ClangProfile
-    let profile = ClangProfile {
+    // Build the final TimeTrace"
+    let profile = TimeTrace {
         process_name: process_name.expect("No process name found"),
         activities: activities.into_boxed_slice(),
         activity_tree: activity_tree.into_boxed_slice(),
