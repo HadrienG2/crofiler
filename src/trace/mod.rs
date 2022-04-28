@@ -3,6 +3,7 @@
 
 mod activities;
 mod parser;
+mod stats;
 
 use self::{
     activities::Activity,
@@ -13,6 +14,7 @@ use self::{
         },
         Duration, Timestamp, TraceDataObject, TraceEvent,
     },
+    stats::GlobalStat,
 };
 use serde_json as json;
 use std::{
@@ -37,7 +39,9 @@ pub struct TimeTrace {
     /// Parent/child relationship of activities
     ///
     /// For each activity, we get a slice of indices inside of this array
-    /// corresponding to other activities that were triggered by doing it.
+    /// corresponding to other activities (in the main activities array) that
+    /// were triggered by doing it.
+    ///
     /// At the end, there is also a slice of root activity indices which were
     /// directly triggered by toplevel clang logic.
     ///
@@ -80,7 +84,7 @@ impl TimeTrace {
         let mut global_stats = HashMap::new();
         let mut children_accumulator = Vec::new();
         //
-        'event_loop: for event in profile_ctf.traceEvents.into_iter() {
+        for event in profile_ctf.traceEvents.into_iter() {
             match event {
                 // Process name metadata
                 TraceEvent::M(m) => {
@@ -95,12 +99,21 @@ impl TimeTrace {
                     }
                 }
 
-                // Complete duration event
+                // Global statistics
+                t @ TraceEvent::X { duration_event, .. } if duration_event.tid != 0 => {
+                    let (name, stat) = GlobalStat::parse(t)?;
+                    if let Some(old) = global_stats.insert(name.clone(), stat) {
+                        let new = global_stats[&name].clone();
+                        return Err(TimeTraceLoadError::DuplicateGlobalStat(name, old, new));
+                    }
+                }
+
+                // Activity report
                 TraceEvent::X {
                     duration_event:
                         DurationEvent {
                             pid: 1,
-                            tid,
+                            tid: 0,
                             ts,
                             name: Some(name),
                             cat: None,
@@ -112,40 +125,7 @@ impl TimeTrace {
                     tdur: None,
                     end_stack_trace: None,
                 } => {
-                    // Events with a nonzero thread ID should be global stats
-                    if *tid != 0 {
-                        // Events with a nonzero thread ID should be global stats
-                        assert_eq!(*ts, 0.0, "Bad -ftime-trace logic guess");
-                        const PREFIX: &'static str = "Total ";
-                        assert!(name.starts_with("Total "), "Bad -ftime-trace logic guess");
-                        let name = name.strip_prefix(PREFIX).expect("Should work");
-                        let args = args.as_ref().expect("Global stats should have arguments");
-                        let mut keys = args.keys().collect::<Vec<&String>>();
-                        keys.sort();
-                        assert_eq!(
-                            keys,
-                            vec![&"avg ms".to_owned(), &"count".to_owned()],
-                            "Bad -ftime-trace logic guess"
-                        );
-
-                        // Keep track of it to allow further examination
-                        let old = global_stats.insert(
-                            name.to_owned(),
-                            GlobalStat {
-                                total_duration: *dur,
-                                count: args["count"].as_u64().expect("Expected an integer count")
-                                    as usize,
-                            },
-                        );
-                        assert_eq!(
-                            old, None,
-                            "Global statistic {name} appeared twice with values {old:?} and {:?}",
-                            global_stats[name]
-                        );
-                        continue 'event_loop;
-                    }
-
-                    // Other events with a zero thread ID should be activities
+                    // Events with a zero thread ID should be activities
                     let activity = Activity::parse(name, args)?;
 
                     // Check assumption that clang -ftime-trace activities are
@@ -200,7 +180,7 @@ impl TimeTrace {
                     });
                 }
 
-                // No other CTF record is expected of -ftime-trace
+                // No other CTF record is expected from -ftime-trace
                 _ => panic!("Unexpected event {:#?}", event),
             }
         }
@@ -224,13 +204,17 @@ impl TimeTrace {
         assert_eq!(activities.len(), activity_tree.len());
 
         // Build the final TimeTrace
-        Ok(Self {
-            process_name: process_name.expect("No process name found"),
-            activities: activities.into_boxed_slice(),
-            activity_tree: activity_tree.into_boxed_slice(),
-            first_root_idx,
-            global_stats,
-        })
+        if let Some(process_name) = process_name {
+            Ok(Self {
+                process_name,
+                activities: activities.into_boxed_slice(),
+                activity_tree: activity_tree.into_boxed_slice(),
+                first_root_idx,
+                global_stats,
+            })
+        } else {
+            Err(TimeTraceLoadError::NoProcessName)
+        }
     }
 
     /// Decode the clang process name (which is currently the only metadata
@@ -321,10 +305,19 @@ pub enum TimeTraceLoadError {
     #[error("unexpected {0:#?}")]
     UnexpectedMetadataEvent(MetadataEvent),
 
+    #[error("missing process name metadata")]
+    NoProcessName,
+
     #[error("multiple process names (\"{0}\" then \"{1}\")")]
     DuplicateProcessName(String, String),
 
-    #[error("failed to parse an activity from CTF JSON")]
+    #[error("failed to parse global statistics ({0})")]
+    GlobalStatParseError(#[from] stats::GlobalStatParseError),
+
+    #[error("duplicate global statistic \"{0}\" ({1:?} then {2:?})")]
+    DuplicateGlobalStat(String, GlobalStat, GlobalStat),
+
+    #[error("failed to parse an activity from CTF JSON ({0})")]
     ActivityParseError(#[from] activities::ActivityParseError),
 }
 
@@ -418,33 +411,4 @@ struct ActivityData {
     children_indices: Range<usize>,
 }
 
-/// Global clang execution statistics for a certain kind of activity
-///
-/// The precise semantics are unknown: are we talking about top-level entities?
-/// all entities? self time? children time?
-///
-#[derive(Debug, PartialEq)]
-pub struct GlobalStat {
-    /// Execution duration
-    total_duration: Duration,
-
-    /// Number of occurences of this event
-    count: usize,
-}
-//
-impl GlobalStat {
-    /// Total execution duration across all events
-    pub fn total_duration(&self) -> Duration {
-        self.total_duration
-    }
-
-    /// Number of occurences of this event
-    pub fn count(&self) -> usize {
-        self.count
-    }
-
-    /// Average duration of this event
-    pub fn avg_duration(&self) -> Duration {
-        self.total_duration / (self.count as Duration)
-    }
-}
+// FIXME: Add some tests

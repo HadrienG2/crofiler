@@ -166,7 +166,7 @@ pub enum ActivityParseError {
     #[error("expected activity argument \"{0}\" was not found")]
     MissingArgument(&'static str),
 
-    #[error("Got unexpected value for argument \"{0}\": {1:?}")]
+    #[error("got unexpected value for argument \"{0}\": {1:?}")]
     UnexpectedArgumentValue(&'static str, json::Value),
 
     #[error("received unexpected activity arguments {0:?}")]
