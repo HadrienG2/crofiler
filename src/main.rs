@@ -230,6 +230,7 @@ fn main() {
                     );
 
                     // Debug display to be thrown away
+                    // TODO: Extract this data and put it in ClangProfile
                     println!(
                         "Found global stat {name}: {dur}µs, {} occurence(s), avg. {}ms/occurence",
                         args["count"], args["avg ms"]
