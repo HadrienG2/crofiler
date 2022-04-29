@@ -12,7 +12,7 @@ pub enum StackTrace {
     sf(StackFrameId),
 
     /// Inline stack trace, as a list of symbols/addresses starting from the root
-    stack(Box<[String]>),
+    stack(Box<[Box<str>]>),
 }
 
 /// Stack trace at the end of a complete event
@@ -26,7 +26,7 @@ pub enum EndStackTrace {
     esf(StackFrameId),
 
     /// Inline stack trace, as a list of symbols/addresses starting from the root
-    estack(Box<[String]>),
+    estack(Box<[Box<str>]>),
 }
 
 /// Global stack frame ID
@@ -37,12 +37,12 @@ pub enum EndStackTrace {
 /// strings for convenience.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(from = "RawStackFrameId")]
-pub struct StackFrameId(pub String);
+pub struct StackFrameId(pub Box<str>);
 //
 impl From<RawStackFrameId> for StackFrameId {
     fn from(i: RawStackFrameId) -> Self {
         Self(match i {
-            RawStackFrameId::Int(i) => i.to_string(),
+            RawStackFrameId::Int(i) => i.to_string().into_boxed_str(),
             RawStackFrameId::Str(s) => s,
         })
     }
@@ -52,7 +52,7 @@ impl From<RawStackFrameId> for StackFrameId {
 #[serde(untagged, deny_unknown_fields)]
 enum RawStackFrameId {
     Int(i64),
-    Str(String),
+    Str(Box<str>),
 }
 
 /// Stack frame object
@@ -60,10 +60,10 @@ enum RawStackFrameId {
 #[serde(deny_unknown_fields)]
 pub struct StackFrame {
     /// Usually a DSO or process name
-    pub category: String,
+    pub category: Box<str>,
 
     /// Symbol name or address
-    pub name: String,
+    pub name: Box<str>,
 
     /// Parent stack frame, if not at the root of the stack
     pub parent: Option<StackFrameId>,

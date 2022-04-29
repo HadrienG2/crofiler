@@ -4,7 +4,7 @@ use crate::trace::ctf::events::metadata::{MetadataEvent, MetadataOptions, NameAr
 use thiserror::Error;
 
 /// Parse the clang process name
-pub fn parse_process_name(m: MetadataEvent) -> Result<String, ProcessNameParseError> {
+pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, ProcessNameParseError> {
     match m {
         MetadataEvent::process_name {
             pid: 1,
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn parse_process_name() {
         // Have a way to generate good and bad test inputs
-        let process_name = "clang".to_owned();
+        let process_name = Box::<str>::from("clang");
         let make_event = |good_type, pid, extra, tid, cat, ts, tts| {
             let args = NameArgs {
                 name: process_name.clone(),
@@ -105,7 +105,7 @@ mod tests {
         test_unexpected_input(make_event(
             true,
             1,
-            maplit::hashmap! { "wtf".to_owned() => json::json!("") },
+            maplit::hashmap! { "wtf".into() => json::json!("") },
             Some(0),
             Some(EventCategories::default()),
             Some(0.0),
@@ -125,7 +125,7 @@ mod tests {
             1,
             HashMap::new(),
             Some(0),
-            Some(EventCategories(vec!["lol".to_owned()].into_boxed_slice())),
+            Some(EventCategories(vec!["lol".into()].into_boxed_slice())),
             Some(0.0),
             None,
         ));

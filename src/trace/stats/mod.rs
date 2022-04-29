@@ -12,7 +12,7 @@ use thiserror::Error;
 pub enum ArgParseError {
     /// Encountered unexpected arguments
     #[error("got unexpected arguments {0:?}")]
-    UnexpectedKeys(HashMap<String, json::Value>),
+    UnexpectedKeys(HashMap<Box<str>, json::Value>),
 
     /// Did not encounter expected argument
     #[error("did not get expected argument \"{0}\"")]

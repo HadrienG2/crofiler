@@ -50,12 +50,12 @@ pub struct TraceDataObject {
     /// otherwise this is Windows ETW data.
     //
     // TODO: Consider parsing this further in a future version
-    pub systemTraceEvents: Option<String>,
+    pub systemTraceEvents: Option<Box<str>>,
 
     /// String of BattOr power data
     //
     // TODO: Consider parsing this further in a future version
-    pub powerTraceAsString: Option<String>,
+    pub powerTraceAsString: Option<Box<str>>,
 
     /// Dictionary of stack frames, their ids and their parents that allows
     /// compact representation of stack traces throughout the rest of the
@@ -63,7 +63,7 @@ pub struct TraceDataObject {
     //
     // NOTE: We only accept strings as stack frame IDs here, as this is a JSON
     //       dictionary and JSON actually mandates that dict keys be strings.
-    pub stackFrames: Option<HashMap<String, StackFrame>>,
+    pub stackFrames: Option<HashMap<Box<str>, StackFrame>>,
 
     /// Sampling profiler data from an OS level profiler
     pub samples: Option<Box<[Sample]>>,
@@ -71,11 +71,11 @@ pub struct TraceDataObject {
     /// Specifies which trace data comes from tracing controller. Its value
     /// should be the key for that specific trace data, e.g. "traceEvents".
     /// Mainly used for clock synchronization.
-    pub controllerTraceDataKey: Option<String>,
+    pub controllerTraceDataKey: Option<Box<str>>,
 
     /// Extra trace metadata not specified by the Trace Event Format spec
     #[serde(flatten)]
-    pub extra: HashMap<String, json::Value>,
+    pub extra: HashMap<Box<str>, json::Value>,
 }
 
 /// Event description
@@ -155,7 +155,7 @@ pub struct Sample {
     pub ts: Timestamp,
 
     /// Name of the event that was sampled
-    pub name: String,
+    pub name: Box<str>,
 
     /// Stack frame
     pub sf: StackFrameId,
@@ -178,15 +178,15 @@ pub type Pid = i32;
 
 /// Event categories
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-#[serde(from = "String")]
-pub struct EventCategories(pub Box<[String]>);
+#[serde(from = "Box<str>")]
+pub struct EventCategories(pub Box<[Box<str>]>);
 //
-impl From<String> for EventCategories {
-    fn from(s: String) -> Self {
+impl From<Box<str>> for EventCategories {
+    fn from(s: Box<str>) -> Self {
         Self(
             s.split(',')
                 .filter(|sub| !sub.is_empty())
-                .map(|sub| sub.to_owned())
+                .map(|sub| sub.into())
                 .collect(),
         )
     }
@@ -255,16 +255,16 @@ pub(crate) mod tests {
                 pid: 22630,
                 tid: 22630,
                 ts: 829.0,
-                name: Some("Asub".to_owned()),
-                cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
+                name: Some("Asub".into()),
+                cat: Some(EventCategories(vec!["PERF".into()].into_boxed_slice())),
                 ..DurationEvent::default()
             }),
             TraceEvent::E(DurationEvent {
                 pid: 22630,
                 tid: 22630,
                 ts: 833.0,
-                name: Some("Asub".to_owned()),
-                cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
+                name: Some("Asub".into()),
+                cat: Some(EventCategories(vec!["PERF".into()].into_boxed_slice())),
                 ..DurationEvent::default()
             }),
         ];
@@ -310,36 +310,36 @@ pub(crate) mod tests {
                     pid: 22630,
                     tid: 22630,
                     ts: 829.0,
-                    name: Some("Asub".to_owned()),
-                    cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
+                    name: Some("Asub".into()),
+                    cat: Some(EventCategories(vec!["PERF".into()].into_boxed_slice())),
                     ..DurationEvent::default()
                 }),
                 TraceEvent::E(DurationEvent {
                     pid: 22630,
                     tid: 22630,
                     ts: 833.0,
-                    name: Some("Asub".to_owned()),
-                    cat: Some(EventCategories(vec!["PERF".to_owned()].into_boxed_slice())),
+                    name: Some("Asub".into()),
+                    cat: Some(EventCategories(vec!["PERF".into()].into_boxed_slice())),
                     ..DurationEvent::default()
                 }),
             ]
             .into_boxed_slice(),
             displayTimeUnit: DisplayTimeUnit::ns,
-            systemTraceEvents: Some("SystemTraceData".to_owned()),
+            systemTraceEvents: Some("SystemTraceData".into()),
             stackFrames: Some(maplit::hashmap! {
-                "a".to_owned() => StackFrame {
-                    category: "libchrome.so".to_owned(),
-                    name: "CrRendererMain".to_owned(),
-                    parent: Some(StackFrameId("1".to_owned())),
+                "a".into() => StackFrame {
+                    category: "libchrome.so".into(),
+                    name: "CrRendererMain".into(),
+                    parent: Some(StackFrameId("1".into())),
                 },
-                "1".to_owned() => StackFrame {
-                    category: "libc.so".to_owned(),
-                    name: "_crtmain".to_owned(),
+                "1".into() => StackFrame {
+                    category: "libc.so".into(),
+                    name: "_crtmain".into(),
                     parent: None,
                 },
-                "3".to_owned() => StackFrame {
-                    category: "libc.so".to_owned(),
-                    name: "_start".to_owned(),
+                "3".into() => StackFrame {
+                    category: "libc.so".into(),
+                    name: "_start".into(),
                     parent: None,
                 }
             }),
@@ -348,14 +348,14 @@ pub(crate) mod tests {
                     cpu: Some(0),
                     tid: 1,
                     ts: 1000.0,
-                    name: "cycles:HG".to_owned(),
-                    sf: StackFrameId("3".to_owned()),
+                    name: "cycles:HG".into(),
+                    sf: StackFrameId("3".into()),
                     weight: 1,
                 }]
                 .into_boxed_slice(),
             ),
             extra: maplit::hashmap! {
-                "otherData".to_owned() => json::json!({
+                "otherData".into() => json::json!({
                     "version": "My Application v1.0"
                 })
             },

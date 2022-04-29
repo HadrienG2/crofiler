@@ -118,11 +118,11 @@ pub struct MetadataOptions {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct NameArgs {
     /// Name to be attributed to target entity
-    pub name: String,
+    pub name: Box<str>,
 
     /// Extra arguments not specified by the Trace Event Format spec
     #[serde(flatten)]
-    pub extra: HashMap<String, json::Value>,
+    pub extra: HashMap<Box<str>, json::Value>,
 }
 
 /// Arguments for MetadataEvent::process_labels
@@ -131,11 +131,11 @@ pub struct NameArgs {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct LabelsArgs {
     /// Extra label to be attributed to the target process
-    pub labels: String,
+    pub labels: Box<str>,
 
     /// Extra arguments not specified by the Trace Event Format spec
     #[serde(flatten)]
-    pub extra: HashMap<String, json::Value>,
+    pub extra: HashMap<Box<str>, json::Value>,
 }
 
 /// Arguments for MetadataEvents provide a sort order position
@@ -150,7 +150,7 @@ pub struct SortIndexArgs {
 
     /// Extra arguments not specified by the Trace Event Format spec
     #[serde(flatten)]
-    pub extra: HashMap<String, json::Value>,
+    pub extra: HashMap<Box<str>, json::Value>,
 }
 
 #[cfg(test)]
@@ -170,7 +170,7 @@ mod tests {
             pid: Some(2343),
             tid: 2347,
             args: NameArgs {
-                name: "RendererThread".to_owned(),
+                name: "RendererThread".into(),
                 ..NameArgs::default()
             },
             options: MetadataOptions::default(),

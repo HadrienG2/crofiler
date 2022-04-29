@@ -21,7 +21,7 @@ pub struct DurationEvent {
     pub ts: Timestamp,
 
     /// Name of the event (for display)
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
 
     /// Event categories (for filtering)
     pub cat: Option<EventCategories>,
@@ -33,7 +33,7 @@ pub struct DurationEvent {
     ///
     /// In the case of B/E events, arguments should be merged during display
     /// with E event taking priority where a key conflict occurs.
-    pub args: Option<HashMap<String, json::Value>>,
+    pub args: Option<HashMap<Box<str>, json::Value>>,
 
     /// Stack trace
     #[serde(flatten)]
@@ -66,13 +66,13 @@ mod tests {
 }]"#;
         let expected = &[
             TraceEvent::B(DurationEvent {
-                name: Some("myFunction".to_owned()),
-                cat: Some(EventCategories(vec!["foo".to_owned()].into_boxed_slice())),
+                name: Some("myFunction".into()),
+                cat: Some(EventCategories(vec!["foo".into()].into_boxed_slice())),
                 ts: 123.0,
                 pid: 2343,
                 tid: 2347,
                 args: Some(maplit::hashmap! {
-                    "first".to_owned() => json::json!(1usize)
+                    "first".into() => json::json!(1usize)
                 }),
                 ..DurationEvent::default()
             }),
@@ -81,8 +81,8 @@ mod tests {
                 pid: 2343,
                 tid: 2347,
                 args: Some(maplit::hashmap! {
-                    "first".to_owned() => json::json!(4usize),
-                    "second".to_owned() => json::json!(2usize)
+                    "first".into() => json::json!(4usize),
+                    "second".into() => json::json!(2usize)
                 }),
                 ..DurationEvent::default()
             }),
@@ -103,14 +103,14 @@ mod tests {
                 pid: 1,
                 ts: 1.0,
                 tid: 1,
-                name: Some("A".to_owned()),
+                name: Some("A".into()),
                 ..DurationEvent::default()
             }),
             TraceEvent::B(DurationEvent {
                 pid: 1,
                 ts: 1.1,
                 tid: 1,
-                name: Some("Asub".to_owned()),
+                name: Some("Asub".into()),
                 ..DurationEvent::default()
             }),
             TraceEvent::E(DurationEvent {
@@ -142,14 +142,14 @@ mod tests {
                 pid: 1,
                 ts: 1.0,
                 tid: 1,
-                name: Some("A".to_owned()),
+                name: Some("A".into()),
                 ..DurationEvent::default()
             }),
             TraceEvent::B(DurationEvent {
                 pid: 1,
                 ts: 0.9,
                 tid: 2,
-                name: Some("B".to_owned()),
+                name: Some("B".into()),
                 ..DurationEvent::default()
             }),
             TraceEvent::E(DurationEvent {
@@ -188,35 +188,35 @@ mod tests {
                     pid: 1,
                     tid: 1,
                     ts: 0.1,
-                    name: Some("A".to_owned()),
-                    stack_trace: Some(StackTrace::sf(StackFrameId("7".to_owned()))),
+                    name: Some("A".into()),
+                    stack_trace: Some(StackTrace::sf(StackFrameId("7".into()))),
                     ..DurationEvent::default()
                 }),
                 TraceEvent::E(DurationEvent {
                     pid: 1,
                     tid: 1,
                     ts: 0.2,
-                    name: Some("A".to_owned()),
-                    stack_trace: Some(StackTrace::sf(StackFrameId("9".to_owned()))),
+                    name: Some("A".into()),
+                    stack_trace: Some(StackTrace::sf(StackFrameId("9".into()))),
                     ..DurationEvent::default()
                 }),
             ]
             .into_boxed_slice(),
             stackFrames: Some(maplit::hashmap! {
-                "5".to_owned() => StackFrame {
-                    name: "main".to_owned(),
-                    category: "my app".to_owned(),
+                "5".into() => StackFrame {
+                    name: "main".into(),
+                    category: "my app".into(),
                     parent: None,
                 },
-                "7".to_owned() => StackFrame {
-                    parent: Some(StackFrameId("5".to_owned())),
-                    category: "my app".to_owned(),
-                    name: "SomeFunction".to_owned(),
+                "7".into() => StackFrame {
+                    parent: Some(StackFrameId("5".into())),
+                    category: "my app".into(),
+                    name: "SomeFunction".into(),
                 },
-                "9".to_owned() => StackFrame {
-                    parent: Some(StackFrameId("5".to_owned())),
-                    category: "my app".to_owned(),
-                    name: "SomeFunction".to_owned(),
+                "9".into() => StackFrame {
+                    parent: Some(StackFrameId("5".into())),
+                    category: "my app".into(),
+                    name: "SomeFunction".into(),
                 }
             }),
             ..TraceDataObject::default()
@@ -233,9 +233,9 @@ mod tests {
             pid: 1,
             tid: 1,
             ts: 1.0,
-            name: Some("A".to_owned()),
+            name: Some("A".into()),
             stack_trace: Some(StackTrace::stack(
-                vec!["0x1".to_owned(), "0x2".to_owned()].into_boxed_slice(),
+                vec!["0x1".into(), "0x2".into()].into_boxed_slice(),
             )),
             ..DurationEvent::default()
         });
@@ -253,13 +253,13 @@ mod tests {
 }"#;
         let expected = TraceEvent::X {
             duration_event: DurationEvent {
-                name: Some("myFunction".to_owned()),
-                cat: Some(EventCategories(vec!["foo".to_owned()].into_boxed_slice())),
+                name: Some("myFunction".into()),
+                cat: Some(EventCategories(vec!["foo".into()].into_boxed_slice())),
                 ts: 123.0,
                 pid: 2343,
                 tid: 2347,
                 args: Some(maplit::hashmap! {
-                    "first".to_owned() => json::json!(1usize)
+                    "first".into() => json::json!(1usize)
                 }),
                 ..DurationEvent::default()
             },

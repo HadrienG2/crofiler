@@ -25,7 +25,7 @@ pub struct GlobalStat {
 //
 impl GlobalStat {
     /// Decode a TraceEvent which is expected to contain global statistics
-    pub fn parse(t: TraceEvent) -> Result<(String, Self), GlobalStatParseError> {
+    pub fn parse(t: TraceEvent) -> Result<(Box<str>, Self), GlobalStatParseError> {
         match t {
             TraceEvent::X {
                 duration_event:
@@ -54,7 +54,7 @@ impl GlobalStat {
                 // Parse arguments and emit result
                 let args = GlobalStatArgs::parse(args)?;
                 Ok((
-                    name.to_owned(),
+                    name.into(),
                     Self {
                         total_duration: dur,
                         count: args.count as usize,
@@ -90,7 +90,7 @@ pub enum GlobalStatParseError {
 
     /// Event named lacked the usual "Total " prefix
     #[error("GlobalStat name \"{0}\" lacked expected \"Total \" prefix")]
-    NoTotalPrefix(String),
+    NoTotalPrefix(Box<str>),
 
     /// Failed to parse GlobalStat arguments
     #[error("failed to parse activity arguments ({0})")]
@@ -109,28 +109,33 @@ struct GlobalStatArgs {
 //
 impl GlobalStatArgs {
     /// Parse global execution statistics arguments
-    fn parse(args: HashMap<String, json::Value>) -> Result<Self, ArgParseError> {
+    fn parse(args: HashMap<Box<str>, json::Value>) -> Result<Self, ArgParseError> {
         // Process arguments
         let mut count = None;
         let mut _avg_ms = None;
-        for (k, v) in &args {
-            match &**k {
+        let mut args_iter = args.into_iter();
+        while let Some((k, v)) = args_iter.next() {
+            match &*k {
                 "count" => {
                     if let Some(c) = v.as_u64() {
                         count = Some(c);
                     } else {
-                        return Err(ArgParseError::UnexpectedValue("count", v.clone()));
+                        return Err(ArgParseError::UnexpectedValue("count", v));
                     }
                 }
                 "avg ms" => {
                     if let Some(f) = v.as_f64() {
                         _avg_ms = Some(f);
                     } else {
-                        return Err(ArgParseError::UnexpectedValue("avg ms", v.clone()));
+                        return Err(ArgParseError::UnexpectedValue("avg ms", v));
                     }
                 }
                 _ => {
-                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                    let mut remainder = HashMap::from_iter(args_iter);
+                    remainder.insert(k, v);
+                    remainder.remove("count");
+                    remainder.remove("avg ms");
+                    return Err(ArgParseError::UnexpectedKeys(remainder));
                 }
             }
         }
@@ -172,8 +177,8 @@ mod tests {
         let count = 1usize << 3;
         let _avg_ms = 4.5f64;
         let args = maplit::hashmap! {
-            "count".to_owned() => json::json!(count),
-            "avg ms".to_owned() => json::json!(_avg_ms),
+            "count".into() => json::json!(count),
+            "avg ms".into() => json::json!(_avg_ms),
         };
         let total_duration = (count as f64) * _avg_ms;
 
@@ -203,7 +208,7 @@ mod tests {
             };
 
         // Valid GlobalStat::parse input
-        let good_name = Some("Total ExecuteCompiler".to_owned());
+        let good_name = Some("Total ExecuteCompiler".into());
         assert_eq!(
             GlobalStat::parse(make_event(
                 true,
@@ -217,7 +222,7 @@ mod tests {
                 None
             )),
             Ok((
-                "ExecuteCompiler".to_owned(),
+                "ExecuteCompiler".into(),
                 GlobalStat {
                     total_duration,
                     count,
@@ -226,7 +231,7 @@ mod tests {
         );
 
         // Invalid name
-        let bad_name = "ExecuteCompiler".to_owned();
+        let bad_name = Box::<str>::from("ExecuteCompiler");
         assert_eq!(
             GlobalStat::parse(make_event(
                 true,
@@ -243,9 +248,9 @@ mod tests {
         );
 
         // Various flavors of unexpected input
-        let test_unexpected_input = |input| {
+        let test_unexpected_input = |input: TraceEvent| {
             assert_eq!(
-                GlobalStat::parse(input),
+                GlobalStat::parse(input.clone()),
                 Err(GlobalStatParseError::UnexpectedInput(input))
             )
         };
@@ -346,8 +351,8 @@ mod tests {
         let count = 123u64;
         let _avg_ms = 45.6f64;
         let correct_args = maplit::hashmap! {
-            "count".to_owned() => json::json!(count),
-            "avg ms".to_owned() => json::json!(_avg_ms),
+            "count".into() => json::json!(count),
+            "avg ms".into() => json::json!(_avg_ms),
         };
         assert_eq!(
             GlobalStatArgs::parse(correct_args.clone()),
@@ -356,16 +361,18 @@ mod tests {
 
         // Try adding an extra argument
         let mut extra_arg = correct_args.clone();
-        extra_arg.insert("wat".to_owned(), json::json!(""));
+        extra_arg.insert("wat".into(), json::json!(""));
         assert_eq!(
             GlobalStatArgs::parse(extra_arg.clone()),
-            Err(ArgParseError::UnexpectedKeys(extra_arg))
+            Err(ArgParseError::UnexpectedKeys(
+                maplit::hashmap! { "wat".into() => json::json!("") }
+            ))
         );
 
         // Test for replacing the arguments with wrongly typed values
         let test_bad_value = |key: &'static str| {
             let mut bad_value = correct_args.clone();
-            bad_value.insert(key.to_owned(), json::json!(""));
+            bad_value.insert(key.into(), json::json!(""));
             assert_eq!(
                 GlobalStatArgs::parse(bad_value.clone()),
                 Err(ArgParseError::UnexpectedValue(key, bad_value[key].clone()))

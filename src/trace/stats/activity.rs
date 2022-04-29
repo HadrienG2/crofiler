@@ -89,39 +89,39 @@ pub enum ActivityStatParseError {
 pub enum Activity {
     /// Processing a source file
     // TODO: Switch to Path + normalize
-    Source(String),
+    Source(Box<str>),
 
     /// Parsing a class
     // TODO: Switch to a namespace + AST representation
-    ParseClass(String),
+    ParseClass(Box<str>),
 
     /// Instantiating a class
     // TODO: Switch to a namespace + AST representation
-    InstantiateClass(String),
+    InstantiateClass(Box<str>),
 
     /// Parsing a template
     // TODO: Switch to a namespace + AST representation
-    ParseTemplate(String),
+    ParseTemplate(Box<str>),
 
     /// Instantiating a function
     // TODO: Switch to a namespace + AST representation
-    InstantiateFunction(String),
+    InstantiateFunction(Box<str>),
 
     /// Generating debug info for a type
     // TODO: Switch to a namespace + AST representation
-    DebugType(String),
+    DebugType(Box<str>),
 
     /// Generating debug info for a global variable
     // TODO: Switch to a namespace + AST representation
-    DebugGlobalVariable(String),
+    DebugGlobalVariable(Box<str>),
 
     /// Generate a function's code
     // TODO: Switch to a namespace + AST representation
-    CodeGenFunction(String),
+    CodeGenFunction(Box<str>),
 
     /// Generating debug info for a function
     // TODO: Switch to a namespace + AST representation
-    DebugFunction(String),
+    DebugFunction(Box<str>),
 
     /// Perform pending instantiations (as the name suggests)
     PerformPendingInstantiations,
@@ -130,21 +130,21 @@ pub enum Activity {
     Frontend,
 
     /// Running a named compiler pass
-    RunPass(String),
+    RunPass(Box<str>),
 
     /// Optimizing code
     // TODO: Demangle then switch to a namespace + AST representation
-    OptFunction(String),
+    OptFunction(Box<str>),
 
     /// Per-function compiler passes
     PerFunctionPasses,
 
     /// Running a named loop compiler pass
-    RunLoopPass(String),
+    RunLoopPass(Box<str>),
 
     /// Optimizing a module
     // TODO: Switch to Path + normalize
-    OptModule(String),
+    OptModule(Box<str>),
 
     /// Per-module compiler passes
     PerModulePasses,
@@ -162,8 +162,8 @@ pub enum Activity {
 impl Activity {
     /// Parse from useful bits of Duration events
     fn parse(
-        name: String,
-        args: Option<HashMap<String, json::Value>>,
+        name: Box<str>,
+        args: Option<HashMap<Box<str>, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
@@ -176,7 +176,7 @@ impl Activity {
 
         // Handling of activities with one "detail" argument
         let fill_detail_arg =
-            |constructor: fn(String) -> Activity| -> Result<Activity, ActivityParseError> {
+            |constructor: fn(Box<str>) -> Activity| -> Result<Activity, ActivityParseError> {
                 Ok(constructor(Self::parse_detail_arg(
                     args.borrow_mut().take(),
                 )?))
@@ -209,7 +209,7 @@ impl Activity {
     }
 
     /// Check for absence of arguments
-    fn parse_empty_args(args: Option<HashMap<String, json::Value>>) -> Result<(), ArgParseError> {
+    fn parse_empty_args(args: Option<HashMap<Box<str>, json::Value>>) -> Result<(), ArgParseError> {
         if let Some(args) = args {
             if args.is_empty() {
                 Ok(())
@@ -223,23 +223,34 @@ impl Activity {
 
     /// Parse a single "detail" string argument
     fn parse_detail_arg(
-        args: Option<HashMap<String, json::Value>>,
-    ) -> Result<String, ArgParseError> {
+        args: Option<HashMap<Box<str>, json::Value>>,
+    ) -> Result<Box<str>, ArgParseError> {
         if let Some(args) = args {
-            let mut args_iter = args.iter();
+            let mut args_iter = args.into_iter();
+            let collect_bad_args = |args_iter, (k, v)| {
+                let mut remainder = HashMap::from_iter(args_iter);
+                remainder.insert(k, v);
+                remainder.remove("detail");
+                remainder
+            };
             if let Some((k, v)) = args_iter.next() {
-                if k != "detail" {
-                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                if &*k != "detail" {
+                    return Err(ArgParseError::UnexpectedKeys(collect_bad_args(
+                        args_iter,
+                        (k, v),
+                    )));
                 }
                 let s = if let json::Value::String(s) = v {
-                    s
+                    s.into()
                 } else {
-                    return Err(ArgParseError::UnexpectedValue("detail", v.clone()));
+                    return Err(ArgParseError::UnexpectedValue("detail", v));
                 };
-                if args_iter.next().is_some() {
-                    return Err(ArgParseError::UnexpectedKeys(args));
+                if let Some(kv) = args_iter.next() {
+                    return Err(ArgParseError::UnexpectedKeys(collect_bad_args(
+                        args_iter, kv,
+                    )));
                 }
-                Ok(s.clone())
+                Ok(s)
             } else {
                 Err(ArgParseError::MissingKey("detail"))
             }
@@ -254,7 +265,7 @@ impl Activity {
 pub enum ActivityParseError {
     /// Encountered an unexpected activity name
     #[error("encountered unknown activity \"{0}\"")]
-    UnknownActivity(String),
+    UnknownActivity(Box<str>),
 
     /// Failed to parse activity arguments
     #[error("failed to parse activity arguments ({0})")]
@@ -284,11 +295,11 @@ mod tests {
 
     fn test_valid_activity(
         name: &str,
-        args: Option<HashMap<String, json::Value>>,
+        args: Option<HashMap<Box<str>, json::Value>>,
         expected: &Activity,
     ) {
         // Check direct Activity parsing
-        let name = name.to_owned();
+        let name = Box::<str>::from(name);
         assert_eq!(
             Activity::parse(name.clone(), args.clone()),
             Ok(expected.clone())
@@ -386,7 +397,7 @@ mod tests {
 
     #[test]
     fn unknown_activity() {
-        let activity = "ThisIsMadness".to_owned();
+        let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
             Activity::parse(activity.clone(), None),
             Err(ActivityParseError::UnknownActivity(activity))
@@ -399,9 +410,9 @@ mod tests {
         test_valid_activity(name, Some(HashMap::new()), &a);
 
         // Add an undesired detail argument
-        let args = maplit::hashmap! { "detail".to_owned() => json::json!("") };
+        let args = maplit::hashmap! { "detail".into() => json::json!("") };
         assert_eq!(
-            Activity::parse(name.to_owned(), Some(args.clone())),
+            Activity::parse(name.into(), Some(args.clone())),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(args)
             ))
@@ -448,8 +459,8 @@ mod tests {
 
     fn unary_test(name: &str, arg: &str, a: Activity) {
         // Test happy path
-        let name = name.to_owned();
-        let good_args = maplit::hashmap! { "detail".to_owned() => json::json!(arg) };
+        let name = Box::<str>::from(name);
+        let good_args = maplit::hashmap! { "detail".into() => json::json!(arg) };
         test_valid_activity(&name, Some(good_args.clone()), &a);
 
         // Try not providing the requested argument
@@ -464,7 +475,7 @@ mod tests {
 
         // Try providing a wrongly typed value
         let bad_value = json::json!(42usize);
-        let bad_arg_value = maplit::hashmap! { "detail".to_owned() => bad_value.clone() };
+        let bad_arg_value = maplit::hashmap! { "detail".into() => bad_value.clone() };
         assert_eq!(
             Activity::parse(name.clone(), Some(bad_arg_value)),
             Err(ActivityParseError::BadArguments(
@@ -474,11 +485,11 @@ mod tests {
 
         // Try adding a meaningless argument
         let mut bad_arg = good_args.clone();
-        bad_arg.insert("wat".to_owned(), json::json!(""));
+        bad_arg.insert("wat".into(), json::json!(""));
         assert_eq!(
             Activity::parse(name, Some(bad_arg.clone())),
             Err(ActivityParseError::BadArguments(
-                ArgParseError::UnexpectedKeys(bad_arg)
+                ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
             ))
         );
     }
@@ -487,13 +498,13 @@ mod tests {
     fn source() {
         const PATH: &'static str =
             "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
-        unary_test("Source", PATH, Activity::Source(PATH.to_owned()));
+        unary_test("Source", PATH, Activity::Source(PATH.into()));
     }
 
     #[test]
     fn parse_class() {
         const CLASS: &'static str = "Acts::Test::MeasurementCreator";
-        unary_test("ParseClass", CLASS, Activity::ParseClass(CLASS.to_owned()));
+        unary_test("ParseClass", CLASS, Activity::ParseClass(CLASS.into()));
     }
 
     #[test]
@@ -502,7 +513,7 @@ mod tests {
         unary_test(
             "InstantiateClass",
             CLASS,
-            Activity::InstantiateClass(CLASS.to_owned()),
+            Activity::InstantiateClass(CLASS.into()),
         );
     }
 
@@ -512,7 +523,7 @@ mod tests {
         unary_test(
             "ParseTemplate",
             TEMPLATE,
-            Activity::ParseTemplate(TEMPLATE.to_owned()),
+            Activity::ParseTemplate(TEMPLATE.into()),
         );
     }
 
@@ -522,14 +533,14 @@ mod tests {
         unary_test(
             "InstantiateFunction",
             FUNCTION,
-            Activity::InstantiateFunction(FUNCTION.to_owned()),
+            Activity::InstantiateFunction(FUNCTION.into()),
         );
     }
 
     #[test]
     fn debug_type() {
         const TYPE: &'static str = "generic_dense_assignment_kernel<DstEvaluatorType, SrcEvaluatorType, Eigen::internal::add_assign_op<double, double> >";
-        unary_test("DebugType", TYPE, Activity::DebugType(TYPE.to_owned()));
+        unary_test("DebugType", TYPE, Activity::DebugType(TYPE.into()));
     }
 
     #[test]
@@ -538,7 +549,7 @@ mod tests {
         unary_test(
             "DebugGlobalVariable",
             VAR,
-            Activity::DebugGlobalVariable(VAR.to_owned()),
+            Activity::DebugGlobalVariable(VAR.into()),
         );
     }
 
@@ -549,7 +560,7 @@ mod tests {
         unary_test(
             "CodeGen Function",
             FUNCTION,
-            Activity::CodeGenFunction(FUNCTION.to_owned()),
+            Activity::CodeGenFunction(FUNCTION.into()),
         );
     }
 
@@ -559,14 +570,14 @@ mod tests {
         unary_test(
             "DebugFunction",
             FUNCTION,
-            Activity::DebugFunction(FUNCTION.to_owned()),
+            Activity::DebugFunction(FUNCTION.into()),
         );
     }
 
     #[test]
     fn run_pass() {
         const PASS: &'static str = "X86 DAG->DAG Instruction Selection";
-        unary_test("RunPass", PASS, Activity::RunPass(PASS.to_owned()));
+        unary_test("RunPass", PASS, Activity::RunPass(PASS.into()));
     }
 
     #[test]
@@ -575,20 +586,20 @@ mod tests {
         unary_test(
             "OptFunction",
             FUNCTION,
-            Activity::OptFunction(FUNCTION.to_owned()),
+            Activity::OptFunction(FUNCTION.into()),
         );
     }
 
     #[test]
     fn run_loop_pass() {
         const PASS: &'static str = "Induction Variable Users";
-        unary_test("RunLoopPass", PASS, Activity::RunLoopPass(PASS.to_owned()));
+        unary_test("RunLoopPass", PASS, Activity::RunLoopPass(PASS.into()));
     }
 
     #[test]
     fn opt_module() {
         const MODULE: &'static str =
             "/mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp";
-        unary_test("OptModule", MODULE, Activity::OptModule(MODULE.to_owned()));
+        unary_test("OptModule", MODULE, Activity::OptModule(MODULE.into()));
     }
 }

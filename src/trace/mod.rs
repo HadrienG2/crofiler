@@ -45,10 +45,10 @@ pub struct ClangTrace {
     first_root_idx: usize,
 
     /// Global statistics
-    global_stats: HashMap<String, GlobalStat>,
+    global_stats: HashMap<Box<str>, GlobalStat>,
 
     /// Name of the clang process
-    process_name: String,
+    process_name: Box<str>,
 }
 //
 impl ClangTrace {
@@ -256,7 +256,7 @@ impl ClangTrace {
     }
 
     /// Global statistics on clang activities
-    pub fn global_stats(&self) -> &HashMap<String, GlobalStat> {
+    pub fn global_stats(&self) -> &HashMap<Box<str>, GlobalStat> {
         &self.global_stats
     }
 
@@ -300,7 +300,7 @@ pub enum ClangTraceParseError {
 
     /// Encountered two occurences of the same global statistics
     #[error("encountered global statistic \"{0}\" twice ({1:?} then {2:?})")]
-    DuplicateGlobalStat(String, GlobalStat, GlobalStat),
+    DuplicateGlobalStat(Box<str>, GlobalStat, GlobalStat),
 
     /// Failed to parse the clang process' name
     #[error("failed to parse process name ({0})")]
@@ -308,7 +308,7 @@ pub enum ClangTraceParseError {
 
     /// Encountered two occurences of the process name
     #[error("encountered process name twice (\"{0}\" then \"{1}\")")]
-    DuplicateProcessName(String, String),
+    DuplicateProcessName(Box<str>, Box<str>),
 
     /// Did not find the clang process' name
     #[error("did not encounter process name")]
