@@ -8,7 +8,7 @@ fn main() {
     println!("Profile from {}", trace.process_name());
     println!("Global statistics: {:#?}", trace.global_stats());
     println!("Tree roots:");
-    for root in trace.hierarchy_iter() {
-        println!("- {:#?}", root);
+    for root in trace.root_activities() {
+        println!("- {root:#?}");
     }
 }

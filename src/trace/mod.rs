@@ -39,7 +39,6 @@ pub struct ClangTrace {
     ///
     /// At the end, there is also a slice of root activity indices which were
     /// directly triggered by toplevel clang logic.
-    ///
     activity_tree: Box<[usize]>,
 
     /// Start of the list of root activities, at the end of the activity_tree
@@ -211,19 +210,18 @@ impl ClangTrace {
         }
     }
 
-    /// Iterate over activities that were directly spawned by the clang driver
+    /// Activities that were directly spawned by the clang driver
     ///
     /// From this, you can recursively iterate over child tasks in order to
     /// construct a hierarchical execution profile.
-    ///
-    pub fn hierarchy_iter(&self) -> impl Iterator<Item = ActivityTrace> {
-        self.hierarchy_iter_impl(self.first_root_idx..)
+    pub fn root_activities(&self) -> impl Iterator<Item = ActivityTrace> {
+        self.hierarchy_iter(self.first_root_idx..)
     }
 
-    /// Generalization of hierarchy_iter that works with any contiguous subset
-    /// of the activity tree. This makes it usable for children of nodes in
-    /// addition to tree roots.
-    fn hierarchy_iter_impl<'self_>(
+    /// Iterator over a set of nodes identified by consecutive indices in
+    /// ClangTrace::activity_tree. Usable both for tree roots and children of
+    /// a tree node.
+    fn hierarchy_iter<'self_>(
         &'self_ self,
         tree_indices: impl SliceIndex<[usize], Output = [usize]>,
     ) -> impl Iterator<Item = ActivityTrace> + 'self_ {
@@ -236,7 +234,7 @@ impl ClangTrace {
             })
     }
 
-    /// Iterate over all activities that clang engaged in
+    /// Complete list of activities that clang engaged in
     ///
     /// You can get a temporal trace of everything that happened by sorting this
     /// in ascending activity.start() order and you can get a flat time profile
@@ -245,9 +243,8 @@ impl ClangTrace {
     ///
     /// When using such flat iteration, be careful not to double-count quantites
     /// that are aggregated over transitive children of each activity, including
-    /// duration() and the number of transitive children (flat_child_iter().count()).
-    ///
-    pub fn flat_iter(&self) -> impl Iterator<Item = ActivityTrace> {
+    /// activity.duration() and anything derived from activity.all_children().
+    pub fn all_activities(&self) -> impl Iterator<Item = ActivityTrace> {
         self.activities
             .iter()
             .enumerate()
@@ -349,18 +346,19 @@ impl ActivityTrace<'_> {
         self.activity.stat.end()
     }
 
-    /// Iterate over activities that were directly spawned by this activity
+    /// Activities that were directly spawned by this activity
     ///
-    /// See `ClangTrace::hierarchy_iter()` for info on this style of iteration
-    pub fn child_hierarchy_iter(&self) -> impl Iterator<Item = ActivityTrace> {
+    /// Like `ClangTrace::root_activities()`, but for children of one activity
+    pub fn direct_children(&self) -> impl Iterator<Item = ActivityTrace> {
         self.trace
-            .hierarchy_iter_impl(self.activity.children_indices.clone())
+            .hierarchy_iter(self.activity.children_indices.clone())
     }
 
-    /// Iterate over all activities transitively spawned by this activity
+    /// Activities that were spawned while processing this activity, either
+    /// directly or as an indirect result of directly spawned activities
     ///
-    /// See `ClangTrace::flat_iter()` for info on this style of iteration
-    pub fn child_flat_iter(&self) -> impl Iterator<Item = ActivityTrace> {
+    /// Like `ClangTrace::all_activities()`, but for children of one activity
+    pub fn all_children(&self) -> impl Iterator<Item = ActivityTrace> {
         let first_child_idx = self.activity.first_related_idx;
         self.trace.activities[first_child_idx..self.activity_idx]
             .iter()

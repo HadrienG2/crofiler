@@ -164,7 +164,7 @@ impl Activity {
         args: &Option<HashMap<String, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
         // Handling of activities with no arguments
-        let assert_no_args = |a: Activity| -> Result<Activity, ActivityParseError> {
+        let no_args = |a: Activity| -> Result<Activity, ActivityParseError> {
             Self::parse_empty_args(args)?;
             Ok(a)
         };
@@ -177,15 +177,13 @@ impl Activity {
 
         // Parse the activity name and parse arguments accordingly
         match &**name {
-            "PerformPendingInstantiations" => {
-                assert_no_args(Activity::PerformPendingInstantiations)
-            }
-            "Frontend" => assert_no_args(Activity::Frontend),
-            "PerFunctionPasses" => assert_no_args(Activity::PerFunctionPasses),
-            "PerModulePasses" => assert_no_args(Activity::PerModulePasses),
-            "CodeGenPasses" => assert_no_args(Activity::CodeGenPasses),
-            "Backend" => assert_no_args(Activity::Backend),
-            "ExecuteCompiler" => assert_no_args(Activity::ExecuteCompiler),
+            "PerformPendingInstantiations" => no_args(Activity::PerformPendingInstantiations),
+            "Frontend" => no_args(Activity::Frontend),
+            "PerFunctionPasses" => no_args(Activity::PerFunctionPasses),
+            "PerModulePasses" => no_args(Activity::PerModulePasses),
+            "CodeGenPasses" => no_args(Activity::CodeGenPasses),
+            "Backend" => no_args(Activity::Backend),
+            "ExecuteCompiler" => no_args(Activity::ExecuteCompiler),
             "Source" => fill_detail_arg(Activity::Source),
             "ParseClass" => fill_detail_arg(Activity::ParseClass),
             "InstantiateClass" => fill_detail_arg(Activity::InstantiateClass),
