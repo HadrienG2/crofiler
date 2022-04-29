@@ -75,7 +75,7 @@ impl ActivityStat {
 /// What can go wrong while parsing an activity profile
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityStatParseError {
-    #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
+    #[error("attempted to parse ActivityStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
 
     #[error("failed to parse activity ({0})")]

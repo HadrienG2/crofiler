@@ -2,16 +2,12 @@
 //! mechanism to load and parse it.
 
 mod ctf;
+mod metadata;
 mod stats;
 
 use self::{
-    ctf::{
-        events::{
-            duration::DurationEvent,
-            metadata::{MetadataEvent, MetadataOptions, NameArgs},
-        },
-        Duration, Timestamp, TraceDataObject, TraceEvent,
-    },
+    ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceDataObject, TraceEvent},
+    metadata::ProcessNameParseError,
     stats::{
         activity::{Activity, ActivityStat, ActivityStatParseError},
         global::{GlobalStat, GlobalStatParseError},
@@ -166,7 +162,7 @@ impl ClangTrace {
 
                 // Process name metadata
                 TraceEvent::M(m) => {
-                    let name = Self::parse_process_name(m)?;
+                    let name = metadata::parse_process_name(m)?;
                     if let Some(process_name) = process_name {
                         return Err(ClangTraceParseError::DuplicateProcessName(
                             process_name,
@@ -212,26 +208,6 @@ impl ClangTrace {
             })
         } else {
             Err(ClangTraceParseError::NoProcessName)
-        }
-    }
-
-    /// Decode the clang process name (which is currently the only metadata
-    /// event that has been observed in -ftime-trace data)
-    // TODO: Extract into a dedicated metadata module
-    fn parse_process_name(m: &MetadataEvent) -> Result<String, ClangTraceParseError> {
-        match m {
-            MetadataEvent::process_name {
-                pid: 1,
-                args: NameArgs { name, extra },
-                tid: Some(0),
-                options:
-                    MetadataOptions {
-                        cat: Some(cat),
-                        ts: Some(ts),
-                        tts: None,
-                    },
-            } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
-            _ => Err(ClangTraceParseError::UnexpectedMetadata(m.clone())),
         }
     }
 
@@ -321,16 +297,16 @@ pub enum ClangTraceParseError {
     #[error("duplicate global statistic \"{0}\" ({1:?} then {2:?})")]
     DuplicateGlobalStat(String, GlobalStat, GlobalStat),
 
-    #[error("unexpected {0:#?}")]
-    UnexpectedMetadata(MetadataEvent),
-
-    #[error("missing process name metadata")]
-    NoProcessName,
+    #[error("failed to parse process name ({0})")]
+    ProcessNameParseError(#[from] ProcessNameParseError),
 
     #[error("multiple process names (\"{0}\" then \"{1}\")")]
     DuplicateProcessName(String, String),
 
-    #[error("unexpected {0:#?}")]
+    #[error("missing process name metadata")]
+    NoProcessName,
+
+    #[error("encountered unexpected {0:#?}")]
     UnexpectedEvent(TraceEvent),
 }
 

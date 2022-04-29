@@ -1,4 +1,4 @@
-//! Clang execution statistics from -ftime-trace data
+//! Clang execution statistics that can be directly found in -ftime-trace data
 
 pub mod activity;
 pub mod global;
