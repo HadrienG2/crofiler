@@ -82,7 +82,7 @@ impl GlobalStat {
     }
 
     /// Average duration of this event
-    pub fn avg_duration(&self) -> Duration {
+    pub fn average_duration(&self) -> Duration {
         self.total_duration / (self.count as Duration)
     }
 }
@@ -93,7 +93,7 @@ pub enum GlobalStatParseError {
     #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
 
-    #[error("lacking expected \"Total\" name prefix")]
+    #[error("lacking expected \"Total \" name prefix")]
     NoTotalPrefix,
 
     #[error("failed to parse activity arguments ({0})")]
@@ -106,7 +106,7 @@ struct GlobalStatArgs {
     count: u64,
 
     /// Average time per event in milliseconds
-    avg_ms: f64,
+    _avg_ms: f64,
 }
 //
 impl GlobalStatArgs {
@@ -114,7 +114,7 @@ impl GlobalStatArgs {
     fn parse(args: &HashMap<String, json::Value>) -> Result<Self, ArgParseError> {
         // Process arguments
         let mut count = None;
-        let mut avg_ms = None;
+        let mut _avg_ms = None;
         for (k, v) in args {
             match &**k {
                 "count" => {
@@ -126,7 +126,7 @@ impl GlobalStatArgs {
                 }
                 "avg ms" => {
                     if let Some(f) = v.as_f64() {
-                        avg_ms = Some(f);
+                        _avg_ms = Some(f);
                     } else {
                         return Err(ArgParseError::UnexpectedValue("avg ms", v.clone()));
                     }
@@ -138,8 +138,8 @@ impl GlobalStatArgs {
         }
 
         // Make sure all arguments were provided, emit result
-        match (count, avg_ms) {
-            (Some(count), Some(avg_ms)) => Ok(Self { count, avg_ms }),
+        match (count, _avg_ms) {
+            (Some(count), Some(_avg_ms)) => Ok(Self { count, _avg_ms }),
             (None, _) => Err(ArgParseError::MissingKey("count")),
             (_, None) => Err(ArgParseError::MissingKey("avg ms")),
         }

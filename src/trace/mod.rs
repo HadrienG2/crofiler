@@ -216,6 +216,7 @@ impl TimeTrace {
 
     /// Decode the clang process name (which is currently the only metadata
     /// event that has been observed in -ftime-trace data)
+    // TODO: Extract into a dedicated metadata module
     fn parse_process_name(m: &MetadataEvent) -> Result<String, TimeTraceParseError> {
         match m {
             MetadataEvent::process_name {
