@@ -99,14 +99,14 @@ impl TimeTrace {
                     ..
                 } => {
                     // Parse activity statistics
-                    let activity_stat = ActivityStat::parse(t)?;
+                    let activity = ActivityStat::parse(t)?;
 
                     // Check assumption that clang -ftime-trace activities are
                     // sorted in order of increasing end timestamp (this means
                     // that a parent activity follows the sequence of its
                     // transitive children, which simplifies tree building).
-                    let start = activity_stat.start();
-                    let end = activity_stat.end();
+                    let start = activity.start();
+                    let end = activity.end();
                     // FIXME: No assertion
                     assert!(end >= last_end, "Bad -ftime-trace logic guess");
                     last_end = end;
@@ -121,16 +121,16 @@ impl TimeTrace {
                         // do: that's not a child, and we know no further child
                         // will come before that by the above ordering property.
                         let candidate_idx = next_candidates.len();
-                        if candidate.activity_stat.start() < start {
-                            debug_assert!(candidate.activity_stat.end() <= start);
+                        if candidate.stat.start() < start {
+                            debug_assert!(candidate.stat.end() <= start);
                             break;
                         }
-                        debug_assert!(candidate.activity_stat.end() <= end);
+                        debug_assert!(candidate.stat.end() <= end);
 
                         // This is a child, add its index to our child list and
                         // accumulate its duration for self-duration computation
                         children_accumulator.push(candidate_idx);
-                        children_duration += candidate.activity_stat.duration();
+                        children_duration += candidate.stat.duration();
 
                         // Ignore transitive children of this child and add them to
                         // our own set of transitive children.
@@ -145,9 +145,9 @@ impl TimeTrace {
                     let children_indices = first_child_index..activity_tree.len();
 
                     // Fill profile
-                    let self_duration = activity_stat.duration() - children_duration;
+                    let self_duration = activity.duration() - children_duration;
                     activities.push(ActivityTrace {
-                        activity_stat,
+                        stat: activity,
                         first_related_idx,
                         children_indices,
                         self_duration,
@@ -248,12 +248,12 @@ impl TimeTrace {
     pub fn flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
         self.activities
             .iter()
-            .map(|prof| (prof.activity_stat.activity(), prof.self_duration))
+            .map(|activity| (activity.stat.activity(), activity.self_duration))
     }
 
     /// Iterate over top-level activities, enabling iteration over their
     /// children as the caller desires
-    pub fn hierarchy_iter(&self) -> impl Iterator<Item = ActivityProfile> {
+    pub fn hierarchy_iter(&self) -> impl Iterator<Item = ActivityHierarchy> {
         self.hierarchy_iter_impl(self.first_root_idx..)
     }
 
@@ -263,7 +263,7 @@ impl TimeTrace {
     fn hierarchy_iter_impl<'_self>(
         &'_self self,
         node_set: impl RangeBounds<usize> + SliceIndex<[usize], Output = [usize]>,
-    ) -> impl Iterator<Item = ActivityProfile> + '_self {
+    ) -> impl Iterator<Item = ActivityHierarchy> + '_self {
         let idx_shift = match node_set.start_bound() {
             Bound::Unbounded => 0,
             Bound::Included(&s) => s,
@@ -274,9 +274,9 @@ impl TimeTrace {
             .enumerate()
             .map(move |(shifted_idx, &activity_idx)| {
                 let tree_idx = shifted_idx + idx_shift;
-                ActivityProfile {
-                    top_profile: self,
-                    activity_data: &self.activities[activity_idx],
+                ActivityHierarchy {
+                    trace: self,
+                    activity: &self.activities[activity_idx],
                     tree_idx,
                 }
             })
@@ -329,55 +329,50 @@ pub enum TimeTraceParseError {
     UnexpectedEvent(TraceEvent),
 }
 
-/// View over an activity and its children
+/// Hierarchical view over an activity and its children
 #[derive(Debug, PartialEq)]
-pub struct ActivityProfile<'a> {
+pub struct ActivityHierarchy<'a> {
     /// Which profile this activity comes from
-    top_profile: &'a TimeTrace,
+    trace: &'a TimeTrace,
 
     /// Which activity we are looking at
-    activity_data: &'a ActivityTrace,
+    activity: &'a ActivityTrace,
 
     /// What is the index of this activity in the TimeTrace::tree array
     tree_idx: usize,
 }
 //
-impl ActivityProfile<'_> {
+impl ActivityHierarchy<'_> {
     /// What is going on
     pub fn activity(&self) -> &Activity {
-        &self.activity_data.activity_stat.activity()
+        &self.activity.stat.activity()
     }
 
     /// When this activity started
     pub fn start(&self) -> Timestamp {
-        self.activity_data.activity_stat.start()
+        self.activity.stat.start()
     }
 
-    /// How much time was spent on it
+    /// How much time was spent on it and child activity
     pub fn duration(&self) -> Duration {
-        self.activity_data.activity_stat.duration()
+        self.activity.stat.duration()
     }
 
-    /// ...excluding transitively spawned children activity
+    /// How much time was spent excluding transitively spawned children activity
     pub fn self_duration(&self) -> Duration {
-        self.activity_data.self_duration
-    }
-
-    /// ...only accounting for transitively spawned children activity
-    pub fn children_duration(&self) -> Duration {
-        self.duration() - self.activity_data.self_duration
+        self.activity.self_duration
     }
 
     /// When this activity ended
     pub fn end(&self) -> Timestamp {
-        self.activity_data.activity_stat.end()
+        self.activity.stat.end()
     }
 
     /// Iterate over children of this activity, enabling iteration over their
     /// children as the caller desires
-    pub fn child_hierarchy_iter(&self) -> impl Iterator<Item = ActivityProfile> {
-        self.top_profile
-            .hierarchy_iter_impl(self.activity_data.children_indices.clone())
+    pub fn child_hierarchy_iter(&self) -> impl Iterator<Item = ActivityHierarchy> {
+        self.trace
+            .hierarchy_iter_impl(self.activity.children_indices.clone())
     }
 
     /// Iterate over all transitively spawned children and their self time
@@ -387,14 +382,11 @@ impl ActivityProfile<'_> {
     /// grouping beforehand (e.g. by activity type, by file, by namespace...)
     ///
     pub fn child_flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
-        self.top_profile.activity_tree[self.activity_data.first_related_idx..=self.tree_idx]
+        self.trace.activity_tree[self.activity.first_related_idx..=self.tree_idx]
             .iter()
             .map(|&child_idx| {
-                let activity_data = &self.top_profile.activities[child_idx];
-                (
-                    activity_data.activity_stat.activity(),
-                    activity_data.self_duration,
-                )
+                let activity = &self.trace.activities[child_idx];
+                (activity.stat.activity(), activity.self_duration)
             })
     }
 }
@@ -403,7 +395,7 @@ impl ActivityProfile<'_> {
 #[derive(Debug, PartialEq)]
 struct ActivityTrace {
     /// What activity are talking about and when was it running
-    activity_stat: ActivityStat,
+    stat: ActivityStat,
 
     /// Activity duration excluding children activities
     self_duration: Duration,
