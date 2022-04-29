@@ -13,7 +13,7 @@ use self::{
         Duration, Timestamp, TraceDataObject, TraceEvent,
     },
     stats::{
-        activity::{Activity, ActivityParseError},
+        activity::{Activity, ActivityStat, ActivityStatParseError},
         global::{GlobalStat, GlobalStatParseError},
     },
 };
@@ -56,9 +56,10 @@ pub struct TimeTrace {
 }
 //
 impl TimeTrace {
-    /// Load from clang -ftime-trace output
+    /// Load from clang -ftime-trace output in a file
     // FIXME/WIP: Modularize and add proper error handling
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, TimeTraceLoadError> {
+    // TODO: Add a from_str method for tests
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TimeTraceLoadError> {
         // Load JSON data from the input file and parse it as CTF JSON
         let mut profile_str = String::new();
         File::open(path)?.read_to_string(&mut profile_str)?;
@@ -87,53 +88,20 @@ impl TimeTrace {
         //
         for event in profile_ctf.traceEvents.into_iter() {
             match event {
-                // Process name metadata
-                TraceEvent::M(m) => {
-                    let proc_name = Self::decode_process_name(m)?;
-                    if let Some(process_name) = process_name {
-                        return Err(TimeTraceLoadError::DuplicateProcessName(
-                            process_name,
-                            proc_name,
-                        ));
-                    } else {
-                        process_name = Some(proc_name);
-                    }
-                }
-
-                // Global statistics
-                t @ TraceEvent::X { duration_event, .. } if duration_event.tid != 0 => {
-                    let (name, stat) = GlobalStat::parse(t)?;
-                    if let Some(old) = global_stats.insert(name.clone(), stat) {
-                        let new = global_stats[&name].clone();
-                        return Err(TimeTraceLoadError::DuplicateGlobalStat(name, old, new));
-                    }
-                }
-
-                // Activity report
-                TraceEvent::X {
-                    duration_event:
-                        DurationEvent {
-                            pid: 1,
-                            tid: 0,
-                            ts,
-                            name: Some(name),
-                            cat: None,
-                            tts: None,
-                            args,
-                            stack_trace: None,
-                        },
-                    dur,
-                    tdur: None,
-                    end_stack_trace: None,
+                // Durations associated with a zero tid are activity profiles
+                t @ TraceEvent::X {
+                    duration_event: DurationEvent { tid: 0, .. },
+                    ..
                 } => {
-                    // Events with a zero thread ID should be activities
-                    let activity = Activity::parse(name, args)?;
+                    // Parse activity statistics
+                    let activity_stat = ActivityStat::parse(t)?;
 
                     // Check assumption that clang -ftime-trace activities are
                     // sorted in order of increasing end timestamp (this means
                     // that a parent activity follows the sequence of its
                     // transitive children, which simplifies tree building).
-                    let end = ts + dur;
+                    let start = activity_stat.start();
+                    let end = activity_stat.end();
                     // FIXME: No assertion
                     assert!(end >= last_end, "Bad -ftime-trace logic guess");
                     last_end = end;
@@ -148,16 +116,16 @@ impl TimeTrace {
                         // do: that's not a child, and we know no further child
                         // will come before that by the above ordering property.
                         let candidate_idx = next_candidates.len();
-                        if candidate.start < *ts {
-                            debug_assert!(candidate.start + candidate.duration <= *ts);
+                        if candidate.activity_stat.start() < start {
+                            debug_assert!(candidate.activity_stat.end() <= start);
                             break;
                         }
-                        debug_assert!(candidate.start + candidate.duration <= end);
+                        debug_assert!(candidate.activity_stat.end() <= end);
 
                         // This is a child, add its index to our child list and
                         // accumulate its duration for self-duration computation
                         children_accumulator.push(candidate_idx);
-                        children_duration += candidate.duration;
+                        children_duration += candidate.activity_stat.duration();
 
                         // Ignore transitive children of this child and add them to
                         // our own set of transitive children.
@@ -172,19 +140,36 @@ impl TimeTrace {
                     let children_indices = first_child_index..activity_tree.len();
 
                     // Fill profile
+                    let self_duration = activity_stat.duration() - children_duration;
                     activities.push(ActivityData {
-                        activity,
-                        start: *ts,
-                        duration: *dur,
+                        activity_stat,
                         first_related_idx,
                         children_indices,
-                        self_duration: *dur - children_duration,
+                        self_duration,
                     });
                 }
 
+                // Durations associated with a nonzero tid are global stats
+                t @ TraceEvent::X { .. } => {
+                    let (name, stat) = GlobalStat::parse(t)?;
+                    if let Some(old) = global_stats.insert(name.clone(), stat) {
+                        let new = global_stats[&name].clone();
+                        return Err(TimeTraceLoadError::DuplicateGlobalStat(name, old, new));
+                    }
+                }
+
+                // Process name metadata
+                TraceEvent::M(m) => {
+                    let name = Self::parse_process_name(m)?;
+                    if let Some(process_name) = process_name {
+                        return Err(TimeTraceLoadError::DuplicateProcessName(process_name, name));
+                    } else {
+                        process_name = Some(name);
+                    }
+                }
+
                 // No other CTF record is expected from -ftime-trace
-                // FIXME: No assertion
-                _ => panic!("Unexpected event {:#?}", event),
+                _ => return Err(TimeTraceLoadError::UnexpectedEvent(event.clone())),
             }
         }
 
@@ -223,7 +208,7 @@ impl TimeTrace {
 
     /// Decode the clang process name (which is currently the only metadata
     /// event that has been observed in -ftime-trace data)
-    fn decode_process_name(m: &MetadataEvent) -> Result<String, TimeTraceLoadError> {
+    fn parse_process_name(m: &MetadataEvent) -> Result<String, TimeTraceLoadError> {
         match m {
             MetadataEvent::process_name {
                 pid: 1,
@@ -236,7 +221,7 @@ impl TimeTrace {
                         tts: None,
                     },
             } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
-            _ => Err(TimeTraceLoadError::UnexpectedMetadataEvent(m.clone())),
+            _ => Err(TimeTraceLoadError::UnexpectedMetadata(m.clone())),
         }
     }
 
@@ -254,7 +239,7 @@ impl TimeTrace {
     pub fn flat_iter(&self) -> impl Iterator<Item = (&Activity, Duration)> {
         self.activities
             .iter()
-            .map(|prof| (&prof.activity, prof.self_duration))
+            .map(|prof| (prof.activity_stat.activity(), prof.self_duration))
     }
 
     /// Iterate over top-level activities, enabling iteration over their
@@ -306,14 +291,8 @@ pub enum TimeTraceLoadError {
     #[error("unexpected global metadata ({0:#?})")]
     UnexpectedGlobalMetadata(TraceDataObject),
 
-    #[error("unexpected {0:#?}")]
-    UnexpectedMetadataEvent(MetadataEvent),
-
-    #[error("missing process name metadata")]
-    NoProcessName,
-
-    #[error("multiple process names (\"{0}\" then \"{1}\")")]
-    DuplicateProcessName(String, String),
+    #[error("failed to parse activity statistics ({0})")]
+    ActivityStatParseError(#[from] ActivityStatParseError),
 
     #[error("failed to parse global statistics ({0})")]
     GlobalStatParseError(#[from] GlobalStatParseError),
@@ -321,8 +300,17 @@ pub enum TimeTraceLoadError {
     #[error("duplicate global statistic \"{0}\" ({1:?} then {2:?})")]
     DuplicateGlobalStat(String, GlobalStat, GlobalStat),
 
-    #[error("failed to parse an activity from CTF JSON ({0})")]
-    ActivityParseError(#[from] ActivityParseError),
+    #[error("unexpected {0:#?}")]
+    UnexpectedMetadata(MetadataEvent),
+
+    #[error("missing process name metadata")]
+    NoProcessName,
+
+    #[error("multiple process names (\"{0}\" then \"{1}\")")]
+    DuplicateProcessName(String, String),
+
+    #[error("unexpected {0:#?}")]
+    UnexpectedEvent(TraceEvent),
 }
 
 /// View over an activity and its children
@@ -341,17 +329,17 @@ pub struct ActivityProfile<'a> {
 impl ActivityProfile<'_> {
     /// What is going on
     pub fn activity(&self) -> &Activity {
-        &self.activity_data.activity
+        &self.activity_data.activity_stat.activity()
     }
 
     /// When this activity started
     pub fn start(&self) -> Timestamp {
-        self.activity_data.start
+        self.activity_data.activity_stat.start()
     }
 
     /// How much time was spent on it
     pub fn duration(&self) -> Duration {
-        self.activity_data.duration
+        self.activity_data.activity_stat.duration()
     }
 
     /// ...excluding transitively spawned children activity
@@ -361,12 +349,12 @@ impl ActivityProfile<'_> {
 
     /// ...only accounting for transitively spawned children activity
     pub fn children_duration(&self) -> Duration {
-        self.activity_data.duration - self.activity_data.self_duration
+        self.duration() - self.activity_data.self_duration
     }
 
     /// When this activity ended
     pub fn end(&self) -> Timestamp {
-        self.activity_data.start + self.activity_data.duration
+        self.activity_data.activity_stat.end()
     }
 
     /// Iterate over children of this activity, enabling iteration over their
@@ -387,7 +375,10 @@ impl ActivityProfile<'_> {
             .iter()
             .map(|&child_idx| {
                 let activity_data = &self.top_profile.activities[child_idx];
-                (&activity_data.activity, activity_data.self_duration)
+                (
+                    activity_data.activity_stat.activity(),
+                    activity_data.self_duration,
+                )
             })
     }
 }
@@ -395,16 +386,10 @@ impl ActivityProfile<'_> {
 /// Clang activity with -ftime-trace profiling information
 #[derive(Debug, PartialEq)]
 struct ActivityData {
-    /// What activity we are talking about
-    activity: Activity,
+    /// What activity are talking about and when was it running
+    activity_stat: ActivityStat,
 
-    /// When did it start
-    start: Timestamp,
-
-    /// How long did it last...
-    duration: Duration,
-
-    /// ...excluding children activities
+    /// Activity duration excluding children activities
     self_duration: Duration,
 
     /// Index of the first event which, within TimeTrace::activities, belongs

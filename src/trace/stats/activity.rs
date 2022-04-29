@@ -2,11 +2,87 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
+use crate::trace::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
 use serde_json as json;
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// Clang activity without profiling information
+/// Clang activity with timing information
+#[derive(Clone, Debug, PartialEq)]
+pub struct ActivityStat {
+    /// What clang was doing
+    activity: Activity,
+
+    /// When it started doing it
+    start: Timestamp,
+
+    /// How long it did it
+    duration: Duration,
+}
+//
+impl ActivityStat {
+    /// Decode a TraceEvent which is expected to contain a timed activity
+    pub fn parse(t: &TraceEvent) -> Result<Self, ActivityStatParseError> {
+        match t {
+            TraceEvent::X {
+                duration_event:
+                    DurationEvent {
+                        pid: 1,
+                        tid: 0,
+                        ts,
+                        name: Some(name),
+                        cat: None,
+                        tts: None,
+                        args,
+                        stack_trace: None,
+                    },
+                dur,
+                tdur: None,
+                end_stack_trace: None,
+            } => {
+                let activity = Activity::parse(name, args)?;
+                Ok(Self {
+                    activity,
+                    start: *ts,
+                    duration: *dur,
+                })
+            }
+            _ => Err(ActivityStatParseError::UnexpectedInput(t.clone())),
+        }
+    }
+
+    /// What clang was doing
+    pub fn activity(&self) -> &Activity {
+        &self.activity
+    }
+
+    /// When it started doing it
+    pub fn start(&self) -> Timestamp {
+        self.start
+    }
+
+    /// How long it did it
+    pub fn duration(&self) -> Duration {
+        self.duration
+    }
+
+    /// When it stopped doing it
+    pub fn end(&self) -> Timestamp {
+        self.start + self.duration
+    }
+}
+
+/// What can go wrong while parsing an activity profile
+#[derive(Error, Debug, PartialEq)]
+pub enum ActivityStatParseError {
+    #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
+    UnexpectedInput(TraceEvent),
+
+    #[error("failed to parse activity ({0})")]
+    BadArguments(#[from] ActivityParseError),
+}
+
+/// Activity that Clang can engage in during the compilation process
 #[derive(Clone, Debug, PartialEq)]
 pub enum Activity {
     /// Processing a source file
@@ -83,7 +159,7 @@ pub enum Activity {
 //
 impl Activity {
     /// Parse from useful bits of Duration events
-    pub fn parse(
+    fn parse(
         name: &String,
         args: &Option<HashMap<String, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
@@ -168,7 +244,7 @@ impl Activity {
     }
 }
 
-/// Things that can go wrong while parsing an Activity
+/// What can go wrong while parsing an Activity
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityParseError {
     #[error("encountered unknown activity \"{0}\"")]
@@ -181,6 +257,8 @@ pub enum ActivityParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // FIXME: Add ActivityStat::parse tests
 
     #[test]
     fn unknown_activity() {

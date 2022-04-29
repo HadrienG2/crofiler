@@ -18,7 +18,7 @@ use thiserror::Error;
 /// Global clang execution statistics for a certain kind of activity
 ///
 /// The precise semantics are unknown: are we talking about top-level entities?
-/// all entities? self time? children time?
+/// all entities? self time? children time? To be investigated...
 ///
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlobalStat {
@@ -90,11 +90,11 @@ impl GlobalStat {
 /// Things that can go wrong while parsing a GlobalStat
 #[derive(Error, Debug, PartialEq)]
 pub enum GlobalStatParseError {
-    #[error("lacking expected \"Total\" name prefix")]
-    NoTotalPrefix,
-
     #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
+
+    #[error("lacking expected \"Total\" name prefix")]
+    NoTotalPrefix,
 
     #[error("failed to parse activity arguments ({0})")]
     BadArguments(#[from] ArgParseError),
