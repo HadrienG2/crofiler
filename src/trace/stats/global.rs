@@ -151,7 +151,21 @@ impl GlobalStatArgs {
 mod tests {
     use super::*;
 
-    // FIXME: Add some tests
+    #[test]
+    fn global_stat_accessors() {
+        let global_stat = GlobalStat {
+            total_duration: 12.3,
+            count: 10,
+        };
+        assert_eq!(global_stat.total_duration(), global_stat.total_duration);
+        assert_eq!(global_stat.count(), global_stat.count);
+        assert_eq!(
+            global_stat.average_duration(),
+            global_stat.total_duration / (global_stat.count as Duration)
+        );
+    }
+
+    // FIXME: Add some tests of GlobalStat::parse
 
     #[test]
     fn global_stat_args() {
