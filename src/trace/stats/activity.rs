@@ -75,9 +75,11 @@ impl ActivityStat {
 /// What can go wrong while parsing an activity profile
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityStatParseError {
+    /// Encountered unexpected input
     #[error("attempted to parse ActivityStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
 
+    /// Failed to parse inner activity
     #[error("failed to parse activity ({0})")]
     BadArguments(#[from] ActivityParseError),
 }
@@ -245,9 +247,11 @@ impl Activity {
 /// What can go wrong while parsing an Activity
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityParseError {
+    /// Encountered an unexpected activity name
     #[error("encountered unknown activity \"{0}\"")]
     UnknownActivity(String),
 
+    /// Failed to parse activity arguments
     #[error("failed to parse activity arguments ({0})")]
     BadArguments(#[from] ArgParseError),
 }

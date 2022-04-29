@@ -1,7 +1,7 @@
 //! Parser for the Chrome Trace Event format
 //!
 //! Based on the documentation available at
-//! https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
+//! <https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU>
 //!
 //! Currently only implements what's necessary to parse the output of clang's
 //! -ftime-trace, but could later be extended into a full CTF parser if the need
@@ -18,8 +18,7 @@ use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
 
-/// Chrome Trace Event Format, per documentation at
-/// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
+/// Chrome Trace Event Format
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_snake_case)]
 #[serde(untagged, deny_unknown_fields)]

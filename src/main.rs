@@ -1,3 +1,7 @@
+//! Easier C++ build profiling
+
+#![deny(missing_docs)]
+
 mod trace;
 
 use trace::ClangTrace;

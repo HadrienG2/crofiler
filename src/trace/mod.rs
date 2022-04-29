@@ -73,7 +73,7 @@ impl ClangTrace {
             ..profile_ctf
         };
         if profile_wo_events != TraceDataObject::default() {
-            return Err(ClangTraceParseError::UnexpectedGlobalMetadata(
+            return Err(ClangTraceParseError::UnexpectedTraceMetadata(
                 profile_wo_events,
             ));
         }
@@ -255,7 +255,7 @@ impl ClangTrace {
             })
     }
 
-    /// Expose the global statistics
+    /// Global statistics on clang activities
     pub fn global_stats(&self) -> &HashMap<String, GlobalStat> {
         &self.global_stats
     }
@@ -266,43 +266,54 @@ impl ClangTrace {
     }
 }
 
-/// Things that can go wrong while loading clang's -ftime-trace data from a file
+/// What can go wrong while loading clang's -ftime-trace data from a file
 #[derive(Error, Debug)]
 pub enum ClangTraceLoadError {
+    /// Failed to load data from the file
     #[error("failed to load time trace from file ({0})")]
     Io(#[from] io::Error),
 
+    /// Failed to parse data from the file
     #[error("failed to parse time trace ({0})")]
     Parse(#[from] ClangTraceParseError),
 }
 
-/// Things that can go wrong while parsing clang's -ftime-trace data from a string
+/// What can go wrong while parsing clang's -ftime-trace data from a string
 #[derive(Error, Debug)]
 pub enum ClangTraceParseError {
+    /// Failed to parse data as CTF-style JSON
     #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
 
-    #[error("unexpected global metadata ({0:#?})")]
-    UnexpectedGlobalMetadata(TraceDataObject),
+    /// Encountered unexpected trace-wide metadata
+    #[error("encountered unexpected trace-wide metadata ({0:#?})")]
+    UnexpectedTraceMetadata(TraceDataObject),
 
-    #[error("failed to parse activity statistics ({0})")]
+    /// Failed to parse per-activity statistics
+    #[error("failed to parse per-activity statistics ({0})")]
     ActivityStatParseError(#[from] ActivityStatParseError),
 
+    /// Failed to parse global statistics
     #[error("failed to parse global statistics ({0})")]
     GlobalStatParseError(#[from] GlobalStatParseError),
 
-    #[error("duplicate global statistic \"{0}\" ({1:?} then {2:?})")]
+    /// Encountered two occurences of the same global statistics
+    #[error("encountered global statistic \"{0}\" twice ({1:?} then {2:?})")]
     DuplicateGlobalStat(String, GlobalStat, GlobalStat),
 
+    /// Failed to parse the clang process' name
     #[error("failed to parse process name ({0})")]
     ProcessNameParseError(#[from] ProcessNameParseError),
 
-    #[error("multiple process names (\"{0}\" then \"{1}\")")]
+    /// Encountered two occurences of the process name
+    #[error("encountered process name twice (\"{0}\" then \"{1}\")")]
     DuplicateProcessName(String, String),
 
-    #[error("missing process name metadata")]
+    /// Did not find the clang process' name
+    #[error("did not encounter process name")]
     NoProcessName,
 
+    /// Encountered an unexpected CTF event
     #[error("encountered unexpected {0:#?}")]
     UnexpectedEvent(TraceEvent),
 }
@@ -401,4 +412,4 @@ struct ActivityData {
     children_indices: Range<usize>,
 }
 
-// FIXME: Add some tests that exercise accessors and all non-#[from] errors
+// FIXME: Add some tests that exercise from_str, accessors and all non-#[from] errors

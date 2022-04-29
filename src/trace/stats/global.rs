@@ -1,10 +1,4 @@
-//! Clang provides a number of global execution statistics in -ftime-trace.
-//!
-//! These are attributed to nonzero TIDs, likely so that they appear as
-//! dedicated lanes in Chrome's about:tracing viz.
-//!
-//! Their precise semantics (based on self time of all tasks ? children time of
-//! toplevel tasks ?) are currently unknown.
+//! Handling of global execution statistics
 
 use super::ArgParseError;
 use crate::trace::{
@@ -87,15 +81,18 @@ impl GlobalStat {
     }
 }
 
-/// Things that can go wrong while parsing a GlobalStat
+/// What can go wrong while parsing a GlobalStat
 #[derive(Error, Debug, PartialEq)]
 pub enum GlobalStatParseError {
+    /// Encountered unexpected input
     #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
 
-    #[error("global stat name \"{0}\" lacks expected \"Total \" prefix")]
+    /// Event named lacked the usual "Total " prefix
+    #[error("GlobalStat name \"{0}\" lacked expected \"Total \" prefix")]
     NoTotalPrefix(String),
 
+    /// Failed to parse GlobalStat arguments
     #[error("failed to parse activity arguments ({0})")]
     BadArguments(#[from] ArgParseError),
 }

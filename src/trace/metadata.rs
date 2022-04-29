@@ -27,6 +27,7 @@ pub fn parse_process_name(m: &MetadataEvent) -> Result<String, ProcessNameParseE
 /// What can go wrong while parsing a process name
 #[derive(Error, Debug, PartialEq)]
 pub enum ProcessNameParseError {
+    /// Encountered unexpected input while trying to parse the process name
     #[error("attempted to parse clang process name from unexpected {0:#?}")]
     UnexpectedInput(MetadataEvent),
 }
