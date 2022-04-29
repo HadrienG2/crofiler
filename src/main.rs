@@ -1,8 +1,9 @@
 mod trace;
 
-use trace::TimeTrace;
+use trace::ClangTrace;
 
 fn main() {
-    let trace = TimeTrace::from_file("2020-05-25_CombinatorialKalmanFilterTests.cpp.json").unwrap();
+    let trace =
+        ClangTrace::from_file("2020-05-25_CombinatorialKalmanFilterTests.cpp.json").unwrap();
     println!("Global statistics: {:#?}", trace.global_stats());
 }

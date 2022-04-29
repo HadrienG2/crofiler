@@ -30,7 +30,7 @@ use thiserror::Error;
 
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
-pub struct TimeTrace {
+pub struct ClangTrace {
     /// Name of the clang process
     process_name: String,
 
@@ -55,9 +55,9 @@ pub struct TimeTrace {
     global_stats: HashMap<String, GlobalStat>,
 }
 //
-impl TimeTrace {
+impl ClangTrace {
     /// Load from clang -ftime-trace output in a file
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TimeTraceLoadError> {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ClangTraceLoadError> {
         // Load JSON data from the input file and parse it as CTF JSON
         let mut profile_str = String::new();
         File::open(path)?.read_to_string(&mut profile_str)?;
@@ -66,7 +66,7 @@ impl TimeTrace {
 
     /// Parce a string of clang -ftime-trace data
     // FIXME/WIP: Modularize and add proper error handling
-    pub fn from_str(s: &str) -> Result<Self, TimeTraceParseError> {
+    pub fn from_str(s: &str) -> Result<Self, ClangTraceParseError> {
         // Parse the string as CTF JSON data
         let profile_ctf = json::from_str::<TraceDataObject>(s)?;
 
@@ -77,7 +77,7 @@ impl TimeTrace {
             ..profile_ctf
         };
         if profile_wo_events != TraceDataObject::default() {
-            return Err(TimeTraceParseError::UnexpectedGlobalMetadata(
+            return Err(ClangTraceParseError::UnexpectedGlobalMetadata(
                 profile_wo_events,
             ));
         }
@@ -159,7 +159,7 @@ impl TimeTrace {
                     let (name, stat) = GlobalStat::parse(t)?;
                     if let Some(old) = global_stats.insert(name.clone(), stat) {
                         let new = global_stats[&name].clone();
-                        return Err(TimeTraceParseError::DuplicateGlobalStat(name, old, new));
+                        return Err(ClangTraceParseError::DuplicateGlobalStat(name, old, new));
                     }
                 }
 
@@ -167,7 +167,7 @@ impl TimeTrace {
                 TraceEvent::M(m) => {
                     let name = Self::parse_process_name(m)?;
                     if let Some(process_name) = process_name {
-                        return Err(TimeTraceParseError::DuplicateProcessName(
+                        return Err(ClangTraceParseError::DuplicateProcessName(
                             process_name,
                             name,
                         ));
@@ -177,7 +177,7 @@ impl TimeTrace {
                 }
 
                 // No other CTF record is expected from -ftime-trace
-                _ => return Err(TimeTraceParseError::UnexpectedEvent(event.clone())),
+                _ => return Err(ClangTraceParseError::UnexpectedEvent(event.clone())),
             }
         }
 
@@ -200,7 +200,7 @@ impl TimeTrace {
         // FIXME: No assertion
         assert_eq!(activities.len(), activity_tree.len());
 
-        // Build the final TimeTrace
+        // Build the final ClangTrace
         if let Some(process_name) = process_name {
             Ok(Self {
                 process_name,
@@ -210,14 +210,14 @@ impl TimeTrace {
                 global_stats,
             })
         } else {
-            Err(TimeTraceParseError::NoProcessName)
+            Err(ClangTraceParseError::NoProcessName)
         }
     }
 
     /// Decode the clang process name (which is currently the only metadata
     /// event that has been observed in -ftime-trace data)
     // TODO: Extract into a dedicated metadata module
-    fn parse_process_name(m: &MetadataEvent) -> Result<String, TimeTraceParseError> {
+    fn parse_process_name(m: &MetadataEvent) -> Result<String, ClangTraceParseError> {
         match m {
             MetadataEvent::process_name {
                 pid: 1,
@@ -230,7 +230,7 @@ impl TimeTrace {
                         tts: None,
                     },
             } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
-            _ => Err(TimeTraceParseError::UnexpectedMetadata(m.clone())),
+            _ => Err(ClangTraceParseError::UnexpectedMetadata(m.clone())),
         }
     }
 
@@ -290,17 +290,17 @@ impl TimeTrace {
 
 /// Things that can go wrong while loading clang's -ftime-trace data from a file
 #[derive(Error, Debug)]
-pub enum TimeTraceLoadError {
+pub enum ClangTraceLoadError {
     #[error("failed to load time trace from file ({0})")]
     Io(#[from] io::Error),
 
     #[error("failed to parse time trace ({0})")]
-    Parse(#[from] TimeTraceParseError),
+    Parse(#[from] ClangTraceParseError),
 }
 
 /// Things that can go wrong while parsing clang's -ftime-trace data from a string
 #[derive(Error, Debug)]
-pub enum TimeTraceParseError {
+pub enum ClangTraceParseError {
     #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
 
@@ -333,12 +333,12 @@ pub enum TimeTraceParseError {
 #[derive(Debug, PartialEq)]
 pub struct ActivityHierarchy<'a> {
     /// Which profile this activity comes from
-    trace: &'a TimeTrace,
+    trace: &'a ClangTrace,
 
     /// Which activity we are looking at
     activity: &'a ActivityTrace,
 
-    /// What is the index of this activity in the TimeTrace::tree array
+    /// What is the index of this activity in the ClangTrace::tree array
     tree_idx: usize,
 }
 //
@@ -391,7 +391,7 @@ impl ActivityHierarchy<'_> {
     }
 }
 
-/// Clang activity with -ftime-trace profiling information
+/// Individual clang activity with -ftime-trace profiling information
 #[derive(Debug, PartialEq)]
 struct ActivityTrace {
     /// What activity are talking about and when was it running
@@ -400,11 +400,11 @@ struct ActivityTrace {
     /// Activity duration excluding children activities
     self_duration: Duration,
 
-    /// Index of the first event which, within TimeTrace::activities, belongs
+    /// Index of the first event which, within ClangTrace::activities, belongs
     /// to the set composed of this event and all of its transitive children.
     first_related_idx: usize,
 
-    /// Indices of the child activities in the global TimeTrace::tree array
+    /// Indices of the child activities in the global ClangTrace::tree array
     children_indices: Range<usize>,
 }
 
