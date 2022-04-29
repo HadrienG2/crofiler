@@ -1,12 +1,10 @@
 //! Ergonomic representation of the output from clang's -ftime-trace, with a
 //! mechanism to load and parse it.
 
-mod activities;
 mod ctf;
 mod stats;
 
 use self::{
-    activities::Activity,
     ctf::{
         events::{
             duration::DurationEvent,
@@ -14,7 +12,10 @@ use self::{
         },
         Duration, Timestamp, TraceDataObject, TraceEvent,
     },
-    stats::GlobalStat,
+    stats::{
+        activity::{Activity, ActivityParseError},
+        global::{GlobalStat, GlobalStatParseError},
+    },
 };
 use serde_json as json;
 use std::{
@@ -315,13 +316,13 @@ pub enum TimeTraceLoadError {
     DuplicateProcessName(String, String),
 
     #[error("failed to parse global statistics ({0})")]
-    GlobalStatParseError(#[from] stats::GlobalStatParseError),
+    GlobalStatParseError(#[from] GlobalStatParseError),
 
     #[error("duplicate global statistic \"{0}\" ({1:?} then {2:?})")]
     DuplicateGlobalStat(String, GlobalStat, GlobalStat),
 
     #[error("failed to parse an activity from CTF JSON ({0})")]
-    ActivityParseError(#[from] activities::ActivityParseError),
+    ActivityParseError(#[from] ActivityParseError),
 }
 
 /// View over an activity and its children
@@ -412,19 +413,6 @@ struct ActivityData {
 
     /// Indices of the child activities in the global TimeTrace::tree array
     children_indices: Range<usize>,
-}
-
-/// Error while parsing TraceEvent arguments
-#[derive(Error, Debug, PartialEq)]
-pub enum ArgParseError {
-    #[error("got unexpected arguments {0:?}")]
-    UnexpectedKeys(HashMap<String, json::Value>),
-
-    #[error("expected argument \"{0}\" was not found")]
-    MissingKey(&'static str),
-
-    #[error("got unexpected value for argument \"{0}\": {1:?}")]
-    UnexpectedValue(&'static str, json::Value),
 }
 
 // FIXME: Add some tests

@@ -6,9 +6,10 @@
 //! Their precise semantics (based on self time of all tasks ? children time of
 //! toplevel tasks ?) are currently unknown.
 
-use super::{
+use super::ArgParseError;
+use crate::trace::{
     ctf::{events::duration::DurationEvent, TraceEvent},
-    ArgParseError, Duration,
+    Duration,
 };
 use serde_json as json;
 use std::collections::HashMap;
