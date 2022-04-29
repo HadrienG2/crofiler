@@ -35,7 +35,7 @@ pub struct TimeTrace {
     process_name: String,
 
     /// Clang activities recorded by -ftime-trace
-    activities: Box<[ActivityData]>,
+    activities: Box<[ActivityTrace]>,
 
     /// Parent/child relationship of activities
     ///
@@ -85,7 +85,7 @@ impl TimeTrace {
         // Process the trace events
         let mut process_name = None;
         let mut last_end = Timestamp::MIN;
-        let mut activities: Vec<ActivityData> =
+        let mut activities: Vec<ActivityTrace> =
             Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
         let mut activity_tree = Vec::with_capacity(profile_ctf.traceEvents.len() - 1);
         let mut global_stats = HashMap::new();
@@ -146,7 +146,7 @@ impl TimeTrace {
 
                     // Fill profile
                     let self_duration = activity_stat.duration() - children_duration;
-                    activities.push(ActivityData {
+                    activities.push(ActivityTrace {
                         activity_stat,
                         first_related_idx,
                         children_indices,
@@ -336,7 +336,7 @@ pub struct ActivityProfile<'a> {
     top_profile: &'a TimeTrace,
 
     /// Which activity we are looking at
-    activity_data: &'a ActivityData,
+    activity_data: &'a ActivityTrace,
 
     /// What is the index of this activity in the TimeTrace::tree array
     tree_idx: usize,
@@ -401,7 +401,7 @@ impl ActivityProfile<'_> {
 
 /// Clang activity with -ftime-trace profiling information
 #[derive(Debug, PartialEq)]
-struct ActivityData {
+struct ActivityTrace {
     /// What activity are talking about and when was it running
     activity_stat: ActivityStat,
 
