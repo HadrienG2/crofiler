@@ -262,6 +262,19 @@ pub enum ActivityParseError {
 mod tests {
     use super::*;
 
+    #[test]
+    fn activity_stat_accessors() {
+        let stat = ActivityStat {
+            activity: Activity::ExecuteCompiler,
+            start: 12.3,
+            duration: 45.6,
+        };
+        assert_eq!(stat.activity(), &stat.activity);
+        assert_eq!(stat.start(), stat.start);
+        assert_eq!(stat.duration(), stat.duration);
+        assert_eq!(stat.end(), stat.start + stat.duration);
+    }
+
     fn test_valid_activity(
         name: &String,
         args: &Option<HashMap<String, json::Value>>,

@@ -101,6 +101,7 @@ pub enum GlobalStatParseError {
 }
 
 /// Arguments to global execution statistics events
+#[derive(Debug, Default, PartialEq)]
 struct GlobalStatArgs {
     /// Number of events of this kind
     count: u64,
@@ -146,4 +147,58 @@ impl GlobalStatArgs {
     }
 }
 
-// FIXME: Add some tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FIXME: Add some tests
+
+    #[test]
+    fn global_stat_args() {
+        // Check parsing of a complete argument sequence
+        let count = 123u64;
+        let _avg_ms = 45.6f64;
+        let correct_args = maplit::hashmap! {
+            "count".to_owned() => json::json!(count),
+            "avg ms".to_owned() => json::json!(_avg_ms),
+        };
+        assert_eq!(
+            GlobalStatArgs::parse(&correct_args),
+            Ok(GlobalStatArgs { count, _avg_ms })
+        );
+
+        // Try adding an extra argument
+        let mut extra_arg = correct_args.clone();
+        extra_arg.insert("wat".to_owned(), json::json!(""));
+        assert_eq!(
+            GlobalStatArgs::parse(&extra_arg),
+            Err(ArgParseError::UnexpectedKeys(extra_arg))
+        );
+
+        // Test for replacing the arguments with wrongly typed values
+        let test_bad_value = |key: &'static str| {
+            let mut bad_value = correct_args.clone();
+            bad_value.insert(key.to_owned(), json::json!(""));
+            assert_eq!(
+                GlobalStatArgs::parse(&bad_value),
+                Err(ArgParseError::UnexpectedValue(key, bad_value[key].clone()))
+            );
+        };
+
+        // Test for removing an expected argument
+        let test_missing_key = |key: &'static str| {
+            let mut missing_key = correct_args.clone();
+            missing_key.remove(key);
+            assert_eq!(
+                GlobalStatArgs::parse(&missing_key),
+                Err(ArgParseError::MissingKey(key))
+            );
+        };
+
+        // Run above tests for all expected keys
+        for key in ["count", "avg ms"] {
+            test_bad_value(key);
+            test_missing_key(key);
+        }
+    }
+}
