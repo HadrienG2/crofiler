@@ -57,13 +57,18 @@ pub struct TimeTrace {
 //
 impl TimeTrace {
     /// Load from clang -ftime-trace output in a file
-    // FIXME/WIP: Modularize and add proper error handling
-    // TODO: Add a from_str method for tests
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TimeTraceLoadError> {
         // Load JSON data from the input file and parse it as CTF JSON
         let mut profile_str = String::new();
         File::open(path)?.read_to_string(&mut profile_str)?;
-        let profile_ctf = json::from_str::<TraceDataObject>(&profile_str)?;
+        Ok(Self::from_str(&profile_str)?)
+    }
+
+    /// Parce a string of clang -ftime-trace data
+    // FIXME/WIP: Modularize and add proper error handling
+    pub fn from_str(s: &str) -> Result<Self, TimeTraceParseError> {
+        // Parse the string as CTF JSON data
+        let profile_ctf = json::from_str::<TraceDataObject>(s)?;
 
         // Clang's -ftime-trace uses the Trace Data Object format but does not
         // leverage any of its extra fields
@@ -72,7 +77,7 @@ impl TimeTrace {
             ..profile_ctf
         };
         if profile_wo_events != TraceDataObject::default() {
-            return Err(TimeTraceLoadError::UnexpectedGlobalMetadata(
+            return Err(TimeTraceParseError::UnexpectedGlobalMetadata(
                 profile_wo_events,
             ));
         }
@@ -154,7 +159,7 @@ impl TimeTrace {
                     let (name, stat) = GlobalStat::parse(t)?;
                     if let Some(old) = global_stats.insert(name.clone(), stat) {
                         let new = global_stats[&name].clone();
-                        return Err(TimeTraceLoadError::DuplicateGlobalStat(name, old, new));
+                        return Err(TimeTraceParseError::DuplicateGlobalStat(name, old, new));
                     }
                 }
 
@@ -162,14 +167,17 @@ impl TimeTrace {
                 TraceEvent::M(m) => {
                     let name = Self::parse_process_name(m)?;
                     if let Some(process_name) = process_name {
-                        return Err(TimeTraceLoadError::DuplicateProcessName(process_name, name));
+                        return Err(TimeTraceParseError::DuplicateProcessName(
+                            process_name,
+                            name,
+                        ));
                     } else {
                         process_name = Some(name);
                     }
                 }
 
                 // No other CTF record is expected from -ftime-trace
-                _ => return Err(TimeTraceLoadError::UnexpectedEvent(event.clone())),
+                _ => return Err(TimeTraceParseError::UnexpectedEvent(event.clone())),
             }
         }
 
@@ -202,13 +210,13 @@ impl TimeTrace {
                 global_stats,
             })
         } else {
-            Err(TimeTraceLoadError::NoProcessName)
+            Err(TimeTraceParseError::NoProcessName)
         }
     }
 
     /// Decode the clang process name (which is currently the only metadata
     /// event that has been observed in -ftime-trace data)
-    fn parse_process_name(m: &MetadataEvent) -> Result<String, TimeTraceLoadError> {
+    fn parse_process_name(m: &MetadataEvent) -> Result<String, TimeTraceParseError> {
         match m {
             MetadataEvent::process_name {
                 pid: 1,
@@ -221,7 +229,7 @@ impl TimeTrace {
                         tts: None,
                     },
             } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
-            _ => Err(TimeTraceLoadError::UnexpectedMetadata(m.clone())),
+            _ => Err(TimeTraceParseError::UnexpectedMetadata(m.clone())),
         }
     }
 
@@ -279,12 +287,19 @@ impl TimeTrace {
     }
 }
 
-/// Things that can go wrong while loading clang's -ftime-trace data
+/// Things that can go wrong while loading clang's -ftime-trace data from a file
 #[derive(Error, Debug)]
 pub enum TimeTraceLoadError {
-    #[error("failed to load JSON data from file ({0})")]
+    #[error("failed to load time trace from file ({0})")]
     Io(#[from] io::Error),
 
+    #[error("failed to parse time trace ({0})")]
+    Parse(#[from] TimeTraceParseError),
+}
+
+/// Things that can go wrong while parsing clang's -ftime-trace data from a string
+#[derive(Error, Debug)]
+pub enum TimeTraceParseError {
     #[error("failed to parse data as CTF JSON ({0})")]
     CtfParseError(#[from] json::Error),
 
