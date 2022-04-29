@@ -35,7 +35,7 @@ pub enum EndStackTrace {
 /// or strings, but in the end that's a bit pointless since stackFrames keys
 /// _must_ be strings to comply with the JSON spec. So we convert everything to
 /// strings for convenience.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(from = "RawStackFrameId")]
 pub struct StackFrameId(pub String);
 //

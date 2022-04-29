@@ -2,7 +2,11 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
-use crate::trace::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
+use crate::trace::ctf::{
+    events::duration::DurationEvent,
+    stack::{EndStackTrace, StackFrameId, StackTrace},
+    Duration, EventCategories, Timestamp, TraceEvent,
+};
 use serde_json as json;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -258,7 +262,103 @@ pub enum ActivityParseError {
 mod tests {
     use super::*;
 
-    // FIXME: Add ActivityStat::parse tests
+    fn test_valid_activity(
+        name: &String,
+        args: &Option<HashMap<String, json::Value>>,
+        expected: &Activity,
+    ) {
+        // Check direct Activity parsing
+        assert_eq!(Activity::parse(name, args), Ok(expected.clone()));
+
+        // Preparate a generator of ActivityStat inputs that are valid from
+        // the Activity point of view but not from the ActivityStat point of view
+        let start = 4.2;
+        let duration = 1234.5;
+        let make_event = |good_type, pid, tid, cat, tts, stack_trace, tdur, end_stack_trace| {
+            let duration_event = DurationEvent {
+                pid,
+                tid,
+                ts: start,
+                name: Some(name.clone()),
+                cat,
+                tts,
+                args: args.clone(),
+                stack_trace,
+            };
+            if good_type {
+                TraceEvent::X {
+                    duration_event,
+                    dur: duration,
+                    tdur,
+                    end_stack_trace,
+                }
+            } else {
+                TraceEvent::B(duration_event)
+            }
+        };
+
+        // Valid ActivityStat input
+        assert_eq!(
+            ActivityStat::parse(&make_event(true, 1, 0, None, None, None, None, None)),
+            Ok(ActivityStat {
+                activity: expected.clone(),
+                start,
+                duration,
+            })
+        );
+
+        // Invalid inputs
+        let test_bad_input = |input| {
+            assert_eq!(
+                ActivityStat::parse(&input),
+                Err(ActivityStatParseError::UnexpectedInput(input))
+            )
+        };
+        test_bad_input(make_event(false, 1, 0, None, None, None, None, None));
+        test_bad_input(make_event(true, 0, 0, None, None, None, None, None));
+        test_bad_input(make_event(true, 1, 1, None, None, None, None, None));
+        test_bad_input(make_event(
+            true,
+            1,
+            0,
+            Some(EventCategories::default()),
+            None,
+            None,
+            None,
+            None,
+        ));
+        test_bad_input(make_event(true, 1, 0, None, Some(start), None, None, None));
+        test_bad_input(make_event(
+            true,
+            1,
+            0,
+            None,
+            None,
+            Some(StackTrace::sf(StackFrameId::default())),
+            None,
+            None,
+        ));
+        test_bad_input(make_event(
+            true,
+            1,
+            0,
+            None,
+            None,
+            None,
+            Some(duration),
+            None,
+        ));
+        test_bad_input(make_event(
+            true,
+            1,
+            0,
+            None,
+            None,
+            None,
+            None,
+            Some(EndStackTrace::esf(StackFrameId::default())),
+        ));
+    }
 
     #[test]
     fn unknown_activity() {
@@ -270,9 +370,12 @@ mod tests {
     }
 
     fn nullary_test(name: &str, a: Activity) {
+        // Test two different ways of passing no arguments
         let name = name.to_owned();
-        assert_eq!(Activity::parse(&name, &None), Ok(a.clone()));
-        assert_eq!(Activity::parse(&name, &Some(HashMap::new())), Ok(a));
+        test_valid_activity(&name, &None, &a);
+        test_valid_activity(&name, &Some(HashMap::new()), &a);
+
+        // Add an undesired detail argument
         let args = maplit::hashmap! { "detail".to_owned() => json::json!("") };
         assert_eq!(
             Activity::parse(&name, &Some(args.clone())),
@@ -321,11 +424,14 @@ mod tests {
     }
 
     fn unary_test(name: &str, arg: &str, a: Activity) {
+        // Test happy path
         let name = name.to_owned();
-        const ARG_NAME: &'static str = "detail";
+        let good_args = maplit::hashmap! { "detail".to_owned() => json::json!(arg) };
+        test_valid_activity(&name, &Some(good_args.clone()), &a);
 
+        // Try not providing the requested argument
         let missing_arg_error = Err(ActivityParseError::BadArguments(ArgParseError::MissingKey(
-            ARG_NAME,
+            "detail",
         )));
         assert_eq!(Activity::parse(&name, &None), missing_arg_error);
         assert_eq!(
@@ -333,19 +439,19 @@ mod tests {
             missing_arg_error
         );
 
-        let good_args = maplit::hashmap! { ARG_NAME.to_owned() => json::json!(arg) };
-        assert_eq!(Activity::parse(&name, &Some(good_args)), Ok(a));
-
+        // Try providing a wrongly typed value
         let bad_value = json::json!(42usize);
-        let bad_arg_value = maplit::hashmap! { ARG_NAME.to_owned() => bad_value.clone() };
+        let bad_arg_value = maplit::hashmap! { "detail".to_owned() => bad_value.clone() };
         assert_eq!(
             Activity::parse(&name, &Some(bad_arg_value)),
             Err(ActivityParseError::BadArguments(
-                ArgParseError::UnexpectedValue(ARG_NAME, bad_value)
+                ArgParseError::UnexpectedValue("detail", bad_value)
             ))
         );
 
-        let bad_arg = maplit::hashmap! { "wat".to_owned() => json::json!("") };
+        // Try adding a meaningless argument
+        let mut bad_arg = good_args.clone();
+        bad_arg.insert("wat".to_owned(), json::json!(""));
         assert_eq!(
             Activity::parse(&name, &Some(bad_arg.clone())),
             Err(ActivityParseError::BadArguments(
