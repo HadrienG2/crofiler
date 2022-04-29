@@ -7,7 +7,7 @@
 //! toplevel tasks ?) are currently unknown.
 
 use super::{
-    parser::{events::duration::DurationEvent, TraceEvent},
+    ctf::{events::duration::DurationEvent, TraceEvent},
     ArgParseError, Duration,
 };
 use serde_json as json;

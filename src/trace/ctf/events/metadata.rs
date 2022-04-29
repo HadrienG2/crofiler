@@ -1,6 +1,7 @@
 //! Metadata event handling
 
-use crate::trace::parser::{EventCategories, Pid, Tid, Timestamp};
+use crate::trace::ctf;
+use ctf::{EventCategories, Pid, Tid, Timestamp};
 use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
@@ -155,7 +156,7 @@ pub struct SortIndexArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::trace::parser::{tests::*, TraceEvent};
+    use ctf::{tests::*, TraceEvent};
 
     #[test]
     fn event() {

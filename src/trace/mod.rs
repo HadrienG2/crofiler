@@ -2,12 +2,12 @@
 //! mechanism to load and parse it.
 
 mod activities;
-mod parser;
+mod ctf;
 mod stats;
 
 use self::{
     activities::Activity,
-    parser::{
+    ctf::{
         events::{
             duration::DurationEvent,
             metadata::{MetadataEvent, MetadataOptions, NameArgs},
