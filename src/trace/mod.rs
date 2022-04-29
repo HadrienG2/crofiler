@@ -28,9 +28,6 @@ use thiserror::Error;
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
 pub struct ClangTrace {
-    /// Name of the clang process
-    process_name: String,
-
     /// Clang activities recorded by -ftime-trace
     activities: Box<[ActivityData]>,
 
@@ -50,6 +47,9 @@ pub struct ClangTrace {
 
     /// Global statistics
     global_stats: HashMap<String, GlobalStat>,
+
+    /// Name of the clang process
+    process_name: String,
 }
 //
 impl ClangTrace {
@@ -200,20 +200,15 @@ impl ClangTrace {
         // Build the final ClangTrace
         if let Some(process_name) = process_name {
             Ok(Self {
-                process_name,
                 activities: activities.into_boxed_slice(),
                 activity_tree: activity_tree.into_boxed_slice(),
                 first_root_idx,
                 global_stats,
+                process_name,
             })
         } else {
             Err(ClangTraceParseError::NoProcessName)
         }
-    }
-
-    /// Name of the clang process that acquired this data
-    pub fn process_name(&self) -> &str {
-        &self.process_name
     }
 
     /// Iterate over activities that were directly spawned by the clang driver
@@ -266,6 +261,11 @@ impl ClangTrace {
     /// Expose the global statistics
     pub fn global_stats(&self) -> &HashMap<String, GlobalStat> {
         &self.global_stats
+    }
+
+    /// Name of the clang process that acquired this data
+    pub fn process_name(&self) -> &str {
+        &self.process_name
     }
 }
 
