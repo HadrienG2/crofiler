@@ -61,7 +61,6 @@ impl ClangTrace {
     }
 
     /// Parce a string of clang -ftime-trace data
-    // FIXME/WIP: Modularize and add proper error handling
     pub fn from_str(s: &str) -> Result<Self, ClangTraceParseError> {
         // Parse the string as CTF JSON data
         let profile_ctf = json::from_str::<TraceDataObject>(s)?;
