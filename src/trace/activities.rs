@@ -1,6 +1,7 @@
 //! Handling of activities, that is, clang-provided categories of stuff it can
 //! be doing at a point in time
 
+use super::ArgParseError;
 use serde_json as json;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -87,72 +88,83 @@ impl Activity {
         args: &Option<HashMap<String, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
         // Handling of activities with no arguments
-        let assert_nullary = |a: Activity| -> Result<Activity, ActivityParseError> {
-            if let Some(args) = args {
-                if args.is_empty() {
-                    Ok(a)
-                } else {
-                    Err(ActivityParseError::UnexpectedArguments(args.clone()))
-                }
-            } else {
-                Ok(a)
-            }
+        let assert_no_args = |a: Activity| -> Result<Activity, ActivityParseError> {
+            Self::parse_empty_args(args)?;
+            Ok(a)
         };
 
         // Handling of activities with one "detail" argument
-        let unary_argument = || -> Result<String, ActivityParseError> {
-            const ARG_NAME: &'static str = "detail";
-            if let Some(args) = args {
-                let mut args_iter = args.iter();
-                if let Some((k, v)) = args_iter.next() {
-                    if k != ARG_NAME {
-                        return Err(ActivityParseError::UnexpectedArguments(args.clone()));
-                    }
-                    let s = if let json::Value::String(s) = v {
-                        s
-                    } else {
-                        return Err(ActivityParseError::UnexpectedArgumentValue(
-                            ARG_NAME,
-                            v.clone(),
-                        ));
-                    };
-                    if args_iter.next().is_some() {
-                        return Err(ActivityParseError::UnexpectedArguments(args.clone()));
-                    }
-                    Ok(s.clone())
-                } else {
-                    Err(ActivityParseError::MissingArgument(ARG_NAME))
-                }
-            } else {
-                Err(ActivityParseError::MissingArgument(ARG_NAME))
-            }
-        };
+        let fill_detail_arg =
+            |constructor: fn(String) -> Activity| -> Result<Activity, ActivityParseError> {
+                Ok(constructor(Self::parse_detail_arg(args)?))
+            };
 
         // Parse the activity name and parse arguments accordingly
         match &**name {
             "PerformPendingInstantiations" => {
-                assert_nullary(Activity::PerformPendingInstantiations)
+                assert_no_args(Activity::PerformPendingInstantiations)
             }
-            "Frontend" => assert_nullary(Activity::Frontend),
-            "PerFunctionPasses" => assert_nullary(Activity::PerFunctionPasses),
-            "PerModulePasses" => assert_nullary(Activity::PerModulePasses),
-            "CodeGenPasses" => assert_nullary(Activity::CodeGenPasses),
-            "Backend" => assert_nullary(Activity::Backend),
-            "ExecuteCompiler" => assert_nullary(Activity::ExecuteCompiler),
-            "Source" => Ok(Activity::Source(unary_argument()?)),
-            "ParseClass" => Ok(Activity::ParseClass(unary_argument()?)),
-            "InstantiateClass" => Ok(Activity::InstantiateClass(unary_argument()?)),
-            "ParseTemplate" => Ok(Activity::ParseTemplate(unary_argument()?)),
-            "InstantiateFunction" => Ok(Activity::InstantiateFunction(unary_argument()?)),
-            "DebugType" => Ok(Activity::DebugType(unary_argument()?)),
-            "DebugGlobalVariable" => Ok(Activity::DebugGlobalVariable(unary_argument()?)),
-            "CodeGen Function" => Ok(Activity::CodeGenFunction(unary_argument()?)),
-            "DebugFunction" => Ok(Activity::DebugFunction(unary_argument()?)),
-            "RunPass" => Ok(Activity::RunPass(unary_argument()?)),
-            "OptFunction" => Ok(Activity::OptFunction(unary_argument()?)),
-            "RunLoopPass" => Ok(Activity::RunLoopPass(unary_argument()?)),
-            "OptModule" => Ok(Activity::OptModule(unary_argument()?)),
+            "Frontend" => assert_no_args(Activity::Frontend),
+            "PerFunctionPasses" => assert_no_args(Activity::PerFunctionPasses),
+            "PerModulePasses" => assert_no_args(Activity::PerModulePasses),
+            "CodeGenPasses" => assert_no_args(Activity::CodeGenPasses),
+            "Backend" => assert_no_args(Activity::Backend),
+            "ExecuteCompiler" => assert_no_args(Activity::ExecuteCompiler),
+            "Source" => fill_detail_arg(Activity::Source),
+            "ParseClass" => fill_detail_arg(Activity::ParseClass),
+            "InstantiateClass" => fill_detail_arg(Activity::InstantiateClass),
+            "ParseTemplate" => fill_detail_arg(Activity::ParseTemplate),
+            "InstantiateFunction" => fill_detail_arg(Activity::InstantiateFunction),
+            "DebugType" => fill_detail_arg(Activity::DebugType),
+            "DebugGlobalVariable" => fill_detail_arg(Activity::DebugGlobalVariable),
+            "CodeGen Function" => fill_detail_arg(Activity::CodeGenFunction),
+            "DebugFunction" => fill_detail_arg(Activity::DebugFunction),
+            "RunPass" => fill_detail_arg(Activity::RunPass),
+            "OptFunction" => fill_detail_arg(Activity::OptFunction),
+            "RunLoopPass" => fill_detail_arg(Activity::RunLoopPass),
+            "OptModule" => fill_detail_arg(Activity::OptModule),
             _ => Err(ActivityParseError::UnknownActivity(name.clone())),
+        }
+    }
+
+    /// Check for absence of arguments
+    fn parse_empty_args(args: &Option<HashMap<String, json::Value>>) -> Result<(), ArgParseError> {
+        if let Some(args) = args {
+            if args.is_empty() {
+                Ok(())
+            } else {
+                Err(ArgParseError::UnexpectedKeys(args.clone()))
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Parse a single "detail" string argument
+    fn parse_detail_arg(
+        args: &Option<HashMap<String, json::Value>>,
+    ) -> Result<String, ArgParseError> {
+        const ARG_NAME: &'static str = "detail";
+        if let Some(args) = args {
+            let mut args_iter = args.iter();
+            if let Some((k, v)) = args_iter.next() {
+                if k != ARG_NAME {
+                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                }
+                let s = if let json::Value::String(s) = v {
+                    s
+                } else {
+                    return Err(ArgParseError::UnexpectedValue(ARG_NAME, v.clone()));
+                };
+                if args_iter.next().is_some() {
+                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                }
+                Ok(s.clone())
+            } else {
+                Err(ArgParseError::MissingKey(ARG_NAME))
+            }
+        } else {
+            Err(ArgParseError::MissingKey(ARG_NAME))
         }
     }
 }
@@ -163,14 +175,8 @@ pub enum ActivityParseError {
     #[error("encountered unknown activity \"{0}\"")]
     UnknownActivity(String),
 
-    #[error("expected activity argument \"{0}\" was not found")]
-    MissingArgument(&'static str),
-
-    #[error("got unexpected value for argument \"{0}\": {1:?}")]
-    UnexpectedArgumentValue(&'static str, json::Value),
-
-    #[error("received unexpected activity arguments {0:?}")]
-    UnexpectedArguments(HashMap<String, json::Value>),
+    #[error("failed to parse activity arguments ({0})")]
+    BadArguments(#[from] ArgParseError),
 }
 
 #[cfg(test)]
@@ -193,7 +199,9 @@ mod tests {
         let args = maplit::hashmap! { "detail".to_owned() => json::json!("") };
         assert_eq!(
             Activity::parse(&name, &Some(args.clone())),
-            Err(ActivityParseError::UnexpectedArguments(args))
+            Err(ActivityParseError::BadArguments(
+                ArgParseError::UnexpectedKeys(args)
+            ))
         );
     }
 
@@ -239,7 +247,9 @@ mod tests {
         let name = name.to_owned();
         const ARG_NAME: &'static str = "detail";
 
-        let missing_arg_error = Err(ActivityParseError::MissingArgument(ARG_NAME));
+        let missing_arg_error = Err(ActivityParseError::BadArguments(ArgParseError::MissingKey(
+            ARG_NAME,
+        )));
         assert_eq!(Activity::parse(&name, &None), missing_arg_error);
         assert_eq!(
             Activity::parse(&name, &Some(HashMap::new())),
@@ -253,15 +263,17 @@ mod tests {
         let bad_arg_value = maplit::hashmap! { ARG_NAME.to_owned() => bad_value.clone() };
         assert_eq!(
             Activity::parse(&name, &Some(bad_arg_value)),
-            Err(ActivityParseError::UnexpectedArgumentValue(
-                ARG_NAME, bad_value
+            Err(ActivityParseError::BadArguments(
+                ArgParseError::UnexpectedValue(ARG_NAME, bad_value)
             ))
         );
 
         let bad_arg = maplit::hashmap! { "wat".to_owned() => json::json!("") };
         assert_eq!(
             Activity::parse(&name, &Some(bad_arg.clone())),
-            Err(ActivityParseError::UnexpectedArguments(bad_arg))
+            Err(ActivityParseError::BadArguments(
+                ArgParseError::UnexpectedKeys(bad_arg)
+            ))
         );
     }
 
