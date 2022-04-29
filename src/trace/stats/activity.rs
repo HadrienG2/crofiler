@@ -2,9 +2,9 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
-use crate::trace::ctf::{self, events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
+use crate::trace::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
 use serde_json as json;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
 
 /// Clang activity with timing information
@@ -22,7 +22,7 @@ pub struct ActivityStat {
 //
 impl ActivityStat {
     /// Decode a TraceEvent which is expected to contain a timed activity
-    pub fn parse(t: &TraceEvent) -> Result<Self, ActivityStatParseError> {
+    pub fn parse(t: TraceEvent) -> Result<Self, ActivityStatParseError> {
         match t {
             TraceEvent::X {
                 duration_event:
@@ -43,11 +43,11 @@ impl ActivityStat {
                 let activity = Activity::parse(name, args)?;
                 Ok(Self {
                     activity,
-                    start: *ts,
-                    duration: *dur,
+                    start: ts,
+                    duration: dur,
                 })
             }
-            _ => Err(ActivityStatParseError::UnexpectedInput(t.clone())),
+            _ => Err(ActivityStatParseError::UnexpectedInput(t)),
         }
     }
 
@@ -162,23 +162,28 @@ pub enum Activity {
 impl Activity {
     /// Parse from useful bits of Duration events
     fn parse(
-        name: &String,
-        args: &Option<HashMap<String, json::Value>>,
+        name: String,
+        args: Option<HashMap<String, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
+        // Interior mutability to allow multiple mutable borrows
+        let args = RefCell::new(args);
+
         // Handling of activities with no arguments
         let no_args = |a: Activity| -> Result<Activity, ActivityParseError> {
-            Self::parse_empty_args(args)?;
+            Self::parse_empty_args(args.borrow_mut().take())?;
             Ok(a)
         };
 
         // Handling of activities with one "detail" argument
         let fill_detail_arg =
             |constructor: fn(String) -> Activity| -> Result<Activity, ActivityParseError> {
-                Ok(constructor(Self::parse_detail_arg(args)?))
+                Ok(constructor(Self::parse_detail_arg(
+                    args.borrow_mut().take(),
+                )?))
             };
 
         // Parse the activity name and parse arguments accordingly
-        match &**name {
+        match &*name {
             "PerformPendingInstantiations" => no_args(Activity::PerformPendingInstantiations),
             "Frontend" => no_args(Activity::Frontend),
             "PerFunctionPasses" => no_args(Activity::PerFunctionPasses),
@@ -204,12 +209,12 @@ impl Activity {
     }
 
     /// Check for absence of arguments
-    fn parse_empty_args(args: &Option<HashMap<String, json::Value>>) -> Result<(), ArgParseError> {
+    fn parse_empty_args(args: Option<HashMap<String, json::Value>>) -> Result<(), ArgParseError> {
         if let Some(args) = args {
             if args.is_empty() {
                 Ok(())
             } else {
-                Err(ArgParseError::UnexpectedKeys(args.clone()))
+                Err(ArgParseError::UnexpectedKeys(args))
             }
         } else {
             Ok(())
@@ -218,7 +223,7 @@ impl Activity {
 
     /// Parse a single "detail" string argument
     fn parse_detail_arg(
-        args: &Option<HashMap<String, json::Value>>,
+        args: Option<HashMap<String, json::Value>>,
     ) -> Result<String, ArgParseError> {
         if let Some(args) = args {
             let mut args_iter = args.iter();
@@ -232,7 +237,7 @@ impl Activity {
                     return Err(ArgParseError::UnexpectedValue("detail", v.clone()));
                 };
                 if args_iter.next().is_some() {
-                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                    return Err(ArgParseError::UnexpectedKeys(args));
                 }
                 Ok(s.clone())
             } else {
@@ -259,7 +264,7 @@ pub enum ActivityParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ctf::{
+    use crate::trace::ctf::{
         stack::{EndStackTrace, StackFrameId, StackTrace},
         EventCategories,
     };
@@ -278,12 +283,16 @@ mod tests {
     }
 
     fn test_valid_activity(
-        name: &String,
-        args: &Option<HashMap<String, json::Value>>,
+        name: &str,
+        args: Option<HashMap<String, json::Value>>,
         expected: &Activity,
     ) {
         // Check direct Activity parsing
-        assert_eq!(Activity::parse(name, args), Ok(expected.clone()));
+        let name = name.to_owned();
+        assert_eq!(
+            Activity::parse(name.clone(), args.clone()),
+            Ok(expected.clone())
+        );
 
         // Preparate a generator of ActivityStat inputs that are valid from
         // the Activity point of view but not from the ActivityStat point of view
@@ -314,7 +323,7 @@ mod tests {
 
         // Valid ActivityStat input
         assert_eq!(
-            ActivityStat::parse(&make_event(true, 1, 0, None, None, None, None, None)),
+            ActivityStat::parse(make_event(true, 1, 0, None, None, None, None, None)),
             Ok(ActivityStat {
                 activity: expected.clone(),
                 start,
@@ -323,9 +332,9 @@ mod tests {
         );
 
         // Invalid inputs
-        let test_bad_input = |input| {
+        let test_bad_input = |input: TraceEvent| {
             assert_eq!(
-                ActivityStat::parse(&input),
+                ActivityStat::parse(input.clone()),
                 Err(ActivityStatParseError::UnexpectedInput(input))
             )
         };
@@ -379,21 +388,20 @@ mod tests {
     fn unknown_activity() {
         let activity = "ThisIsMadness".to_owned();
         assert_eq!(
-            Activity::parse(&activity, &None),
+            Activity::parse(activity.clone(), None),
             Err(ActivityParseError::UnknownActivity(activity))
         );
     }
 
     fn nullary_test(name: &str, a: Activity) {
         // Test two different ways of passing no arguments
-        let name = name.to_owned();
-        test_valid_activity(&name, &None, &a);
-        test_valid_activity(&name, &Some(HashMap::new()), &a);
+        test_valid_activity(name, None, &a);
+        test_valid_activity(name, Some(HashMap::new()), &a);
 
         // Add an undesired detail argument
         let args = maplit::hashmap! { "detail".to_owned() => json::json!("") };
         assert_eq!(
-            Activity::parse(&name, &Some(args.clone())),
+            Activity::parse(name.to_owned(), Some(args.clone())),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(args)
             ))
@@ -442,15 +450,15 @@ mod tests {
         // Test happy path
         let name = name.to_owned();
         let good_args = maplit::hashmap! { "detail".to_owned() => json::json!(arg) };
-        test_valid_activity(&name, &Some(good_args.clone()), &a);
+        test_valid_activity(&name, Some(good_args.clone()), &a);
 
         // Try not providing the requested argument
         let missing_arg_error = Err(ActivityParseError::BadArguments(ArgParseError::MissingKey(
             "detail",
         )));
-        assert_eq!(Activity::parse(&name, &None), missing_arg_error);
+        assert_eq!(Activity::parse(name.clone(), None), missing_arg_error);
         assert_eq!(
-            Activity::parse(&name, &Some(HashMap::new())),
+            Activity::parse(name.clone(), Some(HashMap::new())),
             missing_arg_error
         );
 
@@ -458,7 +466,7 @@ mod tests {
         let bad_value = json::json!(42usize);
         let bad_arg_value = maplit::hashmap! { "detail".to_owned() => bad_value.clone() };
         assert_eq!(
-            Activity::parse(&name, &Some(bad_arg_value)),
+            Activity::parse(name.clone(), Some(bad_arg_value)),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedValue("detail", bad_value)
             ))
@@ -468,7 +476,7 @@ mod tests {
         let mut bad_arg = good_args.clone();
         bad_arg.insert("wat".to_owned(), json::json!(""));
         assert_eq!(
-            Activity::parse(&name, &Some(bad_arg.clone())),
+            Activity::parse(name, Some(bad_arg.clone())),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(bad_arg)
             ))

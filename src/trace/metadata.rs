@@ -1,13 +1,10 @@
 //! Parsing of metadata from clang's -ftime-trace output
 
-use crate::trace::ctf::{
-    self,
-    events::metadata::{MetadataEvent, MetadataOptions, NameArgs},
-};
+use crate::trace::ctf::events::metadata::{MetadataEvent, MetadataOptions, NameArgs};
 use thiserror::Error;
 
 /// Parse the clang process name
-pub fn parse_process_name(m: &MetadataEvent) -> Result<String, ProcessNameParseError> {
+pub fn parse_process_name(m: MetadataEvent) -> Result<String, ProcessNameParseError> {
     match m {
         MetadataEvent::process_name {
             pid: 1,
@@ -19,8 +16,8 @@ pub fn parse_process_name(m: &MetadataEvent) -> Result<String, ProcessNameParseE
                     ts: Some(ts),
                     tts: None,
                 },
-        } if extra.is_empty() && cat.0.is_empty() && *ts == 0.0 => Ok(name.clone()),
-        _ => Err(ProcessNameParseError::UnexpectedInput(m.clone())),
+        } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 => Ok(name),
+        _ => Err(ProcessNameParseError::UnexpectedInput(m)),
     }
 }
 
@@ -35,7 +32,7 @@ pub enum ProcessNameParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ctf::EventCategories;
+    use crate::trace::ctf::EventCategories;
     use serde_json as json;
     use std::collections::HashMap;
 
@@ -68,7 +65,7 @@ mod tests {
 
         // Valid parse_process_name input
         assert_eq!(
-            super::parse_process_name(&make_event(
+            super::parse_process_name(make_event(
                 true,
                 1,
                 HashMap::new(),
@@ -81,9 +78,9 @@ mod tests {
         );
 
         // Various flavors of unexpected input
-        let test_unexpected_input = |input| {
+        let test_unexpected_input = |input: MetadataEvent| {
             assert_eq!(
-                super::parse_process_name(&input),
+                super::parse_process_name(input.clone()),
                 Err(ProcessNameParseError::UnexpectedInput(input))
             )
         };

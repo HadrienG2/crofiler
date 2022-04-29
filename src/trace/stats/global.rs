@@ -2,7 +2,7 @@
 
 use super::ArgParseError;
 use crate::trace::{
-    ctf::{self, events::duration::DurationEvent, TraceEvent},
+    ctf::{events::duration::DurationEvent, TraceEvent},
     Duration,
 };
 use serde_json as json;
@@ -25,7 +25,7 @@ pub struct GlobalStat {
 //
 impl GlobalStat {
     /// Decode a TraceEvent which is expected to contain global statistics
-    pub fn parse(t: &TraceEvent) -> Result<(String, Self), GlobalStatParseError> {
+    pub fn parse(t: TraceEvent) -> Result<(String, Self), GlobalStatParseError> {
         match t {
             TraceEvent::X {
                 duration_event:
@@ -42,13 +42,13 @@ impl GlobalStat {
                 dur,
                 tdur: None,
                 end_stack_trace: None,
-            } if *tid != 0 && *ts == 0.0 => {
+            } if tid != 0 && ts == 0.0 => {
                 // Global stats should have a name starting with a "Total "
                 // string, which we shall strip since it brings no useful info
                 let name = if let Some(stripped) = name.strip_prefix("Total ") {
                     stripped
                 } else {
-                    return Err(GlobalStatParseError::NoTotalPrefix(name.clone()));
+                    return Err(GlobalStatParseError::NoTotalPrefix(name));
                 };
 
                 // Parse arguments and emit result
@@ -56,12 +56,12 @@ impl GlobalStat {
                 Ok((
                     name.to_owned(),
                     Self {
-                        total_duration: *dur,
+                        total_duration: dur,
                         count: args.count as usize,
                     },
                 ))
             }
-            _ => Err(GlobalStatParseError::UnexpectedInput(t.clone())),
+            _ => Err(GlobalStatParseError::UnexpectedInput(t)),
         }
     }
 
@@ -109,11 +109,11 @@ struct GlobalStatArgs {
 //
 impl GlobalStatArgs {
     /// Parse global execution statistics arguments
-    fn parse(args: &HashMap<String, json::Value>) -> Result<Self, ArgParseError> {
+    fn parse(args: HashMap<String, json::Value>) -> Result<Self, ArgParseError> {
         // Process arguments
         let mut count = None;
         let mut _avg_ms = None;
-        for (k, v) in args {
+        for (k, v) in &args {
             match &**k {
                 "count" => {
                     if let Some(c) = v.as_u64() {
@@ -147,7 +147,7 @@ impl GlobalStatArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ctf::{
+    use crate::trace::ctf::{
         stack::{EndStackTrace, StackFrameId, StackTrace},
         EventCategories,
     };
@@ -205,7 +205,7 @@ mod tests {
         // Valid GlobalStat::parse input
         let good_name = Some("Total ExecuteCompiler".to_owned());
         assert_eq!(
-            GlobalStat::parse(&make_event(
+            GlobalStat::parse(make_event(
                 true,
                 1,
                 1,
@@ -228,7 +228,7 @@ mod tests {
         // Invalid name
         let bad_name = "ExecuteCompiler".to_owned();
         assert_eq!(
-            GlobalStat::parse(&make_event(
+            GlobalStat::parse(make_event(
                 true,
                 1,
                 1,
@@ -245,7 +245,7 @@ mod tests {
         // Various flavors of unexpected input
         let test_unexpected_input = |input| {
             assert_eq!(
-                GlobalStat::parse(&input),
+                GlobalStat::parse(input),
                 Err(GlobalStatParseError::UnexpectedInput(input))
             )
         };
@@ -350,7 +350,7 @@ mod tests {
             "avg ms".to_owned() => json::json!(_avg_ms),
         };
         assert_eq!(
-            GlobalStatArgs::parse(&correct_args),
+            GlobalStatArgs::parse(correct_args.clone()),
             Ok(GlobalStatArgs { count, _avg_ms })
         );
 
@@ -358,7 +358,7 @@ mod tests {
         let mut extra_arg = correct_args.clone();
         extra_arg.insert("wat".to_owned(), json::json!(""));
         assert_eq!(
-            GlobalStatArgs::parse(&extra_arg),
+            GlobalStatArgs::parse(extra_arg.clone()),
             Err(ArgParseError::UnexpectedKeys(extra_arg))
         );
 
@@ -367,7 +367,7 @@ mod tests {
             let mut bad_value = correct_args.clone();
             bad_value.insert(key.to_owned(), json::json!(""));
             assert_eq!(
-                GlobalStatArgs::parse(&bad_value),
+                GlobalStatArgs::parse(bad_value.clone()),
                 Err(ArgParseError::UnexpectedValue(key, bad_value[key].clone()))
             );
         };
@@ -377,7 +377,7 @@ mod tests {
             let mut missing_key = correct_args.clone();
             missing_key.remove(key);
             assert_eq!(
-                GlobalStatArgs::parse(&missing_key),
+                GlobalStatArgs::parse(missing_key),
                 Err(ArgParseError::MissingKey(key))
             );
         };

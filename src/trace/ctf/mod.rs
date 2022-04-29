@@ -185,7 +185,7 @@ impl From<String> for EventCategories {
     fn from(s: String) -> Self {
         Self(
             s.split(',')
-                .filter(|sub| sub.len() > 0)
+                .filter(|sub| !sub.is_empty())
                 .map(|sub| sub.to_owned())
                 .collect(),
         )

@@ -87,7 +87,7 @@ impl ClangTrace {
         let mut global_stats = HashMap::new();
         let mut children_accumulator = Vec::new();
         //
-        for event in profile_ctf.traceEvents.into_iter() {
+        for event in profile_ctf.traceEvents.into_vec() {
             match event {
                 // Durations associated with a zero tid are activity profiles
                 t @ TraceEvent::X {
@@ -173,7 +173,7 @@ impl ClangTrace {
                 }
 
                 // No other CTF record is expected from -ftime-trace
-                _ => return Err(ClangTraceParseError::UnexpectedEvent(event.clone())),
+                _ => return Err(ClangTraceParseError::UnexpectedEvent(event)),
             }
         }
 
@@ -268,6 +268,7 @@ impl ClangTrace {
 
 /// What can go wrong while loading clang's -ftime-trace data from a file
 #[derive(Error, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ClangTraceLoadError {
     /// Failed to load data from the file
     #[error("failed to load time trace from file ({0})")]
@@ -334,7 +335,7 @@ pub struct ActivityTrace<'a> {
 impl ActivityTrace<'_> {
     /// What clang was doing
     pub fn activity(&self) -> &Activity {
-        &self.activity.stat.activity()
+        self.activity.stat.activity()
     }
 
     /// When clang started doing this activity
