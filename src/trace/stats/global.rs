@@ -8,7 +8,7 @@
 
 use super::ArgParseError;
 use crate::trace::{
-    ctf::{events::duration::DurationEvent, TraceEvent},
+    ctf::{self, events::duration::DurationEvent, TraceEvent},
     Duration,
 };
 use serde_json as json;
@@ -54,7 +54,7 @@ impl GlobalStat {
                 let name = if let Some(stripped) = name.strip_prefix("Total ") {
                     stripped
                 } else {
-                    return Err(GlobalStatParseError::NoTotalPrefix);
+                    return Err(GlobalStatParseError::NoTotalPrefix(name.clone()));
                 };
 
                 // Parse arguments and emit result
@@ -93,8 +93,8 @@ pub enum GlobalStatParseError {
     #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
     UnexpectedInput(TraceEvent),
 
-    #[error("lacking expected \"Total \" name prefix")]
-    NoTotalPrefix,
+    #[error("global stat name \"{0}\" lacks expected \"Total \" prefix")]
+    NoTotalPrefix(String),
 
     #[error("failed to parse activity arguments ({0})")]
     BadArguments(#[from] ArgParseError),
@@ -150,6 +150,10 @@ impl GlobalStatArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ctf::{
+        stack::{EndStackTrace, StackFrameId, StackTrace},
+        EventCategories,
+    };
 
     #[test]
     fn global_stat_accessors() {
@@ -165,7 +169,179 @@ mod tests {
         );
     }
 
-    // FIXME: Add some tests of GlobalStat::parse
+    #[test]
+    fn global_stat_parse() {
+        // Generate a set of correct arguments and the associated duration
+        let count = 1usize << 3;
+        let _avg_ms = 4.5f64;
+        let args = maplit::hashmap! {
+            "count".to_owned() => json::json!(count),
+            "avg ms".to_owned() => json::json!(_avg_ms),
+        };
+        let total_duration = (count as f64) * _avg_ms;
+
+        // Have a way to generate good and bad test inputs
+        let make_event =
+            |good_type, pid, tid, name, cat, tts, stack_trace, tdur, end_stack_trace| {
+                let duration_event = DurationEvent {
+                    pid,
+                    tid,
+                    ts: 0.0,
+                    name,
+                    cat,
+                    tts,
+                    args: Some(args.clone()),
+                    stack_trace,
+                };
+                if good_type {
+                    TraceEvent::X {
+                        duration_event,
+                        dur: total_duration,
+                        tdur,
+                        end_stack_trace,
+                    }
+                } else {
+                    TraceEvent::B(duration_event)
+                }
+            };
+
+        // Valid GlobalStat::parse input
+        let good_name = Some("Total ExecuteCompiler".to_owned());
+        assert_eq!(
+            GlobalStat::parse(&make_event(
+                true,
+                1,
+                1,
+                good_name.clone(),
+                None,
+                None,
+                None,
+                None,
+                None
+            )),
+            Ok((
+                "ExecuteCompiler".to_owned(),
+                GlobalStat {
+                    total_duration,
+                    count,
+                }
+            ))
+        );
+
+        // Invalid name
+        let bad_name = "ExecuteCompiler".to_owned();
+        assert_eq!(
+            GlobalStat::parse(&make_event(
+                true,
+                1,
+                1,
+                Some(bad_name.clone()),
+                None,
+                None,
+                None,
+                None,
+                None
+            )),
+            Err(GlobalStatParseError::NoTotalPrefix(bad_name))
+        );
+
+        // Various flavors of unexpected input
+        let test_unexpected_input = |input| {
+            assert_eq!(
+                GlobalStat::parse(&input),
+                Err(GlobalStatParseError::UnexpectedInput(input))
+            )
+        };
+        test_unexpected_input(make_event(
+            false,
+            1,
+            1,
+            good_name.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            0,
+            1,
+            good_name.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            0,
+            good_name.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(true, 1, 1, None, None, None, None, None, None));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            1,
+            good_name.clone(),
+            Some(EventCategories::default()),
+            None,
+            None,
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            1,
+            good_name.clone(),
+            None,
+            Some(0.0),
+            None,
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            1,
+            good_name.clone(),
+            None,
+            None,
+            Some(StackTrace::sf(StackFrameId::default())),
+            None,
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            1,
+            good_name.clone(),
+            None,
+            None,
+            None,
+            Some(0.0),
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            1,
+            1,
+            good_name.clone(),
+            None,
+            None,
+            None,
+            None,
+            Some(EndStackTrace::esf(StackFrameId::default())),
+        ));
+    }
 
     #[test]
     fn global_stat_args() {

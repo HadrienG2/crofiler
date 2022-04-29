@@ -2,11 +2,7 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
-use crate::trace::ctf::{
-    events::duration::DurationEvent,
-    stack::{EndStackTrace, StackFrameId, StackTrace},
-    Duration, EventCategories, Timestamp, TraceEvent,
-};
+use crate::trace::ctf::{self, events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
 use serde_json as json;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -261,6 +257,10 @@ pub enum ActivityParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ctf::{
+        stack::{EndStackTrace, StackFrameId, StackTrace},
+        EventCategories,
+    };
 
     #[test]
     fn activity_stat_accessors() {
