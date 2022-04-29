@@ -10,5 +10,5 @@ clang, and not enough on actual build profiling questions such as which source
 tres, C++ namespaces, individual class and function templates... account for
 the highest share of expended compilation time.
 
-`crofiler`, the **C**lang **C**++ **C**ompilation p**rofiler**, aims to provide
+`crofiler`, the **c**lang **C**++ **c**ompilation p**rofiler**, aims to provide
 more immediate answers to such questions.
