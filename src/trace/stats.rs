@@ -8,9 +8,10 @@
 
 use super::{
     parser::{events::duration::DurationEvent, TraceEvent},
-    Duration,
+    ArgParseError, Duration,
 };
 use serde_json as json;
+use std::collections::HashMap;
 use thiserror::Error;
 
 /// Global clang execution statistics for a certain kind of activity
@@ -55,49 +56,17 @@ impl GlobalStat {
                     return Err(GlobalStatParseError::NoTotalPrefix);
                 };
 
-                // Check the arguments
-                let mut count = None;
-                let mut avg_ms = None;
-                for (k, v) in args {
-                    match &**k {
-                        "count" => {
-                            if let Some(c) = v.as_u64() {
-                                count = Some(c);
-                            } else {
-                                return Err(GlobalStatParseError::NonIntegerCount(v.clone()));
-                            }
-                        }
-                        "avg ms" => {
-                            if let Some(f) = v.as_f64() {
-                                avg_ms = Some(f);
-                            } else {
-                                return Err(GlobalStatParseError::NonFloatAvgMs(v.clone()));
-                            }
-                        }
-                        _ => {
-                            return Err(GlobalStatParseError::UnexpectedArgument(
-                                k.clone(),
-                                v.clone(),
-                            ))
-                        }
-                    }
-                }
-                if let None = avg_ms {
-                    return Err(GlobalStatParseError::MissingAvgMs);
-                }
-                if let Some(count) = count {
-                    Ok((
-                        name.to_owned(),
-                        GlobalStat {
-                            total_duration: *dur,
-                            count: count as usize,
-                        },
-                    ))
-                } else {
-                    Err(GlobalStatParseError::MissingCount)
-                }
+                // Parse arguments and emit result
+                let args = GlobalStatArgs::parse(args)?;
+                Ok((
+                    name.to_owned(),
+                    Self {
+                        total_duration: *dur,
+                        count: args.count as usize,
+                    },
+                ))
             }
-            _ => Err(GlobalStatParseError::UnexpectedTraceEvent(t.clone())),
+            _ => Err(GlobalStatParseError::UnexpectedInput(t.clone())),
         }
     }
 
@@ -123,23 +92,57 @@ pub enum GlobalStatParseError {
     #[error("lacking expected \"Total\" name prefix")]
     NoTotalPrefix,
 
-    #[error("lacking \"count\" argument")]
-    MissingCount,
+    #[error("attempted to parse GlobalStat from unexpected {0:#?}")]
+    UnexpectedInput(TraceEvent),
 
-    #[error("\"count\" argument is not an integer: {0:?}")]
-    NonIntegerCount(json::Value),
+    #[error("failed to parse activity arguments ({0})")]
+    BadArguments(#[from] ArgParseError),
+}
 
-    #[error("lacking \"avg ms\" argument")]
-    MissingAvgMs,
+/// Arguments to global execution statistics events
+struct GlobalStatArgs {
+    /// Number of events of this kind
+    count: u64,
 
-    #[error("\"avg ms\" argument is not a float: {0:?}")]
-    NonFloatAvgMs(json::Value),
+    /// Average time per event in milliseconds
+    avg_ms: f64,
+}
+//
+impl GlobalStatArgs {
+    /// Parse global execution statistics arguments
+    fn parse(args: &HashMap<String, json::Value>) -> Result<Self, ArgParseError> {
+        // Process arguments
+        let mut count = None;
+        let mut avg_ms = None;
+        for (k, v) in args {
+            match &**k {
+                "count" => {
+                    if let Some(c) = v.as_u64() {
+                        count = Some(c);
+                    } else {
+                        return Err(ArgParseError::UnexpectedValue("count", v.clone()));
+                    }
+                }
+                "avg ms" => {
+                    if let Some(f) = v.as_f64() {
+                        avg_ms = Some(f);
+                    } else {
+                        return Err(ArgParseError::UnexpectedValue("avg ms", v.clone()));
+                    }
+                }
+                _ => {
+                    return Err(ArgParseError::UnexpectedKeys(args.clone()));
+                }
+            }
+        }
 
-    #[error("unexpected \"{0}\": {1} argument")]
-    UnexpectedArgument(String, json::Value),
-
-    #[error("unexpected {0:#?}")]
-    UnexpectedTraceEvent(TraceEvent),
+        // Make sure all arguments were provided, emit result
+        match (count, avg_ms) {
+            (Some(count), Some(avg_ms)) => Ok(Self { count, avg_ms }),
+            (None, _) => Err(ArgParseError::MissingKey("count")),
+            (_, None) => Err(ArgParseError::MissingKey("avg ms")),
+        }
+    }
 }
 
 // FIXME: Add some tests

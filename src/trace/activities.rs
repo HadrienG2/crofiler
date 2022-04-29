@@ -144,27 +144,26 @@ impl Activity {
     fn parse_detail_arg(
         args: &Option<HashMap<String, json::Value>>,
     ) -> Result<String, ArgParseError> {
-        const ARG_NAME: &'static str = "detail";
         if let Some(args) = args {
             let mut args_iter = args.iter();
             if let Some((k, v)) = args_iter.next() {
-                if k != ARG_NAME {
+                if k != "detail" {
                     return Err(ArgParseError::UnexpectedKeys(args.clone()));
                 }
                 let s = if let json::Value::String(s) = v {
                     s
                 } else {
-                    return Err(ArgParseError::UnexpectedValue(ARG_NAME, v.clone()));
+                    return Err(ArgParseError::UnexpectedValue("detail", v.clone()));
                 };
                 if args_iter.next().is_some() {
                     return Err(ArgParseError::UnexpectedKeys(args.clone()));
                 }
                 Ok(s.clone())
             } else {
-                Err(ArgParseError::MissingKey(ARG_NAME))
+                Err(ArgParseError::MissingKey("detail"))
             }
         } else {
-            Err(ArgParseError::MissingKey(ARG_NAME))
+            Err(ArgParseError::MissingKey("detail"))
         }
     }
 }
