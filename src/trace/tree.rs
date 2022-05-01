@@ -194,6 +194,7 @@ struct ActivityNode {
 }
 
 /// Mechanism to build an ActivityTree
+#[derive(Debug, PartialEq)]
 pub struct ActivityTreeBuilder {
     /// Activities collected so far
     activities: Vec<ActivityNode>,

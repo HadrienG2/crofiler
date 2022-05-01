@@ -18,7 +18,6 @@ use self::{
 use serde_json as json;
 use std::{
     collections::HashMap,
-    fmt::Debug,
     fs::File,
     io::{self, Read},
     path::Path,
