@@ -2,9 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod trace;
-
-use trace::{ClangTrace, Duration};
+use clang_time_trace::{ClangTrace, Duration};
 
 fn main() {
     let trace =
