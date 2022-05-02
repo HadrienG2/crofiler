@@ -210,4 +210,5 @@ pub enum ClangTraceParseError {
     UnexpectedEvent(TraceEvent),
 }
 
-// FIXME: Add some tests that exercise from_str, accessors and all non-#[from] errors
+// FIXME: Add some tests that exercise from_str, accessors and all non-#[from] errors.
+//        Use assert_matches for the latter.

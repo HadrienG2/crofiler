@@ -328,6 +328,7 @@ pub enum ActivityTreeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use more_asserts::*;
     use pretty_assertions::assert_eq;
 
     fn test_tree(tree: ActivityTree) {
@@ -366,9 +367,9 @@ mod tests {
     fn test_node(node: ActivityTrace, expected_parent: Option<NonZeroUsize>) {
         // Test basic activity properties
         assert_eq!(node.activity(), node.activity.stat.activity());
-        assert!(node.start() <= node.end());
+        assert_le!(node.start(), node.end());
         assert_eq!(node.duration(), node.end() - node.start());
-        assert!(node.self_duration() <= node.duration());
+        assert_le!(node.self_duration(), node.duration());
 
         // Test parent lookup
         let tree = &node.tree;
