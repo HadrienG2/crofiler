@@ -27,6 +27,7 @@ pub use self::{
     stats::{
         activity::{Activity, ActivityParseError, ActivityStatParseError},
         global::{GlobalStat, GlobalStatParseError},
+        ArgParseError,
     },
     tree::{ActivityTrace, ActivityTreeError},
 };

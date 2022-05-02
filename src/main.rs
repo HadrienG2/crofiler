@@ -14,13 +14,14 @@ fn main() {
 
     println!("\nGlobal statistics: {:#?}", trace.global_stats());
 
-    println!("\nTree roots:");
-    for root in trace.root_activities() {
-        println!("- {root:#?}");
-    }
+    // Total duration of all recorded (root) activities
+    let root_duration = trace
+        .root_activities()
+        .map(|root| root.duration())
+        .sum::<f64>();
 
+    // Flat profile prototype
     const SELF_CUTOFF: Duration = 0.1;
-
     println!("\nFlat profile with {SELF_CUTOFF}% self-time cutoff:");
     let mut activities = trace.all_activities().collect::<Box<[_]>>();
     activities.sort_unstable_by(|a1, a2| {
@@ -29,10 +30,6 @@ fn main() {
             .unwrap()
             .reverse()
     });
-    let root_duration = trace
-        .root_activities()
-        .map(|root| root.duration())
-        .sum::<f64>();
     for activity in activities.iter() {
         let self_duration = activity.self_duration();
         let percent = self_duration / root_duration * 100.0;
@@ -45,5 +42,12 @@ fn main() {
             activity.self_duration(),
             activity.self_duration() / root_duration * 100.0
         );
+    }
+
+    // Hierarchical profile prototype
+    // (TODO: Make this more hierarchical and display using termtree)
+    println!("\nTree roots:");
+    for root in trace.root_activities() {
+        println!("- {root:#?}");
     }
 }
