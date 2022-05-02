@@ -7,13 +7,9 @@ mod stats;
 mod tree;
 
 use self::{
-    ctf::{events::duration::DurationEvent, Duration, TraceDataObject, TraceEvent},
-    metadata::ProcessNameParseError,
-    stats::{
-        activity::{ActivityStat, ActivityStatParseError},
-        global::{GlobalStat, GlobalStatParseError},
-    },
-    tree::{ActivityTrace, ActivityTree, ActivityTreeBuilder, ActivityTreeError},
+    ctf::{events::duration::DurationEvent, TraceDataObject, TraceEvent},
+    stats::activity::ActivityStat,
+    tree::{ActivityTree, ActivityTreeBuilder},
 };
 use serde_json as json;
 use std::{
@@ -23,6 +19,18 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
+
+// Reexport types which appear in the public interface
+pub use self::{
+    ctf::{Duration, Timestamp},
+    metadata::ProcessNameParseError,
+    stats::{
+        activity::{Activity, ActivityParseError, ActivityStatParseError},
+        global::{GlobalStat, GlobalStatParseError},
+    },
+    tree::{ActivityTrace, ActivityTreeError},
+};
+pub use json::Error as CtfParseError;
 
 /// Simplified -ftime-trace profile from a clang execution
 #[derive(Debug, PartialEq)]
@@ -171,7 +179,7 @@ pub enum ClangTraceLoadError {
 pub enum ClangTraceParseError {
     /// Failed to parse data as CTF-style JSON
     #[error("failed to parse data as CTF JSON ({0})")]
-    CtfParseError(#[from] json::Error),
+    CtfParseError(#[from] CtfParseError),
 
     /// Encountered unexpected trace-wide metadata
     #[error("encountered unexpected trace-wide metadata ({0:#?})")]
