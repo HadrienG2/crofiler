@@ -122,7 +122,8 @@ impl ClangTrace {
     /// Activities that were directly spawned by the clang driver
     ///
     /// From this, you can recursively iterate over child tasks in order to
-    /// construct a hierarchical execution profile.
+    /// construct a hierarchical execution profile. The order in which root
+    /// activities are emitted by this iterator is unspecified.
     pub fn root_activities(&self) -> impl Iterator<Item = ActivityTrace> {
         self.activities.root_activities()
     }

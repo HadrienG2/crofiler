@@ -35,8 +35,7 @@ pub struct ActivityTree {
 impl ActivityTree {
     /// Activities that were directly spawned by the clang driver
     ///
-    /// From this, you can recursively iterate over child tasks in order to
-    /// construct a hierarchical execution profile.
+    /// See `ClangTrace::root_activities` for documentation.
     pub fn root_activities(&self) -> impl Iterator<Item = ActivityTrace> {
         self.hierarchy_iter(self.first_root_idx..)
     }
@@ -60,14 +59,7 @@ impl ActivityTree {
 
     /// Complete list of activities that clang engaged in
     ///
-    /// You can get a temporal trace of everything that happened by sorting this
-    /// in ascending activity.start() order and you can get a flat time profile
-    /// by sorting this in descending activity.self_duration() order. The order
-    /// in which activities are emitted by this iterator is unspecified.
-    ///
-    /// When using such flat iteration, be careful not to double-count quantites
-    /// that are aggregated over transitive children of each activity, including
-    /// activity.duration() and anything derived from activity.all_children().
+    /// See `ClangTrace::all_activities` for documentation.
     pub fn all_activities(&self) -> impl Iterator<Item = ActivityTrace> {
         self.activities
             .iter()
