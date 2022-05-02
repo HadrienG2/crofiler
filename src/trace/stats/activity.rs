@@ -21,6 +21,15 @@ pub struct ActivityStat {
 }
 //
 impl ActivityStat {
+    /// Create an ActivityStat from scratch
+    pub fn new(activity: Activity, start: Timestamp, duration: Timestamp) -> Self {
+        Self {
+            activity,
+            start,
+            duration,
+        }
+    }
+
     /// Decode a TraceEvent which is expected to contain a timed activity
     pub fn parse(t: TraceEvent) -> Result<Self, ActivityStatParseError> {
         match t {

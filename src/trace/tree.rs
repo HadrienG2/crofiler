@@ -13,7 +13,7 @@ use std::{
 use thiserror::Error;
 
 /// Tree of activities which clang engaged in
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct ActivityTree {
     /// Clang activities recorded by -ftime-trace
     activities: Box<[ActivityNode]>,
@@ -266,14 +266,6 @@ impl ActivityTreeBuilder {
             self.children.push(candidate_idx);
             children_duration += candidate.stat.duration();
 
-            // Make sure that activities nest properly, as mandated by CTF
-            if candidate.stat.end() > end {
-                return Err(ActivityTreeError::PartialActivityOverlap {
-                    prev: candidate.stat.clone(),
-                    current: activity,
-                });
-            }
-
             // Ignore transitive children of this child for direct child lookup,
             // but add them to our set of transitive children.
             first_related_idx = candidate.first_related_idx;
@@ -327,7 +319,7 @@ impl ActivityTreeBuilder {
 }
 
 /// What can go wrong while inserting activities into an ActivityTree
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum ActivityTreeError {
     /// Activities were not provided in increasing end timestamp order
     #[error("activities not provided in increasing end timestamp order (current end {current} < previous end {prev})")]
@@ -341,4 +333,232 @@ pub enum ActivityTreeError {
     },
 }
 
-// FIXME: Add some tests that exercise builder, accessors and all non-#[from] errors
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn test_tree(tree: ActivityTree) {
+        // Test flat iterator
+        for (flat_activity, (expected_idx, expected_activity)) in tree
+            .all_activities()
+            .zip(tree.activities.iter().enumerate())
+        {
+            assert_eq!(
+                flat_activity,
+                ActivityTrace {
+                    tree: &tree,
+                    activity: expected_activity,
+                    activity_idx: expected_idx,
+                }
+            );
+        }
+
+        // Test hierarchical iterator + individual root nodes
+        for (root_activity, &expected_idx) in tree
+            .root_activities()
+            .zip(&tree.children[tree.first_root_idx..])
+        {
+            assert_eq!(
+                root_activity,
+                ActivityTrace {
+                    tree: &tree,
+                    activity: &tree.activities[expected_idx],
+                    activity_idx: expected_idx,
+                }
+            );
+            test_node(root_activity, None);
+        }
+    }
+
+    fn test_node(node: ActivityTrace, expected_parent: Option<NonZeroUsize>) {
+        // Test basic activity properties
+        assert_eq!(node.activity(), node.activity.stat.activity());
+        assert!(node.start() <= node.end());
+        assert_eq!(node.duration(), node.end() - node.start());
+        assert!(node.self_duration() <= node.duration());
+
+        // Test parent lookup
+        let tree = &node.tree;
+        assert_eq!(
+            node.parent(),
+            expected_parent.map(|idx| {
+                let parent_idx = usize::from(idx);
+                ActivityTrace {
+                    tree,
+                    activity: &tree.activities[parent_idx],
+                    activity_idx: parent_idx,
+                }
+            })
+        );
+
+        // Test flat child iterator
+        for (flat_child, expected_idx) in node
+            .all_children()
+            .zip(node.activity.first_related_idx..=node.activity_idx)
+        {
+            assert_eq!(
+                flat_child,
+                ActivityTrace {
+                    tree,
+                    activity: &tree.activities[expected_idx],
+                    activity_idx: expected_idx,
+                }
+            );
+        }
+
+        // Test hierarchical child iterator + individual child nodes
+        for (child_activity, &expected_idx) in node
+            .direct_children()
+            .zip(&tree.children[node.activity.children_indices.clone()])
+        {
+            assert_eq!(
+                child_activity,
+                ActivityTrace {
+                    tree,
+                    activity: &tree.activities[expected_idx],
+                    activity_idx: expected_idx,
+                }
+            );
+            test_node(child_activity, NonZeroUsize::new(node.activity_idx));
+        }
+    }
+
+    #[test]
+    fn build_empty_tree() {
+        let tree = ActivityTreeBuilder::with_capacity(0).build();
+        assert_eq!(tree, ActivityTree::default());
+        test_tree(tree);
+    }
+
+    #[test]
+    fn build_single_node_tree() {
+        // Build the tree
+        let mut builder = ActivityTreeBuilder::with_capacity(1);
+        let activity_stat = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
+        builder.insert(activity_stat.clone()).unwrap();
+        let tree = builder.build();
+
+        // Check expected content and accessors
+        let self_duration = activity_stat.duration();
+        let activity_node = ActivityNode {
+            stat: activity_stat,
+            self_duration,
+            first_related_idx: 0,
+            children_indices: Range { start: 0, end: 0 },
+            parent_idx: None,
+        };
+        assert_eq!(
+            tree,
+            ActivityTree {
+                activities: vec![activity_node].into_boxed_slice(),
+                children: vec![0].into_boxed_slice(),
+                first_root_idx: 0,
+            }
+        );
+        test_tree(tree);
+    }
+
+    #[test]
+    fn build_basic_tree() {
+        // Build the tree
+        let mut builder = ActivityTreeBuilder::with_capacity(5);
+        let root = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2e6); // End time 4.2e6
+        let child1 = ActivityStat::new(Activity::Frontend, 0.2, 3.2e6); // End time 3.2e6
+        let subchild1 =
+            ActivityStat::new(Activity::Source("/usr/include/boost.h".into()), 0.3, 3.0e6); // End time 3.0e6
+        let child2 = ActivityStat::new(Activity::Backend, 3.5e6, 0.6e6); // End time 4.1e6
+        let subchild2 = ActivityStat::new(
+            Activity::OptModule("/home/hadrien/main.cpp".into()),
+            3.6e6,
+            0.4e6,
+        ); // End time 4.0e6
+        builder.insert(subchild1.clone()).unwrap();
+        builder.insert(child1.clone()).unwrap();
+        builder.insert(subchild2.clone()).unwrap();
+        builder.insert(child2.clone()).unwrap();
+        builder.insert(root.clone()).unwrap();
+        let tree = builder.build();
+
+        // Check expected content
+        let mut self_duration = subchild1.duration();
+        let subchild1 = ActivityNode {
+            stat: subchild1,
+            self_duration,
+            first_related_idx: 0,
+            children_indices: Range { start: 0, end: 0 },
+            parent_idx: NonZeroUsize::new(1),
+        };
+        self_duration = child1.duration() - subchild1.stat.duration();
+        let child1 = ActivityNode {
+            stat: child1,
+            self_duration,
+            first_related_idx: 0,
+            children_indices: Range { start: 0, end: 1 },
+            parent_idx: NonZeroUsize::new(4),
+        };
+        self_duration = subchild2.duration();
+        let subchild2 = ActivityNode {
+            stat: subchild2,
+            self_duration,
+            first_related_idx: 2,
+            children_indices: Range { start: 1, end: 1 },
+            parent_idx: NonZeroUsize::new(3),
+        };
+        self_duration = child2.duration() - subchild2.stat.duration();
+        let child2 = ActivityNode {
+            stat: child2,
+            self_duration,
+            first_related_idx: 2,
+            children_indices: Range { start: 1, end: 2 },
+            parent_idx: NonZeroUsize::new(4),
+        };
+        self_duration = root.duration() - child1.stat.duration() - child2.stat.duration();
+        let root = ActivityNode {
+            stat: root,
+            self_duration,
+            first_related_idx: 0,
+            children_indices: Range { start: 2, end: 4 },
+            parent_idx: None,
+        };
+        assert_eq!(
+            tree,
+            ActivityTree {
+                activities: vec![subchild1, child1, subchild2, child2, root].into_boxed_slice(),
+                children: vec![0, 2, 3, 1, 4].into_boxed_slice(),
+                first_root_idx: 4,
+            }
+        );
+        test_tree(tree);
+    }
+
+    #[test]
+    fn build_error_unordered_timestamps() {
+        let mut builder = ActivityTreeBuilder::with_capacity(2);
+        let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 4.6, 6.4);
+        builder.insert(activity1.clone()).unwrap();
+        let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
+        assert_eq!(
+            builder.insert(activity2.clone()),
+            Err(ActivityTreeError::UnexpectedActivityOrder {
+                prev: activity1.end(),
+                current: activity2.end()
+            })
+        );
+    }
+
+    #[test]
+    fn build_error_partial_overlap_before() {
+        let mut builder = ActivityTreeBuilder::with_capacity(2);
+        let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 1.2, 3.4);
+        builder.insert(activity1.clone()).unwrap();
+        let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 2.3, 5.6);
+        assert_eq!(
+            builder.insert(activity2.clone()),
+            Err(ActivityTreeError::PartialActivityOverlap {
+                prev: activity1.clone(),
+                current: activity2.clone()
+            })
+        );
+    }
+}
