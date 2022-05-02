@@ -210,5 +210,395 @@ pub enum ClangTraceParseError {
     UnexpectedEvent(TraceEvent),
 }
 
-// FIXME: Add some tests that exercise from_str, accessors and all non-#[from] errors.
-//        Use assert_matches for the latter.
+#[cfg(test)]
+mod tests {
+    use super::{ctf::DisplayTimeUnit, stats::activity::Activity, *};
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn good_trace() {
+        // Build the trace
+        let trace = ClangTrace::from_str(
+            r#"{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0.3,
+            "dur": 6788.7,
+            "name": "Frontend"
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 6789.3,
+            "dur": 5554.2,
+            "name": "OptModule",
+            "args": {
+                "detail": "/home/hadrien/main.cpp"
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 6789.1,
+            "dur": 5554.5,
+            "name": "Backend"
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0.1,
+            "dur": 12344.8,
+            "name": "ExecuteCompiler"
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 1,
+            "ts": 0,
+            "dur": 12345,
+            "name": "Total ExecuteCompiler",
+            "args": {
+                "count": 1,
+                "avg ms": 12345
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 2,
+            "ts": 0,
+            "dur": 6789,
+            "name": "Total Frontend",
+            "args": {
+                "count": 1,
+                "avg ms": 6789
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 3,
+            "ts": 0,
+            "dur": 5555,
+            "name": "Total Backend",
+            "args": {
+                "count": 1,
+                "avg ms": 5555
+            }
+        },
+        {
+            "ph":"M",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0,
+            "cat": "",
+            "name": "process_name",
+            "args": {
+                "name": "clang-14.0.0"
+            }
+        }
+    ]
+}"#,
+        )
+        .unwrap();
+
+        // Check global metadata
+        assert_eq!(trace.process_name(), "clang-14.0.0");
+        assert_eq!(
+            trace.global_stats(),
+            &maplit::hashmap! {
+                "ExecuteCompiler".into() => GlobalStat::new(12345.0, 1),
+                "Frontend".into() => GlobalStat::new(6789.0, 1),
+                "Backend".into() => GlobalStat::new(5555.0, 1),
+            }
+        );
+
+        // Check flat activity list
+        let expected_activities = [
+            (Activity::Frontend, 0.3, 6788.7),
+            (
+                Activity::OptModule("/home/hadrien/main.cpp".into()),
+                6789.3,
+                5554.2,
+            ),
+            (Activity::Backend, 6789.1, 5554.5),
+            (Activity::ExecuteCompiler, 0.1, 12344.8),
+        ];
+        for (trace, (expected_activity, expected_start, expected_duration)) in trace
+            .all_activities()
+            .zip(expected_activities.iter().cloned())
+        {
+            assert_eq!(trace.activity(), &expected_activity);
+            assert_eq!(trace.start(), expected_start);
+            assert_eq!(trace.duration(), expected_duration);
+        }
+
+        // Check root node list
+        let mut root_iter = trace.root_activities();
+        let (root_activity, root_start, root_duration) = expected_activities.last().unwrap();
+        assert_matches!(root_iter.next(), Some(root) => {
+            assert_eq!(root.activity(), root_activity);
+            assert_eq!(root.start(), *root_start);
+            assert_eq!(root.duration(), *root_duration);
+        });
+        assert_eq!(root_iter.next(), None);
+    }
+
+    #[test]
+    fn invalid_ctf_json() {
+        assert_matches!(
+            // Missing traceEvents
+            ClangTrace::from_str("{}"),
+            Err(ClangTraceParseError::CtfParseError(_))
+        );
+    }
+
+    #[test]
+    fn unexpected_metadata() {
+        assert_matches!(
+            // Expecting nothing but traceEvents
+            ClangTrace::from_str(r#"{"traceEvents": [], "displayTimeUnit": "ns"}"#),
+            Err(ClangTraceParseError::UnexpectedTraceMetadata(trace_data_object)) => {
+                assert_eq!(trace_data_object, TraceDataObject {
+                    displayTimeUnit: DisplayTimeUnit::ns,
+                    ..TraceDataObject::default()
+                });
+            }
+        )
+    }
+
+    #[test]
+    fn invalid_activity_stat() {
+        assert_matches!(
+            // Invalid name
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph": "X",
+        "pid": 1,
+        "tid": 0,
+        "ts": 0.3,
+        "dur": 6788.7,
+        "name": "WhatIsThisThing"
+    }]
+}"#
+            ),
+            Err(ClangTraceParseError::ActivityStatParseError(_))
+        );
+    }
+
+    #[test]
+    fn invalid_activity_tree() {
+        assert_matches!(
+            // Events not in increading end timestamp order
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 6789.1,
+            "dur": 5554.5,
+            "name": "Backend"
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0.3,
+            "dur": 6788.7,
+            "name": "Frontend"
+        }
+    ]
+}"#
+            ),
+            Err(ClangTraceParseError::ActivityTreeError(_))
+        );
+    }
+
+    #[test]
+    fn invalid_global_stat() {
+        assert_matches!(
+            // Invalid start timestamp
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph": "X",
+        "pid": 1,
+        "tid": 1,
+        "ts": 4.2,
+        "dur": 12345,
+        "name": "Total ExecuteCompiler",
+        "args": {
+            "count": 1,
+            "avg ms": 12345
+        }
+    }]
+}"#
+            ),
+            Err(ClangTraceParseError::GlobalStatParseError(_))
+        );
+    }
+
+    #[test]
+    fn duplicate_global_stat() {
+        assert_matches!(
+            // Duplicate global stat
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 1,
+            "ts": 0,
+            "dur": 12345,
+            "name": "Total ExecuteCompiler",
+            "args": {
+                "count": 1,
+                "avg ms": 12345
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 1,
+            "tid": 1,
+            "ts": 0,
+            "dur": 54321,
+            "name": "Total ExecuteCompiler",
+            "args": {
+                "count": 1,
+                "avg ms": 54321
+            }
+        }
+    ]
+}"#
+            ),
+            Err(ClangTraceParseError::DuplicateGlobalStat(
+                name,
+                old,
+                new
+            )) => {
+                assert_eq!(&*name, "ExecuteCompiler");
+                assert_eq!(old, GlobalStat::new(12345.0, 1));
+                assert_eq!(new, GlobalStat::new(54321.0, 1));
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_process_name() {
+        assert_matches!(
+            // Bad start timestamp
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph":"M",
+        "pid": 1,
+        "tid": 0,
+        "ts": 0.42,
+        "cat": "",
+        "name": "process_name",
+        "args": {
+            "name": "clang-14.0.0"
+        }
+    }]
+}"#
+            ),
+            Err(ClangTraceParseError::ProcessNameParseError(_))
+        );
+    }
+
+    #[test]
+    fn duplicate_process_name() {
+        assert_matches!(
+            // Multiple process names
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [
+        {
+            "ph":"M",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0,
+            "cat": "",
+            "name": "process_name",
+            "args": {
+                "name": "clang-14.0.0"
+            }
+        },
+        {
+            "ph":"M",
+            "pid": 1,
+            "tid": 0,
+            "ts": 0,
+            "cat": "",
+            "name": "process_name",
+            "args": {
+                "name": "clang-13.9.9"
+            }
+        }
+    ]
+}"#
+            ),
+            Err(ClangTraceParseError::DuplicateProcessName(old, new)) => {
+                assert_eq!(&*old, "clang-14.0.0");
+                assert_eq!(&*new, "clang-13.9.9");
+            }
+        );
+    }
+
+    #[test]
+    fn no_process_name() {
+        assert_matches!(
+            // No process name in an otherwise correct stream
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph": "X",
+        "pid": 1,
+        "tid": 0,
+        "ts": 0.1,
+        "dur": 12344.8,
+        "name": "ExecuteCompiler"
+    }]
+}"#
+            ),
+            Err(ClangTraceParseError::NoProcessName)
+        );
+    }
+
+    #[test]
+    fn unexpected_event() {
+        assert_matches!(
+            // clang should not emit Begin/End events
+            ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph": "B",
+        "pid": 1,
+        "tid": 0,
+        "ts": 0.1,
+        "name": "ExecuteCompiler"
+    }]
+}"#
+            ),
+            Err(ClangTraceParseError::UnexpectedEvent(e)) => {
+                assert_eq!(e, TraceEvent::B(DurationEvent {
+                    pid: 1,
+                    tid: 0,
+                    ts: 0.1,
+                    name: Some("ExecuteCompiler".into()),
+                    ..DurationEvent::default()
+                }));
+            }
+        );
+    }
+}

@@ -24,6 +24,14 @@ pub struct GlobalStat {
 }
 //
 impl GlobalStat {
+    /// Build new global execution statistics
+    pub fn new(total_duration: Duration, count: usize) -> Self {
+        Self {
+            total_duration,
+            count,
+        }
+    }
+
     /// Decode a TraceEvent which is expected to contain global statistics
     pub fn parse(t: TraceEvent) -> Result<(Box<str>, Self), GlobalStatParseError> {
         match t {
