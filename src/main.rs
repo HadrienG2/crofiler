@@ -19,8 +19,9 @@ fn main() {
         println!("- {root:#?}");
     }
 
-    const CUTOFF: Duration = 0.1;
-    println!("\nFlat profile with {CUTOFF}% cutoff:");
+    const SELF_CUTOFF: Duration = 0.1;
+
+    println!("\nFlat profile with {SELF_CUTOFF}% self-time cutoff:");
     let mut activities = trace.all_activities().collect::<Box<[_]>>();
     activities.sort_unstable_by(|a1, a2| {
         a1.self_duration()
@@ -35,7 +36,7 @@ fn main() {
     for activity in activities.iter() {
         let self_duration = activity.self_duration();
         let percent = self_duration / root_duration * 100.0;
-        if percent < CUTOFF {
+        if percent < SELF_CUTOFF {
             break;
         }
         println!(
