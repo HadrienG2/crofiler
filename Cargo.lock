@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "clang-time-trace"
 version = "0.1.0"
-source = "git+https://github.com/HadrienG2/clang-time-trace.git#a32a64ec3c4c9d8ac6f3d3ab253185113421eaec"
+source = "git+https://github.com/HadrienG2/clang-time-trace.git#478da7c9a62cab0007ff262d17fe3cc4704ae8b0"
 dependencies = [
  "serde",
  "serde_json",
