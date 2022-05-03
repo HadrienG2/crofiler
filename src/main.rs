@@ -4,7 +4,10 @@
 
 use clang_time_trace::{Activity, ClangTrace, Duration};
 use lasso::{MiniSpur, Rodeo};
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 fn main() {
     let trace =
@@ -87,18 +90,17 @@ fn main() {
                 for component in path.components() {
                     use std::path::Component::*;
                     match component {
-                        Normal(_) => {
+                        Prefix(_) | RootDir | Normal(_) => {
                             let component_str = component.as_os_str().to_str().expect(
                                 "Since this path comes from JSON, it should be valid Unicode",
                             );
                             path_elements.push(path_components.get_or_intern(component_str))
                         }
-                        RootDir | CurDir => {}
+                        CurDir => {}
                         ParentDir => {
                             assert!(path_elements.len() > path_start);
                             path_elements.pop();
                         }
-                        Prefix(_) => panic!("Windows prefixes are not supported yet"),
                     }
                 }
                 path_ranges.push(path_start..path_elements.len());
@@ -108,12 +110,13 @@ fn main() {
     }
     //
     let path_components = path_components.into_resolver();
+    let mut path_buf = PathBuf::new();
     for path_range in &path_ranges {
-        print!("- ");
         for component in &path_elements[path_range.clone()] {
-            print!("/{}", path_components.resolve(component));
+            path_buf.push(path_components.resolve(component));
         }
-        println!();
+        println!("- {}", path_buf.display());
+        path_buf.clear();
     }
     println!(
         "{} paths, {} interned path components",
