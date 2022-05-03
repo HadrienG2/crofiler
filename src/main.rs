@@ -87,7 +87,7 @@ fn main() {
                 for component in path.components() {
                     use std::path::Component::*;
                     match component {
-                        Prefix(_) | Normal(_) => {
+                        Normal(_) => {
                             let component_str = component.as_os_str().to_str().expect(
                                 "Since this path comes from JSON, it should be valid Unicode",
                             );
@@ -98,6 +98,7 @@ fn main() {
                             assert!(path_elements.len() > path_start);
                             path_elements.pop();
                         }
+                        Prefix(_) => panic!("Windows prefixes are not supported yet"),
                     }
                 }
                 path_ranges.push(path_start..path_elements.len());
@@ -110,7 +111,6 @@ fn main() {
     for path_range in &path_ranges {
         print!("- ");
         for component in &path_elements[path_range.clone()] {
-            // Not correct on Windows, but this is just a toy example...
             print!("/{}", path_components.resolve(component));
         }
         println!();
