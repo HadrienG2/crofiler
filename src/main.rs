@@ -19,6 +19,7 @@ fn main() {
 
     // Activity types by self-duration
     println!("\nSelf-duration breakdown by activity type:");
+    //
     let mut profile = HashMap::<_, Duration>::new();
     for activity_trace in trace.all_activities() {
         *profile.entry(activity_trace.activity().name()).or_default() +=
