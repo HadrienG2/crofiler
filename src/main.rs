@@ -14,7 +14,7 @@ fn main() {
 
     println!("\nGlobal statistics: {:#?}", trace.global_stats());
 
-    // Flat profile prototype
+    // Flat profile by self-duration
     const SELF_CUTOFF: f32 = 0.01;
     println!(
         "\nSelf-time flat profile with {} % cutoff:",
@@ -31,7 +31,8 @@ fn main() {
         Some(root_duration),
         Some(SELF_CUTOFF),
     );
-    //
+
+    // Flat profile by number of direct children
     const CHILD_CUTOFF: f32 = 0.01;
     println!(
         "\nDirect children flat profile with {} % cutoff:",
