@@ -2,9 +2,9 @@
 
 #![deny(missing_docs)]
 
-use clang_time_trace::{ActivityTrace, ClangTrace};
+use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
 use num_traits::ToPrimitive;
-use std::{fmt::Display, iter::Sum, ops::Add};
+use std::{collections::HashMap, fmt::Display, iter::Sum, ops::Add};
 
 fn main() {
     let trace =
@@ -17,7 +17,7 @@ fn main() {
     // Flat profile by self-duration
     const SELF_CUTOFF: f32 = 0.01;
     println!(
-        "\nSelf-time flat profile with {} % cutoff:",
+        "\nSelf-duration flat profile with {} % cutoff:",
         SELF_CUTOFF * 100.0
     );
     let root_duration = trace
@@ -46,6 +46,25 @@ fn main() {
         Some(num_activities),
         Some(CHILD_CUTOFF),
     );
+
+    // Self-duration profile grouped by activity type
+    // TODO: Unify this with other sorts of flat profile?
+    println!("\nSelf-duration profile by activity type:");
+    let mut profile = HashMap::<_, Duration>::new();
+    for activity_trace in trace.all_activities() {
+        *profile.entry(activity_trace.activity().name()).or_default() +=
+            activity_trace.self_duration();
+    }
+    //
+    let mut profile = profile
+        .into_iter()
+        .collect::<Box<[(&'static str, Duration)]>>();
+    profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
+    //
+    for (name, duration) in profile.iter() {
+        let percent = duration / root_duration * 100.0;
+        println!("- {name} ({duration} µs, {percent:.2} %)");
+    }
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)
@@ -97,10 +116,18 @@ fn display_flat_profile<Metric>(
     activities.sort_unstable_by(|a1, a2| metric(&a2).partial_cmp(&metric(&a1)).unwrap());
 
     // Display the resulting profile
+    let num_activities = trace.all_activities().count();
     for activity_trace in activities.iter() {
         let activity = activity_trace.activity();
         let metric = metric(activity_trace);
         let percent = metric.to_f32().unwrap() * norm * 100.0;
         println!("- {activity:?} ({metric} {unit}, {percent:.2} %)");
+    }
+    if activities.len() < num_activities {
+        let other_activities = num_activities - activities.len();
+        println!(
+            "- ... and {} other activities below threshold",
+            other_activities
+        );
     }
 }
