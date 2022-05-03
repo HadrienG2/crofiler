@@ -26,9 +26,7 @@ fn main() {
             activity_trace.self_duration();
     }
     //
-    let mut profile = profile
-        .into_iter()
-        .collect::<Box<[(&'static str, Duration)]>>();
+    let mut profile = profile.into_iter().collect::<Box<[_]>>();
     profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
     //
     for (name, duration) in profile.iter() {
