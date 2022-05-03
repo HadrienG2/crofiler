@@ -3,9 +3,10 @@
 #![deny(missing_docs)]
 
 use clang_time_trace::{Activity, ClangTrace, Duration};
+use lasso::{MiniSpur, Rodeo};
 use std::{
     collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 fn main() {
@@ -73,9 +74,10 @@ fn main() {
         println!("- {root:#?}");
     }
 
-    // Display path arguments received by activities in alphabetical order
+    // Display path arguments received by activities
     println!("\nActivity path arguments:");
     //
+    let mut path_components = Rodeo::<MiniSpur>::new(); // TODO: Put this MiniSpur in a typedef
     let mut path_occurences = BTreeMap::<_, usize>::new();
     for activity_trace in trace.all_activities() {
         match activity_trace.activity() {
@@ -83,28 +85,42 @@ fn main() {
                 // Perform basic path normalization, assuming no symlinks
                 let path = Path::new(&**path);
                 assert!(path.is_absolute());
-                let mut normalized_path = PathBuf::new();
+                let mut normalized_path = Vec::new();
                 for component in path.components() {
                     use std::path::Component::*;
                     match component {
-                        Prefix(_) | RootDir | Normal(_) => normalized_path.push(component),
-                        CurDir => {}
-                        ParentDir => assert!(normalized_path.pop()),
+                        Prefix(_) | Normal(_) => {
+                            let component_str = component.as_os_str().to_str().expect(
+                                "Since this path comes from JSON, it should be valid Unicode",
+                            );
+                            normalized_path.push(path_components.get_or_intern(component_str))
+                        }
+                        RootDir | CurDir => {}
+                        ParentDir => assert!(normalized_path.pop().is_some()),
                     }
                 }
                 *path_occurences
-                    .entry(normalized_path.into_boxed_path())
+                    .entry(normalized_path.into_boxed_slice())
                     .or_default() += 1;
             }
             _ => {}
         }
     }
     //
-    for (path, count) in path_occurences {
-        print!("- {}", path.display());
+    let path_components = path_components.into_resolver();
+    for (path, &count) in path_occurences.iter() {
+        print!("- ");
+        for component in path.iter() {
+            print!("/{}", path_components.resolve(component));
+        }
         if count != 1 {
             print!(" ({count} occurences)");
         }
         println!();
     }
+    println!(
+        "{} interned paths, {} interned path components",
+        path_occurences.len(),
+        path_components.len()
+    );
 }
