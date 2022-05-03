@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 clang-time-trace = { git = "https://github.com/HadrienG2/clang-time-trace.git" }
+num-traits = "0.2"
