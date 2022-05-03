@@ -47,14 +47,14 @@ fn main() {
     activities
         .sort_unstable_by(|a1, a2| a2.self_duration().partial_cmp(&a1.self_duration()).unwrap());
     //
-    let num_activities = trace.all_activities().count();
-    //
     for activity_trace in activities.iter() {
         let activity = activity_trace.activity();
         let self_duration = activity_trace.self_duration();
         let percent = self_duration * norm * 100.0;
         println!("- {activity:?} ({self_duration} µs, {percent:.2} %)");
     }
+    //
+    let num_activities = trace.all_activities().count();
     if activities.len() < num_activities {
         let other_activities = num_activities - activities.len();
         println!(
