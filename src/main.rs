@@ -2,8 +2,11 @@
 
 #![deny(missing_docs)]
 
-use clang_time_trace::{ClangTrace, Duration};
-use std::collections::HashMap;
+use clang_time_trace::{Activity, ClangTrace, Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+};
 
 fn main() {
     let trace =
@@ -68,5 +71,40 @@ fn main() {
     println!("\nTree roots:");
     for root in trace.root_activities() {
         println!("- {root:#?}");
+    }
+
+    // Display path arguments received by activities in alphabetical order
+    println!("\nActivity path arguments:");
+    //
+    let mut path_occurences = BTreeMap::<_, usize>::new();
+    for activity_trace in trace.all_activities() {
+        match activity_trace.activity() {
+            Activity::Source(path) | Activity::OptModule(path) => {
+                // Perform basic path normalization, assuming no symlinks
+                let path = Path::new(&**path);
+                assert!(path.is_absolute());
+                let mut normalized_path = PathBuf::new();
+                for component in path.components() {
+                    use std::path::Component::*;
+                    match component {
+                        Prefix(_) | RootDir | Normal(_) => normalized_path.push(component),
+                        CurDir => {}
+                        ParentDir => assert!(normalized_path.pop()),
+                    }
+                }
+                *path_occurences
+                    .entry(normalized_path.into_boxed_path())
+                    .or_default() += 1;
+            }
+            _ => {}
+        }
+    }
+    //
+    for (path, count) in path_occurences {
+        print!("- {}", path.display());
+        if count != 1 {
+            print!(" ({count} occurences)");
+        }
+        println!();
     }
 }
