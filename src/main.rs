@@ -12,8 +12,6 @@ fn main() {
 
     println!("Profile from {}", trace.process_name());
 
-    println!("\nGlobal statistics: {:#?}", trace.global_stats());
-
     // Flat profile by self-duration
     println!("\nSelf-duration flat profile:");
     let root_duration = trace
