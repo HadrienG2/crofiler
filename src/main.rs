@@ -12,22 +12,22 @@ fn main() {
 
     println!("\nGlobal statistics: {:#?}", trace.global_stats());
 
-    // Total duration of all recorded (root) activities
-    let root_duration = trace
-        .root_activities()
-        .map(|root| root.duration())
-        .sum::<f64>();
-
     // Flat profile prototype
-    const SELF_CUTOFF: Duration = 0.1;
-    println!("\nFlat profile with {SELF_CUTOFF}% self-time cutoff:");
+    // TODO: Make it easy to get a flat profile by any criterion
     let mut activities = trace.all_activities().collect::<Box<[_]>>();
+    //
+    const SELF_CUTOFF: Duration = 1.0;
+    println!("\nSelf-time flat profile with {SELF_CUTOFF}% cutoff:");
     activities.sort_unstable_by(|a1, a2| {
         a1.self_duration()
             .partial_cmp(&a2.self_duration())
             .unwrap()
             .reverse()
     });
+    let root_duration = trace
+        .root_activities()
+        .map(|root| root.duration())
+        .sum::<f64>();
     for activity in activities.iter() {
         let self_duration = activity.self_duration();
         let percent = self_duration / root_duration * 100.0;
@@ -37,8 +37,31 @@ fn main() {
         println!(
             "- {:?} ({} µs, {:.2}%)",
             activity.activity(),
-            activity.self_duration(),
-            activity.self_duration() / root_duration * 100.0
+            self_duration,
+            percent
+        );
+    }
+    //
+    const CHILD_CUTOFF: Duration = 1.0;
+    println!("\nDirect children flat profile with {CHILD_CUTOFF}% cutoff:");
+    activities.sort_unstable_by(|a1, a2| {
+        a1.direct_children()
+            .count()
+            .cmp(&a2.direct_children().count())
+            .reverse()
+    });
+    let num_activities = trace.all_activities().count();
+    for activity in activities.iter() {
+        let num_children = activity.direct_children().count();
+        let percent = (num_children as f64) / (num_activities as f64) * 100.0;
+        if percent < CHILD_CUTOFF {
+            break;
+        }
+        println!(
+            "- {:?} ({} children, {:.2}%)",
+            activity.activity(),
+            num_children,
+            percent
         );
     }
 
