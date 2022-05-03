@@ -15,11 +15,7 @@ fn main() {
     println!("\nGlobal statistics: {:#?}", trace.global_stats());
 
     // Flat profile by self-duration
-    const SELF_CUTOFF: f32 = 0.01;
-    println!(
-        "\nSelf-duration flat profile with {} % cutoff:",
-        SELF_CUTOFF * 100.0
-    );
+    println!("\nSelf-duration flat profile:");
     let root_duration = trace
         .root_activities()
         .map(|root| root.duration())
@@ -29,22 +25,18 @@ fn main() {
         |a| a.self_duration(),
         "µs",
         Some(root_duration),
-        Some(SELF_CUTOFF),
+        Some(0.01),
     );
 
     // Flat profile by number of direct children
-    const CHILD_CUTOFF: f32 = 0.01;
-    println!(
-        "\nDirect children flat profile with {} % cutoff:",
-        CHILD_CUTOFF * 100.0
-    );
+    println!("\nChildren count flat profile:");
     let num_activities = trace.all_activities().count();
     display_flat_profile(
         &trace,
         |a| a.direct_children().count(),
         "children",
         Some(num_activities),
-        Some(CHILD_CUTOFF),
+        Some(0.01),
     );
 
     // Self-duration profile grouped by activity type
@@ -126,8 +118,8 @@ fn display_flat_profile<Metric>(
     if activities.len() < num_activities {
         let other_activities = num_activities - activities.len();
         println!(
-            "- ... and {} other activities below threshold",
-            other_activities
+            "- ... and {other_activities} other activities below {} % threshold ...",
+            threshold * 100.0
         );
     }
 }
