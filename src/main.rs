@@ -2,9 +2,8 @@
 
 #![deny(missing_docs)]
 
-use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
-use num_traits::ToPrimitive;
-use std::{collections::HashMap, fmt::Display, iter::Sum, ops::Add};
+use clang_time_trace::{ClangTrace, Duration};
+use std::collections::HashMap;
 
 fn main() {
     let trace =
@@ -12,34 +11,14 @@ fn main() {
 
     println!("Profile from {}", trace.process_name());
 
-    // Flat profile by self-duration
-    println!("\nSelf-duration flat profile:");
+    // Total clang execution time
     let root_duration = trace
         .root_activities()
         .map(|root| root.duration())
         .sum::<f64>();
-    display_flat_profile(
-        &trace,
-        |a| a.self_duration(),
-        "µs",
-        Some(root_duration),
-        Some(0.01),
-    );
 
-    // Flat profile by number of direct children
-    println!("\nChildren count flat profile:");
-    let num_activities = trace.all_activities().count();
-    display_flat_profile(
-        &trace,
-        |a| a.direct_children().count(),
-        "children",
-        Some(num_activities),
-        Some(0.01),
-    );
-
-    // Self-duration profile grouped by activity type
-    // TODO: Unify this with other sorts of flat profile?
-    println!("\nSelf-duration profile by activity type:");
+    // Activity types by self-duration
+    println!("\nSelf-duration breakdown by activity type:");
     let mut profile = HashMap::<_, Duration>::new();
     for activity_trace in trace.all_activities() {
         *profile.entry(activity_trace.activity().name()).or_default() +=
@@ -56,68 +35,39 @@ fn main() {
         println!("- {name} ({duration} µs, {percent:.2} %)");
     }
 
-    // Hierarchical profile prototype
-    // (TODO: Make this more hierarchical and display using termtree)
-    println!("\nTree roots:");
-    for root in trace.root_activities() {
-        println!("- {root:#?}");
-    }
-}
-
-/// Display a flat profile of clang activities according to some metric
-///
-/// - `trace` is the clang execution trace to be profiled
-/// - `metric` is the sorting criterion to be used for profiling, higher is
-///   more overhead. For flat profiles, you should pick metrics that are not
-///   aggregated across children in the activity hierarchy (e.g. prefer
-///   Activity::self_duration over Activity::duration).
-/// - `unit` is the unit suffix to be used when displaying metric values
-/// - `sum` allows the sum of the metric across all activities to be
-///   externally provided in situations where it can be more efficiently or
-///   precisely computed than through naive summation.
-/// - `threshold` is the minimal relative share of the metric sum that an
-///   activity must exhibit in order to be featured in the profile. For example,
-///   if this is 0.01, then metric(activity) must be more than 1% of the sum of
-///   the metric across all activities.
-fn display_flat_profile<Metric>(
-    trace: &ClangTrace,
-    metric: impl Fn(&ActivityTrace) -> Metric,
-    unit: &'static str,
-    sum: Option<Metric>,
-    threshold: Option<f32>,
-) where
-    Metric: Add + Display + PartialOrd + Sum + ToPrimitive,
-{
-    // Determine retention threshold, check its validity if provided
-    let threshold = threshold.unwrap_or(0.0);
-    assert!(threshold.is_normal() && threshold >= 0.0);
-
-    // Determine metric sum and associated normalization factor
-    let sum = sum.unwrap_or_else(|| trace.all_activities().map(|a| metric(&a)).sum::<Metric>());
-    let norm = 1.0 / sum.to_f32().unwrap();
-
-    // Collect activities passing retention threshold
+    // Flat activity profile by self-duration
+    const FLAT_PROFILE_THRESHOLD: Duration = 0.01;
+    println!("\nHot activities by self-duration:");
+    //
+    let norm = 1.0 / root_duration;
     let mut activities = trace
         .all_activities()
-        .filter(|a| metric(&a).to_f32().unwrap() * norm >= threshold)
+        .filter(|a| a.self_duration() * norm >= FLAT_PROFILE_THRESHOLD)
         .collect::<Box<[_]>>();
-
-    // Sort them by decreasing metric value
-    activities.sort_unstable_by(|a1, a2| metric(&a2).partial_cmp(&metric(&a1)).unwrap());
-
-    // Display the resulting profile
+    //
+    activities
+        .sort_unstable_by(|a1, a2| a2.self_duration().partial_cmp(&a1.self_duration()).unwrap());
+    //
     let num_activities = trace.all_activities().count();
+    //
     for activity_trace in activities.iter() {
         let activity = activity_trace.activity();
-        let metric = metric(activity_trace);
-        let percent = metric.to_f32().unwrap() * norm * 100.0;
-        println!("- {activity:?} ({metric} {unit}, {percent:.2} %)");
+        let self_duration = activity_trace.self_duration();
+        let percent = self_duration * norm * 100.0;
+        println!("- {activity:?} ({self_duration} µs, {percent:.2} %)");
     }
     if activities.len() < num_activities {
         let other_activities = num_activities - activities.len();
         println!(
             "- ... and {other_activities} other activities below {} % threshold ...",
-            threshold * 100.0
+            FLAT_PROFILE_THRESHOLD * 100.0
         );
+    }
+
+    // Hierarchical profile prototype
+    // (TODO: Make this more hierarchical and display using termtree)
+    println!("\nTree roots:");
+    for root in trace.root_activities() {
+        println!("- {root:#?}");
     }
 }
