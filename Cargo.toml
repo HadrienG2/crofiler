@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 clang-time-trace = { git = "https://github.com/HadrienG2/clang-time-trace.git" }
-lasso = { version = "0.6", features = ["ahasher"] }

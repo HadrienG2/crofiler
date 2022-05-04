@@ -2,12 +2,8 @@
 
 #![deny(missing_docs)]
 
-use clang_time_trace::{Activity, ClangTrace, Duration};
-use lasso::{MiniSpur, Rodeo};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use clang_time_trace::{ClangTrace, Duration};
+use std::collections::HashMap;
 
 fn main() {
     let trace =
@@ -73,54 +69,4 @@ fn main() {
     for root in trace.root_activities() {
         println!("- {root:#?}");
     }
-
-    // Display path arguments received by activities
-    println!("\nActivity path arguments:");
-    //
-    let mut path_components = Rodeo::<MiniSpur>::new(); // TODO: Put this MiniSpur in a typedef
-    let mut path_elements = Vec::new();
-    let mut path_ranges = Vec::new();
-    for activity_trace in trace.all_activities() {
-        match activity_trace.activity() {
-            Activity::Source(path) | Activity::OptModule(path) => {
-                // Perform basic path normalization, assuming no symlinks
-                let path = Path::new(&**path);
-                assert!(path.is_absolute());
-                let path_start = path_elements.len();
-                for component in path.components() {
-                    use std::path::Component::*;
-                    match component {
-                        Prefix(_) | RootDir | Normal(_) => {
-                            let component_str = component.as_os_str().to_str().expect(
-                                "Since this path comes from JSON, it should be valid Unicode",
-                            );
-                            path_elements.push(path_components.get_or_intern(component_str))
-                        }
-                        CurDir => {}
-                        ParentDir => {
-                            assert!(path_elements.len() > path_start);
-                            path_elements.pop();
-                        }
-                    }
-                }
-                path_ranges.push(path_start..path_elements.len());
-            }
-            _ => {}
-        }
-    }
-    //
-    let path_components = path_components.into_resolver();
-    let mut path_buf = PathBuf::new();
-    for path_range in &path_ranges {
-        for component in &path_elements[path_range.clone()] {
-            path_buf.push(path_components.resolve(component));
-        }
-        println!("- {}", path_buf.display());
-        path_buf.clear();
-    }
-    println!(
-        "{} paths, {} interned path components",
-        path_ranges.len(),
-        path_components.len()
-    );
 }
