@@ -80,7 +80,7 @@ fn main() {
             ActivityArgument::FilePath(p) => {
                 println!(
                     "- {}",
-                    truncated_path(&trace.file_path(&p), (width / 2).min(80))
+                    truncate_path(&trace.file_path(&p), (width / 2).min(80))
                 )
             }
             _ => {}
@@ -102,7 +102,7 @@ fn main() {
 /// Korean jongseong: ᆨ. But in my testing, common Linux terminals wouldn't
 /// handle those strings correctly either, likely because they use a similar
 /// algorithm, so we're kinda state of the art in this respect...
-fn truncated_path(path: &InternedPath, cols: u16) -> Box<str> {
+fn truncate_path(path: &InternedPath, cols: u16) -> Box<str> {
     // Track remaining column budget, keeping 1 spare column to insert an
     // ellipsis if needed
     assert!(
