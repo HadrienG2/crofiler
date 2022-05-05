@@ -183,11 +183,13 @@ fn truncate_path(path: &InternedPath, cols: u16) -> Box<str> {
         assert!(num_components >= accepted_front + accepted_back);
         let elided_components = num_components - (accepted_front + accepted_back);
         if elided_components > 0 {
+            // Notify that path components were elided, then drop them
             buffer.push('…');
             for _ in 0..elided_components {
                 components.next();
             }
         } else {
+            // Avoid double separator
             buffer.pop();
         }
         //
