@@ -4,7 +4,7 @@
 
 mod path;
 
-use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
+use clang_time_trace::{Activity, ActivityArgument, ClangTrace, Duration};
 use nom::IResult;
 use std::{collections::HashMap, path::Path};
 use unicode_xid::UnicodeXID;
@@ -85,7 +85,7 @@ fn main() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
             let first_char = e.chars().next();
             if "" == e.as_ref() || !is_cppid_start(first_char.unwrap()) {
-                println!("- {e}");
+                println!("- {}({e})", activity_trace.activity().name());
                 if e.starts_with("(lambda") {
                     println!("  * {:?}", lambda(&e));
                 }
@@ -120,12 +120,16 @@ fn cpp_identifier(s: &str) -> IResult<&str, &str> {
 }
 
 /// Parser for clang's <unknown> C++ entity
+///
+/// I have only seen this appear in ParseTemplate activities, so I could
+/// probably get away with only enabling this part of the parser when parsing
+/// these activities.
 fn unknown_entity(s: &str) -> IResult<&str, &str> {
     use nom::bytes::complete::tag;
     tag("<unkown>")(s)
 }
 
-/// Parser for clang lambda types (lambda at <file path>:<line>:<col>)
+/// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
 ///
 /// I don't think this can be done using nom because file paths can basically
 /// contain almost every character, including ':' and ')', so to avoid
@@ -134,6 +138,12 @@ fn unknown_entity(s: &str) -> IResult<&str, &str> {
 ///
 /// Thus, my idea is to start by applying a nom parser, then apply this parser
 /// as a last resort if nom fails.
+///
+/// Of course, this is assuming lambda names don't end up inside of
+/// nom-parseable entities... in that case, I'll probably just go with adding
+/// a dumber nom-based lambda parser that does something stupid if the file name
+/// contains commas or closing parentheses, and use that inside of the
+/// main nom parser.
 fn lambda(mut s: &str) -> Option<(&Path, usize, usize)> {
     const HEADER: &str = "(lambda at ";
     const TRAILER: &str = ")";
