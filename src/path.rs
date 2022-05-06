@@ -118,7 +118,7 @@ fn select_components<'a>(
             }
 
             // As long as both sides fit, alternate between front and back
-            front = front ^ !other_side_full;
+            front ^= !other_side_full;
 
             // Upon encountering a non-fitting candidate, stop looking in the
             // associated direction, and stop search once neither side fits.
@@ -199,6 +199,7 @@ fn display_filename(file_name: &str, mut cols: usize) -> Box<str> {
     let mut graphemes = file_name.graphemes(true);
     let max_front_cols = cols / 2;
     let mut rem_front_cols = max_front_cols;
+    #[allow(clippy::while_let_on_iterator)]
     while let Some(front_grapheme) = graphemes.next() {
         if front_grapheme.width() <= rem_front_cols {
             buffer.push_str(front_grapheme);

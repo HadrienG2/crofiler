@@ -5,7 +5,9 @@
 mod path;
 
 use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
-use std::collections::HashMap;
+use nom::IResult;
+use std::{collections::HashMap, path::Path};
+use unicode_xid::UnicodeXID;
 
 fn main() {
     let trace =
@@ -69,14 +71,25 @@ fn main() {
     println!("\nFile paths:");
     let (width, _height) = termion::terminal_size().unwrap();
     for activity_trace in trace.all_activities() {
-        match activity_trace.activity().argument() {
-            ActivityArgument::FilePath(p) => {
-                println!(
-                    "- {}",
-                    path::truncate_path(&trace.file_path(&p), width.min(80))
-                )
+        if let ActivityArgument::FilePath(p) = activity_trace.activity().argument() {
+            println!(
+                "- {}",
+                path::truncate_path(&trace.file_path(&p), width.min(80))
+            )
+        }
+    }
+
+    // Print a list of things that should be C++, but don't start with identifiers
+    println!("\nC++ entities that don't start with an identifier:");
+    for activity_trace in trace.all_activities() {
+        if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
+            let first_char = e.chars().next();
+            if "" == e.as_ref() || !is_cppid_start(first_char.unwrap()) {
+                println!("- {e}");
+                if e.starts_with("(lambda") {
+                    println!("  * {:?}", lambda(&e));
+                }
             }
-            _ => {}
         }
     }
 
@@ -86,4 +99,49 @@ fn main() {
     for root in trace.root_activities() {
         println!("- {root:#?}");
     }
+}
+
+/// Property verified by the initial character of a C++ identifier
+/// FIXME: Turn it back into a lambda inside cpp_identifier once done with this
+///        part of the parsing logic.
+fn is_cppid_start(c: char) -> bool {
+    c.is_xid_start() || c == '_'
+}
+
+/// Parser for C++ identifiers
+fn cpp_identifier(s: &str) -> IResult<&str, &str> {
+    use nom::{
+        character::complete::satisfy, combinator::recognize, multi::many0_count, sequence::pair,
+    };
+    recognize(pair(
+        satisfy(is_cppid_start),
+        many0_count(satisfy(UnicodeXID::is_xid_continue)),
+    ))(s)
+}
+
+/// Parser for clang's <unknown> C++ entity
+fn unknown_entity(s: &str) -> IResult<&str, &str> {
+    use nom::bytes::complete::tag;
+    tag("<unkown>")(s)
+}
+
+/// Parser for clang lambda types (lambda at <file path>:<line>:<col>)
+///
+/// I don't think this can be done using nom because file paths can basically
+/// contain almost every character, including ':' and ')', so to avoid
+/// ambiguities we need to parse from the right edge of the string, whereas nom
+/// is designed to only parse from left to right as far as I can see.
+///
+/// Thus, my idea is to start by applying a nom parser, then apply this parser
+/// as a last resort if nom fails.
+fn lambda(mut s: &str) -> Option<(&Path, usize, usize)> {
+    const HEADER: &str = "(lambda at ";
+    const TRAILER: &str = ")";
+    s = s.strip_prefix(HEADER)?;
+    s = s.strip_suffix(TRAILER)?;
+    let mut num_num_path = s.rsplitn(3, ':');
+    let col = num_num_path.next()?.parse().ok()?;
+    let line = num_num_path.next()?.parse().ok()?;
+    let path = Path::new(num_num_path.next()?);
+    Some((path, line, col))
 }

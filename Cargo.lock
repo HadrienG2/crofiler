@@ -28,7 +28,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "clang-time-trace"
 version = "0.1.0"
-source = "git+https://github.com/HadrienG2/clang-time-trace.git#6d092b0523e8703dba2219bcfa234970521c3740"
+source = "git+https://github.com/HadrienG2/clang-time-trace.git#21dc809a25e3741f9ba8762a494142621ab2cc28"
 dependencies = [
  "lasso",
  "serde",
@@ -41,10 +41,12 @@ name = "crofiler"
 version = "0.1.0"
 dependencies = [
  "clang-time-trace",
+ "nom",
  "once_cell",
  "termion",
  "unicode-segmentation",
  "unicode-width",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -88,6 +90,28 @@ name = "libc"
 version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5916d2ae698f6de9bfb891ad7a8d65c09d232dc58cc4ac433c7da3b2fd84bc2b"
+
+[[package]]
+name = "memchr"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
+name = "nom"
+version = "7.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8903e5a29a317527874d0402f867152a3d21c908bb0b933e416c65e301d4c36"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "numtoa"
