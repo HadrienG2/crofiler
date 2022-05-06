@@ -119,6 +119,9 @@ fn cpp_identifier(s: &str) -> IResult<&str, &str> {
     ))(s)
 }
 
+// TODO: Parse qualified identifiers as (<identifier>::)+ <identifier>
+//       where (<identifier>::) will probably be called a location.
+
 /// Parser for clang's <unknown> C++ entity
 ///
 /// I have only seen this appear in ParseTemplate activities, so I could
