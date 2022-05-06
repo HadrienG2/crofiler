@@ -83,6 +83,8 @@ fn main() {
     println!("\nC++ entities that don't start with an identifier:");
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
+            // TODO: Set up a parser test bed that runs the C++ entity parser
+            //       and prints the remainder + parser output.
             let first_char = e.chars().next();
             if "" == e.as_ref() || !is_cppid_start(first_char.unwrap()) {
                 println!("- {}({e})", activity_trace.activity().name());
@@ -119,14 +121,14 @@ fn cpp_identifier(s: &str) -> IResult<&str, &str> {
     ))(s)
 }
 
-// TODO: Parse qualified identifiers as (<identifier>::)+ <identifier>
-//       where (<identifier>::) will probably be called a location.
+// TODO: Parse qualified identifiers as ::? (<identifier>::)* <identifier>
+//       where :: | <identifier>:: will probably be called a location.
 
 /// Parser for clang's <unknown> C++ entity
 ///
 /// I have only seen this appear in ParseTemplate activities, so I could
 /// probably get away with only enabling this part of the parser when parsing
-/// these activities.
+/// these activities and representing this as an Option<CppEntity>
 fn unknown_entity(s: &str) -> IResult<&str, &str> {
     use nom::bytes::complete::tag;
     tag("<unkown>")(s)
