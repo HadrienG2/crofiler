@@ -174,13 +174,20 @@ fn lambda(s: &str) -> IResult<&str, Lambda> {
     let path = map(path_str, Path::new);
     let location = separated_pair(u32, char(':'), u32);
     let file_location = separated_pair(path, char(':'), location);
-    let lambda = map(file_location, |(file, line_col)| Lambda(file, line_col));
+    let lambda = map(file_location, |(file, location)| Lambda { file, location });
     delimited(tag("(lambda at "), lambda, char(')'))(s)
 }
 //
 /// Lambda location description
 #[derive(Clone, Debug, PartialEq)]
-struct Lambda<'source>(&'source Path, (Line, Col));
+struct Lambda<'source> {
+    /// In which file the lambda is declared
+    file: &'source Path,
+
+    /// Where exactly in the file
+    location: (Line, Col),
+}
+//
 type Line = u32;
 type Col = u32;
 
