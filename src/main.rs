@@ -65,13 +65,6 @@ fn main() {
         );
     }
 
-    // Hierarchical profile prototype
-    // (TODO: Make this more hierarchical and display using termtree)
-    println!("\nTree roots:");
-    for root in trace.root_activities() {
-        println!("- {root:#?}");
-    }
-
     // Print a list of file paths
     println!("\nFile paths:");
     let (width, _height) = termion::terminal_size().unwrap();
@@ -85,5 +78,12 @@ fn main() {
             }
             _ => {}
         }
+    }
+
+    // Hierarchical profile prototype
+    // (TODO: Make this more hierarchical and display using termtree)
+    println!("\nTree roots:");
+    for root in trace.root_activities() {
+        println!("- {root:#?}");
     }
 }
