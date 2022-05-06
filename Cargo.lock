@@ -41,6 +41,7 @@ name = "crofiler"
 version = "0.1.0"
 dependencies = [
  "clang-time-trace",
+ "once_cell",
  "termion",
  "unicode-segmentation",
  "unicode-width",
