@@ -80,16 +80,19 @@ fn main() {
     }
 
     // Print a list of things that should be C++, but don't start with identifiers
-    println!("\nC++ entities that don't start with an identifier:");
+    println!("\nExamples of incompletely or wrongly parsed C++ entities:");
+    let mut displayed = 0;
+    const MAX_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
-            // TODO: Set up a parser test bed that runs the C++ entity parser
-            //       and prints the remainder + parser output.
-            let first_char = e.chars().next();
-            if "" == e.as_ref() || !is_cppid_start(first_char.unwrap()) {
-                println!("- {}({e})", activity_trace.activity().name());
-                if e.starts_with("(lambda") {
-                    println!("  * {:?}", lambda(&e));
+            match entity(&e) {
+                Ok(("", _)) => {}
+                other => {
+                    println!("- {other:?}");
+                    displayed += 1;
+                    if displayed == MAX_DISPLAY {
+                        break;
+                    }
                 }
             }
         }
@@ -103,64 +106,96 @@ fn main() {
     }
 }
 
-/// Property verified by the initial character of a C++ identifier
-/// FIXME: Turn it back into a lambda inside cpp_identifier once done with this
-///        part of the parsing logic.
-fn is_cppid_start(c: char) -> bool {
-    c.is_xid_start() || c == '_'
-}
-
 /// Parser for C++ identifiers
-fn cpp_identifier(s: &str) -> IResult<&str, &str> {
+fn identifier(s: &str) -> IResult<&str, &str> {
     use nom::{
         character::complete::satisfy, combinator::recognize, multi::many0_count, sequence::pair,
     };
     recognize(pair(
-        satisfy(is_cppid_start),
+        satisfy(|c| c.is_xid_start() || c == '_'),
         many0_count(satisfy(UnicodeXID::is_xid_continue)),
     ))(s)
 }
 
-// TODO: Parse qualified identifiers as ::? (<identifier>::)* <identifier>
-//       where :: | <identifier>:: will probably be called a location.
+// TODO: Parse C++ template parameters (we can't tell if they are types or
+//       values, so the parser must handle both)
+// TODO: ...then parse an identifier optionally followed by an argument list
+
+/// Parser for id-expressions
+fn id_expression(s: &str) -> IResult<&str, IdExpression> {
+    use nom::{
+        bytes::complete::tag,
+        combinator::map,
+        multi::many0,
+        sequence::{pair, terminated},
+    };
+    // FIXME: Accept templated type names
+    let scope = terminated(identifier, tag("::"));
+    let path = map(many0(scope), Vec::into_boxed_slice);
+    // FIXME: Accept all unqualified id-expressions. In addition to identifiers,
+    //        these include...
+    //        - Destructors: ~identifier
+    //        - Templates: identifier<param...>
+    //        - Operators, including conversion operators
+    let path_and_id = pair(path, identifier);
+    map(path_and_id, |(path, id)| IdExpression { path, id })(s)
+}
+//
+/// C++ id-expression
+#[derive(Clone, Debug, PartialEq)]
+struct IdExpression<'source> {
+    /// Hierarchical scope (types or namespaces)
+    path: Box<[&'source str]>,
+
+    /// Unqualified id-expression
+    id: &'source str,
+}
 
 /// Parser for clang's <unknown> C++ entity
-///
-/// I have only seen this appear in ParseTemplate activities, so I could
-/// probably get away with only enabling this part of the parser when parsing
-/// these activities and representing this as an Option<CppEntity>
-fn unknown_entity(s: &str) -> IResult<&str, &str> {
-    use nom::bytes::complete::tag;
-    tag("<unkown>")(s)
+fn unknown_entity(s: &str) -> IResult<&str, ()> {
+    use nom::{bytes::complete::tag, combinator::map};
+    map(tag("<unknown>"), |_| ())(s)
 }
 
 /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
 ///
-/// I don't think this can be done using nom because file paths can basically
-/// contain almost every character, including ':' and ')', so to avoid
-/// ambiguities we need to parse from the right edge of the string, whereas nom
-/// is designed to only parse from left to right as far as I can see.
-///
-/// Thus, my idea is to start by applying a nom parser, then apply this parser
-/// as a last resort if nom fails.
-///
-/// Of course, this is assuming lambda names don't end up inside of
-/// nom-parseable entities... in that case, I'll probably just go with adding
-/// a dumber nom-based lambda parser that does something stupid if the file name
-/// contains commas or closing parentheses, and use that inside of the
-/// main nom parser.
-///
-/// Nom should at least be able to handle (\w+:)?[^:]+ as a file path grammar,
-/// which would be enough to avoid doing something stupid on Windows, which
-/// has filesystem roots, and only be vulnerable to silly file names.
-fn lambda(mut s: &str) -> Option<(&Path, usize, usize)> {
-    const HEADER: &str = "(lambda at ";
-    const TRAILER: &str = ")";
-    s = s.strip_prefix(HEADER)?;
-    s = s.strip_suffix(TRAILER)?;
-    let mut num_num_path = s.rsplitn(3, ':');
-    let col = num_num_path.next()?.parse().ok()?;
-    let line = num_num_path.next()?.parse().ok()?;
-    let path = Path::new(num_num_path.next()?);
-    Some((path, line, col))
+/// This will fail if the file path contains a ':' sign other than a
+/// Windows-style disk designator at the start, because I have no idea how to
+/// handle this inherent grammar ambiguity better...
+fn lambda(s: &str) -> IResult<&str, Lambda> {
+    use nom::{
+        bytes::complete::{tag, take_until1},
+        character::complete::{anychar, char, u32},
+        combinator::{map, opt, recognize},
+        sequence::{delimited, pair, separated_pair},
+    };
+    let disk_designator = recognize(pair(anychar, char(':')));
+    let path_str = recognize(pair(opt(disk_designator), take_until1(":")));
+    let path = map(path_str, Path::new);
+    let location = separated_pair(u32, char(':'), u32);
+    let file_location = separated_pair(path, char(':'), location);
+    let lambda = map(file_location, |(file, line_col)| Lambda(file, line_col));
+    delimited(tag("(lambda at "), lambda, char(')'))(s)
+}
+//
+/// Lambda location description
+#[derive(Clone, Debug, PartialEq)]
+struct Lambda<'source>(&'source Path, (Line, Col));
+type Line = u32;
+type Col = u32;
+
+/// Parser for C++ entities
+fn entity(s: &str) -> IResult<&str, Option<CppEntity>> {
+    use nom::{branch::alt, combinator::map};
+    let id_expression = map(id_expression, |i| Some(CppEntity::IdExpression(i)));
+    let unknown = map(unknown_entity, |()| None);
+    let lambda = map(lambda, |l| Some(CppEntity::Lambda(l)));
+    alt((id_expression, unknown, lambda))(s)
+}
+//
+/// C++ entity description
+#[derive(Clone, Debug, PartialEq)]
+enum CppEntity<'source> {
+    IdExpression(IdExpression<'source>),
+    Lambda(Lambda<'source>),
 }
