@@ -79,7 +79,7 @@ fn main() {
         }
     }
 
-    // Print a list of things that should be C++, but don't start with identifiers
+    // Print a list of C++ entities that the parser doesn't handle yet
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
     let mut displayed = 0;
     const MAX_DISPLAY: usize = 30;
