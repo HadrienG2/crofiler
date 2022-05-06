@@ -149,6 +149,10 @@ fn unknown_entity(s: &str) -> IResult<&str, &str> {
 /// a dumber nom-based lambda parser that does something stupid if the file name
 /// contains commas or closing parentheses, and use that inside of the
 /// main nom parser.
+///
+/// Nom should at least be able to handle (\w+:)?[^:]+ as a file path grammar,
+/// which would be enough to avoid doing something stupid on Windows, which
+/// has filesystem roots, and only be vulnerable to silly file names.
 fn lambda(mut s: &str) -> Option<(&Path, usize, usize)> {
     const HEADER: &str = "(lambda at ";
     const TRAILER: &str = ")";
