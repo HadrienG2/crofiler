@@ -184,7 +184,7 @@ fn legacy_primitive(s: &str) -> IResult<&str, IdExpression> {
     };
     let signedness = recognize(pair(opt(tag("un")), tag("signed")));
     let size = alt((tag("short"), tag("long")));
-    let base = alt((tag("int"), tag("short"), tag("double")));
+    let base = alt((tag("int"), tag("char"), tag("double")));
     let anything = alt((signedness, size, base));
     let list = recognize(separated_list1(space1, anything));
     map(list, |id: &str| IdExpression {
