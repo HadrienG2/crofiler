@@ -199,7 +199,7 @@ fn legacy_primitive(s: &str) -> IResult<&str, IdExpression> {
 /// for CV qualifiers, pointers and references. Unfortunately, as a result of
 /// the C++ grammar being the preposterous monster that it is, we cannot fully
 /// decide at this layer of the parsing stack which of the id_expression or
-/// legacy_primitive parser should be called.
+/// legacy_primitive sub-parsers should be called.
 ///
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision.
@@ -217,7 +217,6 @@ fn type_or_value_impl(
     let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
     let pointers = many0(pointer);
     let num_refs_opt = opt(preceded(space1, many1_count(char('&'))));
-
     let tuple = tuple((
         opt(terminated(cv, space1)),
         inner_id,
@@ -277,7 +276,7 @@ fn template_argument(s: &str) -> IResult<&str, TemplateArgument> {
     };
     let integer_literal = map(integer_literal, TemplateArgument::Integer);
     fn delimiter(s: &str) -> IResult<&str, ()> {
-        map(pair(space0, alt((char(','), char('>')))), |_| ())(s)
+        map(pair(space0, alt((char(','), char('>')))), std::mem::drop)(s)
     }
     let type_or_value = |s| type_or_value(s, delimiter);
     let type_or_value = map(type_or_value, TemplateArgument::TypeOrValue);
@@ -378,7 +377,7 @@ struct IdExpression<'source> {
 /// Parser for clang's <unknown> C++ entity
 fn unknown_entity(s: &str) -> IResult<&str, ()> {
     use nom::{bytes::complete::tag, combinator::map};
-    map(tag("<unknown>"), |_| ())(s)
+    map(tag("<unknown>"), std::mem::drop)(s)
 }
 
 /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
