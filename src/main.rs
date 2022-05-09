@@ -193,7 +193,7 @@ fn legacy_primitive(s: &str) -> IResult<&str, IdExpression> {
     })(s)
 }
 
-/// Parser recognizing types and some values, given an underlying identifier parsergit
+/// Parser recognizing types and some values, given an underlying identifier parser
 ///
 /// This wraps either id_expression or legacy_primitive with extra logic
 /// for CV qualifiers, pointers and references. Unfortunately, as a result of
@@ -233,7 +233,7 @@ fn type_or_value_impl(
     })(s)
 }
 
-/// Parser recognizing types and some values, given a subsequent delimiter char
+/// Parser recognizing types and some values, given a parser for the next delimiter
 ///
 /// This resolves the type_or_value_impl ambiguity by checking out the next
 /// delimiter, without consuming it.
