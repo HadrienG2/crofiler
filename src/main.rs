@@ -193,22 +193,34 @@ fn legacy_primitive(s: &str) -> IResult<&str, IdExpression> {
     })(s)
 }
 
-/// Parser recognizing types and some values
-fn type_or_value(s: &str) -> IResult<&str, TypeOrValue> {
+/// Parser recognizing types and some values, given an underlying identifier parsergit
+///
+/// This wraps either id_expression or legacy_primitive with extra logic
+/// for CV qualifiers, pointers and references. Unfortunately, as a result of
+/// the C++ grammar being the preposterous monster that it is, we cannot fully
+/// decide at this layer of the parsing stack which of the id_expression or
+/// legacy_primitive parser should be called.
+///
+/// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
+/// template parameter lists) before taking this decision.
+fn type_or_value_impl(
+    s: &str,
+    inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
+) -> IResult<&str, TypeOrValue> {
     use nom::{
-        branch::alt,
         character::complete::{char, space0, space1},
         combinator::{map, opt},
         multi::{many0, many1_count},
         sequence::{pair, preceded, terminated, tuple},
     };
-    let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space1, cv)));
+    let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space0, cv)));
     let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
     let pointers = many0(pointer);
     let num_refs_opt = opt(preceded(space1, many1_count(char('&'))));
+
     let tuple = tuple((
         opt(terminated(cv, space1)),
-        alt((legacy_primitive, id_expression)),
+        inner_id,
         pointers,
         num_refs_opt,
     ));
@@ -221,8 +233,25 @@ fn type_or_value(s: &str) -> IResult<&str, TypeOrValue> {
         }
     })(s)
 }
-//
-/// Output from type_or_value parser
+
+/// Parser recognizing types and some values, given a subsequent delimiter char
+///
+/// This resolves the type_or_value_impl ambiguity by checking out the next
+/// delimiter, without consuming it.
+fn type_or_value(
+    s: &str,
+    next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
+) -> IResult<&str, TypeOrValue> {
+    use nom::{branch::alt, combinator::peek, sequence::terminated};
+    let id_expression = |s| type_or_value_impl(s, id_expression);
+    let legacy_primitive = |s| type_or_value_impl(s, legacy_primitive);
+    alt((
+        terminated(id_expression, peek(next_delimiter)),
+        terminated(legacy_primitive, peek(next_delimiter)),
+    ))(s)
+}
+
+/// Output from type_or_value parsers
 #[derive(Debug, PartialEq, Clone)]
 struct TypeOrValue<'source> {
     /// CV qualifiers applying to the leftmost type
@@ -240,9 +269,18 @@ struct TypeOrValue<'source> {
 
 /// Parser recognizing template arguments
 fn template_argument(s: &str) -> IResult<&str, TemplateArgument> {
-    use nom::{branch::alt, combinator::map};
-    let integer_literal = map(integer_literal, |i| TemplateArgument::Integer(i));
-    let type_or_value = map(type_or_value, |t| TemplateArgument::TypeOrValue(t));
+    use nom::{
+        branch::alt,
+        character::complete::{char, space0},
+        combinator::map,
+        sequence::pair,
+    };
+    let integer_literal = map(integer_literal, TemplateArgument::Integer);
+    fn delimiter(s: &str) -> IResult<&str, ()> {
+        map(pair(space0, alt((char(','), char('>')))), |_| ())(s)
+    }
+    let type_or_value = |s| type_or_value(s, delimiter);
+    let type_or_value = map(type_or_value, TemplateArgument::TypeOrValue);
     alt((integer_literal, type_or_value))(s)
 }
 //
