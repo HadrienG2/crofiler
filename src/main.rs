@@ -4,7 +4,7 @@
 
 mod path;
 
-use clang_time_trace::{Activity, ActivityArgument, ClangTrace, Duration};
+use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
 use nom::IResult;
 use std::{collections::HashMap, path::Path};
 use unicode_xid::UnicodeXID;
