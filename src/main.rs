@@ -81,21 +81,29 @@ fn main() {
 
     // Print a list of C++ entities that the parser doesn't handle yet
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
-    let mut displayed = 0;
+    let mut bad_entities = 0;
+    let mut num_entities = 0;
     const MAX_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
+            num_entities += 1;
             match entity(&e) {
                 Ok(("", _)) => {}
                 other => {
-                    println!("- {other:?}");
-                    displayed += 1;
-                    if displayed == MAX_DISPLAY {
-                        break;
+                    if bad_entities < MAX_DISPLAY {
+                        println!("- {other:?}");
                     }
+                    bad_entities += 1;
                 }
             }
         }
+    }
+    if bad_entities >= MAX_DISPLAY {
+        println!(
+            "- ... and more, for a total of {}/{} badly parsed entitities ...",
+            bad_entities - MAX_DISPLAY,
+            num_entities
+        );
     }
 
     // Hierarchical profile prototype
