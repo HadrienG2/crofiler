@@ -117,9 +117,201 @@ fn identifier(s: &str) -> IResult<&str, &str> {
     ))(s)
 }
 
-// TODO: Parse C++ template parameters (we can't tell if they are types or
-//       values, so the parser must handle both)
-// TODO: ...then parse an identifier optionally followed by an argument list
+/// Parser for C++ integer literals
+use nom::character::complete::i128 as integer_literal;
+
+/// Parser for CV qualifiers
+fn cv(s: &str) -> IResult<&str, ConstVolatile> {
+    use nom::{
+        branch::alt,
+        bytes::complete::tag,
+        character::complete::space1,
+        combinator::{map, opt},
+        sequence::{pair, preceded},
+    };
+    let const_ = || {
+        map(tag("const"), |_| ConstVolatile {
+            is_const: true,
+            is_volatile: false,
+        })
+    };
+    let volatile = || {
+        map(tag("volatile"), |_| ConstVolatile {
+            is_const: false,
+            is_volatile: true,
+        })
+    };
+    let cv = opt(alt((
+        pair(const_(), opt(preceded(space1, volatile()))),
+        pair(volatile(), opt(preceded(space1, const_()))),
+    )));
+    map(cv, |opt_cv| {
+        let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
+        let cv2 = opt_cv2.unwrap_or_default();
+        ConstVolatile {
+            is_const: cv1.is_const | cv2.is_const,
+            is_volatile: cv1.is_volatile | cv2.is_volatile,
+        }
+    })(s)
+}
+//
+/// CV qualifiers
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+struct ConstVolatile {
+    is_const: bool,
+    is_volatile: bool,
+}
+
+/// Parser recognizing primitive types inherited from C, which can have spaces
+/// in their name
+///
+/// This is not a full parser for C++ primitive types, as most of them can be
+/// parsed with the regular TypeOrValue logic, and we do not need to single out
+/// primitives in our processing.
+///
+/// It will also accept a bunch of types that are invalid from the point of view
+/// of the C++ grammar, such as "long long short", for the sake of simplicity:
+/// clang should not normally emit these, so we don't really care about
+/// processing them right.
+fn legacy_primitive(s: &str) -> IResult<&str, IdExpression> {
+    use nom::{
+        branch::alt,
+        bytes::complete::tag,
+        character::complete::space1,
+        combinator::{map, opt, recognize},
+        multi::separated_list1,
+        sequence::pair,
+    };
+    let signedness = recognize(pair(opt(tag("un")), tag("signed")));
+    let size = alt((tag("short"), tag("long")));
+    let base = alt((tag("int"), tag("short"), tag("double")));
+    let anything = alt((signedness, size, base));
+    let list = recognize(separated_list1(space1, anything));
+    map(list, |id: &str| IdExpression {
+        path: Default::default(),
+        id: id.into(),
+    })(s)
+}
+
+/// Parser recognizing types and some values
+fn type_or_value(s: &str) -> IResult<&str, TypeOrValue> {
+    use nom::{
+        branch::alt,
+        character::complete::{char, space0, space1},
+        combinator::{map, opt},
+        multi::{many0, many1_count},
+        sequence::{pair, preceded, terminated, tuple},
+    };
+    let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space1, cv)));
+    let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
+    let pointers = many0(pointer);
+    let num_refs_opt = opt(preceded(space1, many1_count(char('&'))));
+    let tuple = tuple((
+        opt(terminated(cv, space1)),
+        alt((legacy_primitive, id_expression)),
+        pointers,
+        num_refs_opt,
+    ));
+    map(tuple, |(bottom_cv, bottom_type, pointers, num_refs_opt)| {
+        TypeOrValue {
+            bottom_cv: bottom_cv.unwrap_or_default(),
+            bottom_type,
+            pointers: pointers.into_boxed_slice(),
+            num_references: num_refs_opt.unwrap_or_default() as u8,
+        }
+    })(s)
+}
+//
+/// Output from type_or_value parser
+#[derive(Debug, PartialEq, Clone)]
+struct TypeOrValue<'source> {
+    /// CV qualifiers applying to the leftmost type
+    bottom_cv: ConstVolatile,
+
+    /// Leftmost type (may also match some values like true/false)
+    bottom_type: IdExpression<'source>,
+
+    /// Layers of pointer indirection (* const * volatile...)
+    pointers: Box<[ConstVolatile]>,
+
+    /// Number of final references between 0 (no reference) and 2 (rvalue)
+    num_references: u8,
+}
+
+/// Parser recognizing template arguments
+fn template_argument(s: &str) -> IResult<&str, TemplateArgument> {
+    use nom::{branch::alt, combinator::map};
+    let integer_literal = map(integer_literal, |i| TemplateArgument::Integer(i));
+    let type_or_value = map(type_or_value, |t| TemplateArgument::TypeOrValue(t));
+    alt((integer_literal, type_or_value))(s)
+}
+//
+/// Template argument
+#[derive(Debug, PartialEq, Clone)]
+enum TemplateArgument<'source> {
+    /// Integer literal
+    Integer(i128),
+
+    /// Type or value
+    TypeOrValue(TypeOrValue<'source>),
+}
+
+/// Parser recognizing template parameters
+fn template_parameters(s: &str) -> IResult<&str, Box<[TemplateArgument]>> {
+    use nom::{
+        character::complete::{char, space0},
+        combinator::map,
+        multi::separated_list1,
+        sequence::{delimited, pair},
+    };
+    let arguments = separated_list1(pair(char(','), space0), template_argument);
+    let parameters = delimited(char('<'), arguments, pair(space0, char('>')));
+    map(parameters, |p| p.into_boxed_slice())(s)
+}
+
+/// Parser recognizing an identifier which may or may not be coupled with
+/// template arguments, i.e. id or id<...>
+fn templatable_id(s: &str) -> IResult<&str, TemplatableId> {
+    use nom::{
+        combinator::{map, opt},
+        sequence::pair,
+    };
+    let parameters_or_empty = map(opt(template_parameters), |opt| opt.unwrap_or_default());
+    map(pair(identifier, parameters_or_empty), |(id, parameters)| {
+        TemplatableId { id, parameters }
+    })(s)
+}
+//
+/// Identifier which may or may not have template arguments
+#[derive(Clone, Debug, PartialEq)]
+struct TemplatableId<'source> {
+    /// Identifier
+    id: &'source str,
+
+    /// Optional template parameters
+    parameters: Box<[TemplateArgument<'source>]>,
+}
+//
+impl<'source> From<&'source str> for TemplatableId<'source> {
+    fn from(id: &'source str) -> Self {
+        Self {
+            id,
+            parameters: Default::default(),
+        }
+    }
+}
+
+/// Parser for unqualified id-expressions
+fn unqualified_id_expression(s: &str) -> IResult<&str, UnqualifiedId> {
+    // FIXME: Accept all unqualified id-expressions. In addition to identifiers,
+    //        these include...
+    //        - Destructors: ~identifier
+    //        - Templates: identifier<param...>
+    //        - Operators, including conversion operators
+    templatable_id(s)
+}
+//
+type UnqualifiedId<'source> = TemplatableId<'source>;
 
 /// Parser for id-expressions
 fn id_expression(s: &str) -> IResult<&str, IdExpression> {
@@ -129,15 +321,9 @@ fn id_expression(s: &str) -> IResult<&str, IdExpression> {
         multi::many0,
         sequence::{pair, terminated},
     };
-    // FIXME: Accept templated type names
-    let scope = terminated(identifier, tag("::"));
+    let scope = terminated(templatable_id, tag("::"));
     let path = map(many0(scope), Vec::into_boxed_slice);
-    // FIXME: Accept all unqualified id-expressions. In addition to identifiers,
-    //        these include...
-    //        - Destructors: ~identifier
-    //        - Templates: identifier<param...>
-    //        - Operators, including conversion operators
-    let path_and_id = pair(path, identifier);
+    let path_and_id = pair(path, unqualified_id_expression);
     map(path_and_id, |(path, id)| IdExpression { path, id })(s)
 }
 //
@@ -145,10 +331,10 @@ fn id_expression(s: &str) -> IResult<&str, IdExpression> {
 #[derive(Clone, Debug, PartialEq)]
 struct IdExpression<'source> {
     /// Hierarchical scope (types or namespaces)
-    path: Box<[&'source str]>,
+    path: Box<[TemplatableId<'source>]>,
 
     /// Unqualified id-expression
-    id: &'source str,
+    id: UnqualifiedId<'source>,
 }
 
 /// Parser for clang's <unknown> C++ entity
