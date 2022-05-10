@@ -21,16 +21,41 @@ pub enum CppEntity<'source> {
     Lambda(Lambda<'source>),
 }
 
-/// Parser recognizing types (and some values), given an underlying identifier parser
+/// Parser recognizing types (and some values that are indistinguishable from
+/// types without extra context), given a parser for the separator that is
+/// expected to come after the type name.
+fn type_like(
+    s: &str,
+    next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
+) -> IResult<&str, TypeLike> {
+    use nom::{
+        branch::alt,
+        combinator::{map, peek},
+        sequence::terminated,
+    };
+    let id_expression = |s| type_like_impl(s, id_expression);
+    fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
+        map(atom::legacy_primitive, IdExpression::from)(s)
+    }
+    let legacy_id = |s| type_like_impl(s, legacy_id);
+    alt((
+        terminated(id_expression, peek(next_delimiter)),
+        terminated(legacy_id, peek(next_delimiter)),
+    ))(s)
+}
+
+/// Parser recognizing types (and some values that are indistinguishable from
+/// types without extra context), given an underlying type identifier parser
 ///
-/// This wraps either id_expression or legacy_primitive with extra logic
-/// for CV qualifiers, pointers and references. Unfortunately, as a result of
-/// the C++ grammar being the preposterous monster that it is, we cannot fully
-/// decide at this layer of the parsing stack which of the id_expression or
-/// legacy_primitive sub-parsers should be called.
+/// Concretely, this wraps either id_expression or legacy_primitive with extra
+/// logic for CV qualifiers, pointers and references. Unfortunately, as a result
+/// of the C++ grammar being the preposterous monster that it is, we cannot
+/// fully decide at this layer of the parsing stack which of the id_expression
+/// or legacy_primitive sub-parsers should be called.
 ///
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
-/// template parameter lists) before taking this decision.
+/// template parameter lists) before taking this decision. This is what the
+/// higher-level type_like parser does.
 fn type_like_impl(
     s: &str,
     inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
@@ -58,37 +83,13 @@ fn type_like_impl(
     )(s)
 }
 
-/// Parser recognizing types and some values, given a parser for the next delimiter
-///
-/// This resolves the type_like_impl ambiguity by checking out the next
-/// delimiter, without consuming it.
-fn type_like(
-    s: &str,
-    next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
-) -> IResult<&str, TypeLike> {
-    use nom::{
-        branch::alt,
-        combinator::{map, peek},
-        sequence::terminated,
-    };
-    let id_expression = |s| type_like_impl(s, id_expression);
-    fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
-        map(atom::legacy_primitive, IdExpression::from)(s)
-    }
-    let legacy_id = |s| type_like_impl(s, legacy_id);
-    alt((
-        terminated(id_expression, peek(next_delimiter)),
-        terminated(legacy_id, peek(next_delimiter)),
-    ))(s)
-}
-
-/// Output from type_like* parsers
+/// A type name, or something looking close enough to it
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypeLike<'source> {
-    /// CV qualifiers applying to the leftmost type
+    /// CV qualifiers applying to the leftmost id-expression
     bottom_cv: ConstVolatile,
 
-    /// Leftmost identifier (type or some values like boolean true/false)
+    /// Leftmost id-expression
     bottom_id: IdExpression<'source>,
 
     /// Layers of pointer indirection (* const * volatile...)
