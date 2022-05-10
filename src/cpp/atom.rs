@@ -15,6 +15,19 @@ pub fn identifier(s: &str) -> IResult<&str, &str> {
     ))(s)
 }
 
+/// Parser recognizing the end of an identifier, without consuming it
+fn end_of_identifier(s: &str) -> IResult<&str, ()> {
+    use nom::{
+        branch::alt,
+        character::complete::satisfy,
+        combinator::{eof, map, not, peek},
+    };
+    peek(alt((
+        map(eof, std::mem::drop),
+        not(satisfy(UnicodeXID::is_xid_continue)),
+    )))(s)
+}
+
 /// Parser for C++ integer literals
 pub use nom::character::complete::i128 as integer_literal;
 
@@ -25,7 +38,7 @@ pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
         bytes::complete::tag,
         character::complete::space1,
         combinator::{map, opt},
-        sequence::{pair, preceded},
+        sequence::{pair, preceded, terminated},
     };
     let const_ = || {
         map(tag("const"), |_| ConstVolatile {
@@ -39,10 +52,13 @@ pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
             is_volatile: true,
         })
     };
-    let cv = opt(alt((
-        pair(const_(), opt(preceded(space1, volatile()))),
-        pair(volatile(), opt(preceded(space1, const_()))),
-    )));
+    let cv = terminated(
+        opt(alt((
+            pair(const_(), opt(preceded(space1, volatile()))),
+            pair(volatile(), opt(preceded(space1, const_()))),
+        ))),
+        end_of_identifier,
+    );
     map(cv, |opt_cv| {
         let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
         let cv2 = opt_cv2.unwrap_or_default();
@@ -96,8 +112,8 @@ pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
     use nom::{
         branch::alt,
         bytes::complete::tag,
-        character::complete::{satisfy, space1},
-        combinator::{eof, map, not, opt, peek, recognize},
+        character::complete::space1,
+        combinator::{opt, recognize},
         multi::separated_list1,
         sequence::{pair, terminated},
     };
@@ -107,10 +123,7 @@ pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
     let anything = alt((signedness, size, base));
     terminated(
         recognize(separated_list1(space1, anything)),
-        peek(alt((
-            map(eof, std::mem::drop),
-            not(satisfy(UnicodeXID::is_xid_continue)),
-        ))),
+        end_of_identifier,
     )(s)
 }
 
@@ -154,8 +167,6 @@ pub struct Lambda<'source> {
 type Line = u32;
 type Col = u32;
 
-// FIXME: Add tests
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +175,12 @@ mod tests {
     fn identifier() {
         const ID: &str = "_abcd_1234";
         assert_eq!(super::identifier(ID), Ok(("", ID)));
+    }
+
+    #[test]
+    fn end_of_identifier() {
+        assert_eq!(super::end_of_identifier(""), Ok(("", ())));
+        assert_eq!(super::end_of_identifier("+"), Ok(("+", ())));
     }
 
     #[test]
