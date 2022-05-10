@@ -84,4 +84,113 @@ pub struct TypeLike<'source> {
     num_references: u8,
 }
 
-// FIXME: Add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn end_of_string(s: &str) -> IResult<&str, ()> {
+        use nom::combinator::{eof, map};
+        map(eof, std::mem::drop)(s)
+    }
+
+    #[test]
+    fn type_like() {
+        // Normal branch
+        assert_eq!(
+            super::type_like("whatever", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::default(),
+                    bottom_id: IdExpression::from("whatever"),
+                    pointers: Default::default(),
+                    num_references: 0
+                }
+            ))
+        );
+
+        // Legacy primitive branch
+        assert_eq!(
+            super::type_like("unsigned int", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::default(),
+                    bottom_id: IdExpression::from("unsigned int"),
+                    pointers: Default::default(),
+                    num_references: 0
+                }
+            ))
+        );
+
+        // CV qualifiers
+        assert_eq!(
+            super::type_like("const volatile unsigned", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
+                    bottom_id: IdExpression::from("unsigned"),
+                    pointers: Default::default(),
+                    num_references: 0
+                }
+            ))
+        );
+
+        // Basic pointer
+        assert_eq!(
+            super::type_like("long int long*", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::default(),
+                    bottom_id: IdExpression::from("long int long"),
+                    pointers: vec![ConstVolatile::default()].into(),
+                    num_references: 0
+                }
+            ))
+        );
+
+        // Multiple pointers with CV qualifiers
+        assert_eq!(
+            super::type_like("long double*const*", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::default(),
+                    bottom_id: IdExpression::from("long double"),
+                    pointers: vec![ConstVolatile::CONST, ConstVolatile::default()].into(),
+                    num_references: 0
+                }
+            ))
+        );
+
+        // Reference
+        assert_eq!(
+            super::type_like("const anything&&", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::CONST,
+                    bottom_id: IdExpression::from("anything"),
+                    pointers: Default::default(),
+                    num_references: 2
+                }
+            ))
+        );
+
+        // Mixing references and pointers
+        assert_eq!(
+            super::type_like("stuff*volatile*const&", end_of_string),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::default(),
+                    bottom_id: IdExpression::from("stuff"),
+                    pointers: vec![ConstVolatile::VOLATILE, ConstVolatile::CONST].into(),
+                    num_references: 1
+                }
+            ))
+        );
+    }
+}
