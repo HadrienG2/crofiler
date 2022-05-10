@@ -2,7 +2,7 @@
 
 use super::{
     atoms::{self, ConstVolatile},
-    id_expression, IdExpression,
+    functions, id_expression, IdExpression,
 };
 use nom::IResult;
 
@@ -46,6 +46,7 @@ fn type_like_impl(
     inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
 ) -> IResult<&str, TypeLike> {
     use nom::{
+        bytes::complete::tag,
         character::complete::{char, space0, space1},
         combinator::{map, opt},
         multi::{many0, many1_count},
@@ -56,20 +57,28 @@ fn type_like_impl(
     let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
     let pointers = many0(pointer);
     let num_refs_opt = opt(preceded(space0, many1_count(char('&'))));
-    let tuple = tuple((bottom_cv_opt, inner_id, pointers, num_refs_opt));
+    let function_parameters = preceded(space0, opt(functions::function_parameters));
+    let tuple = tuple((
+        bottom_cv_opt,
+        inner_id,
+        pointers,
+        num_refs_opt,
+        function_parameters,
+    ));
     map(
-        tuple,
-        |(bottom_cv_opt, bottom_id, pointers, num_refs_opt)| TypeLike {
+        preceded(opt(pair(tag("typename"), space1)), tuple),
+        |(bottom_cv_opt, bottom_id, pointers, num_refs_opt, function_parameters)| TypeLike {
             bottom_cv: bottom_cv_opt.unwrap_or_default(),
             bottom_id,
             pointers: pointers.into_boxed_slice(),
             num_references: num_refs_opt.unwrap_or_default() as u8,
+            function_parameters,
         },
     )(s)
 }
 
 /// A type name, or something looking close enough to it
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct TypeLike<'source> {
     /// CV qualifiers applying to the leftmost id-expression
     bottom_cv: ConstVolatile,
@@ -82,6 +91,9 @@ pub struct TypeLike<'source> {
 
     /// Number of final references between 0 (no reference) and 2 (rvalue)
     num_references: u8,
+
+    /// Function parameters (for function pointers)
+    function_parameters: Option<Box<[TypeLike<'source>]>>,
 }
 
 #[cfg(test)]
@@ -100,10 +112,8 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    bottom_cv: ConstVolatile::default(),
                     bottom_id: IdExpression::from("whatever"),
-                    pointers: Default::default(),
-                    num_references: 0
+                    ..Default::default()
                 }
             ))
         );
@@ -114,10 +124,8 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    bottom_cv: ConstVolatile::default(),
                     bottom_id: IdExpression::from("unsigned int"),
-                    pointers: Default::default(),
-                    num_references: 0
+                    ..Default::default()
                 }
             ))
         );
@@ -130,8 +138,7 @@ mod tests {
                 TypeLike {
                     bottom_cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
                     bottom_id: IdExpression::from("unsigned"),
-                    pointers: Default::default(),
-                    num_references: 0
+                    ..Default::default()
                 }
             ))
         );
@@ -142,10 +149,9 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    bottom_cv: ConstVolatile::default(),
                     bottom_id: IdExpression::from("long int long"),
                     pointers: vec![ConstVolatile::default()].into(),
-                    num_references: 0
+                    ..Default::default()
                 }
             ))
         );
@@ -156,10 +162,9 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    bottom_cv: ConstVolatile::default(),
                     bottom_id: IdExpression::from("long double"),
                     pointers: vec![ConstVolatile::CONST, ConstVolatile::default()].into(),
-                    num_references: 0
+                    ..Default::default()
                 }
             ))
         );
@@ -172,8 +177,8 @@ mod tests {
                 TypeLike {
                     bottom_cv: ConstVolatile::CONST,
                     bottom_id: IdExpression::from("anything"),
-                    pointers: Default::default(),
-                    num_references: 2
+                    num_references: 2,
+                    ..Default::default()
                 }
             ))
         );
@@ -184,10 +189,23 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    bottom_cv: ConstVolatile::default(),
                     bottom_id: IdExpression::from("stuff"),
                     pointers: vec![ConstVolatile::VOLATILE, ConstVolatile::CONST].into(),
-                    num_references: 1
+                    num_references: 1,
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Basic function pointer
+        assert_eq!(
+            whole_type("void()"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_id: IdExpression::from("void"),
+                    function_parameters: Some(vec![].into()),
+                    ..Default::default()
                 }
             ))
         );

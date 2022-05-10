@@ -21,7 +21,7 @@ pub fn templatable_id(s: &str) -> IResult<&str, TemplatableId> {
 }
 //
 /// Identifier which may or may not have template arguments
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct TemplatableId<'source> {
     /// Identifier
     id: &'source str,
@@ -93,11 +93,8 @@ impl<'source> From<TypeLike<'source>> for TemplateParameter<'source> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::force_parse_type;
     use super::*;
-
-    fn force_parse_type(s: &str) -> TypeLike {
-        types::type_like(s, atoms::end_of_string).unwrap().1
-    }
 
     #[test]
     fn template_parameter() {

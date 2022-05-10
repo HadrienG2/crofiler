@@ -1,6 +1,7 @@
 //! C++ entity name parsing
 
 mod atoms;
+mod functions;
 mod templates;
 mod types;
 
@@ -59,7 +60,7 @@ fn id_expression(s: &str) -> IResult<&str, IdExpression> {
 }
 //
 /// C++ id-expression
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct IdExpression<'source> {
     /// Hierarchical scope (types or namespaces)
     path: Box<[TemplatableId<'source>]>,
@@ -87,3 +88,11 @@ impl<'source> From<&'source str> for IdExpression<'source> {
 }
 
 // FIXME: Modularize and add tests
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    pub fn force_parse_type(s: &str) -> TypeLike {
+        types::type_like(s, atoms::end_of_string).unwrap().1
+    }
+}
