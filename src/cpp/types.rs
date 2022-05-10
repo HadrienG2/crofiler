@@ -88,16 +88,15 @@ pub struct TypeLike<'source> {
 mod tests {
     use super::*;
 
-    fn end_of_string(s: &str) -> IResult<&str, ()> {
-        use nom::combinator::{eof, map};
-        map(eof, std::mem::drop)(s)
+    fn whole_type(s: &str) -> IResult<&str, TypeLike> {
+        super::type_like(s, atoms::end_of_string)
     }
 
     #[test]
     fn type_like() {
         // Normal branch
         assert_eq!(
-            super::type_like("whatever", end_of_string),
+            whole_type("whatever"),
             Ok((
                 "",
                 TypeLike {
@@ -111,7 +110,7 @@ mod tests {
 
         // Legacy primitive branch
         assert_eq!(
-            super::type_like("unsigned int", end_of_string),
+            whole_type("unsigned int"),
             Ok((
                 "",
                 TypeLike {
@@ -125,7 +124,7 @@ mod tests {
 
         // CV qualifiers
         assert_eq!(
-            super::type_like("const volatile unsigned", end_of_string),
+            whole_type("const volatile unsigned"),
             Ok((
                 "",
                 TypeLike {
@@ -139,7 +138,7 @@ mod tests {
 
         // Basic pointer
         assert_eq!(
-            super::type_like("long int long*", end_of_string),
+            whole_type("long int long*"),
             Ok((
                 "",
                 TypeLike {
@@ -153,7 +152,7 @@ mod tests {
 
         // Multiple pointers with CV qualifiers
         assert_eq!(
-            super::type_like("long double*const*", end_of_string),
+            whole_type("long double*const*"),
             Ok((
                 "",
                 TypeLike {
@@ -167,7 +166,7 @@ mod tests {
 
         // Reference
         assert_eq!(
-            super::type_like("const anything&&", end_of_string),
+            whole_type("const anything&&"),
             Ok((
                 "",
                 TypeLike {
@@ -181,7 +180,7 @@ mod tests {
 
         // Mixing references and pointers
         assert_eq!(
-            super::type_like("stuff*volatile*const&", end_of_string),
+            whole_type("stuff*volatile*const&"),
             Ok((
                 "",
                 TypeLike {

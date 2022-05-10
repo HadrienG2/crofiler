@@ -4,6 +4,12 @@ use nom::IResult;
 use std::{ops::BitOr, path::Path};
 use unicode_xid::UnicodeXID;
 
+/// Parser recognizing the end of the input string
+pub fn end_of_string(s: &str) -> IResult<&str, ()> {
+    use nom::combinator::{eof, map};
+    map(eof, std::mem::drop)(s)
+}
+
 /// Parser for C++ identifiers
 pub fn identifier(s: &str) -> IResult<&str, &str> {
     use nom::{
@@ -20,10 +26,10 @@ fn end_of_identifier(s: &str) -> IResult<&str, ()> {
     use nom::{
         branch::alt,
         character::complete::satisfy,
-        combinator::{eof, map, not, peek},
+        combinator::{not, peek},
     };
     peek(alt((
-        map(eof, std::mem::drop),
+        end_of_string,
         not(satisfy(UnicodeXID::is_xid_continue)),
     )))(s)
 }
@@ -170,6 +176,11 @@ type Col = u32;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn end_of_string() {
+        assert_eq!(super::end_of_string(""), Ok(("", ())));
+    }
 
     #[test]
     fn identifier() {
