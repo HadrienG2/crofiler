@@ -41,24 +41,21 @@ fn type_like_impl(
         multi::{many0, many1_count},
         sequence::{pair, preceded, terminated, tuple},
     };
+    let bottom_cv_opt = opt(terminated(atom::cv, space1));
     let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space0, atom::cv)));
     let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
     let pointers = many0(pointer);
-    let num_refs_opt = opt(preceded(space1, many1_count(char('&'))));
-    let tuple = tuple((
-        opt(terminated(atom::cv, space1)),
-        inner_id,
-        pointers,
-        num_refs_opt,
-    ));
-    map(tuple, |(bottom_cv, bottom_id, pointers, num_refs_opt)| {
-        TypeLike {
-            bottom_cv: bottom_cv.unwrap_or_default(),
+    let num_refs_opt = opt(preceded(space0, many1_count(char('&'))));
+    let tuple = tuple((bottom_cv_opt, inner_id, pointers, num_refs_opt));
+    map(
+        tuple,
+        |(bottom_cv_opt, bottom_id, pointers, num_refs_opt)| TypeLike {
+            bottom_cv: bottom_cv_opt.unwrap_or_default(),
             bottom_id,
             pointers: pointers.into_boxed_slice(),
             num_references: num_refs_opt.unwrap_or_default() as u8,
-        }
-    })(s)
+        },
+    )(s)
 }
 
 /// Parser recognizing types and some values, given a parser for the next delimiter
