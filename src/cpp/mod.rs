@@ -1,16 +1,17 @@
 //! C++ entity name parsing
 
-mod atom;
+mod atoms;
+mod types;
 
-use self::atom::{ConstVolatile, Lambda};
+use self::{atoms::Lambda, types::TypeLike};
 use nom::IResult;
 
 /// Parser for C++ entities
 pub fn entity(s: &str) -> IResult<&str, Option<CppEntity>> {
     use nom::{branch::alt, combinator::map};
     let id_expression = map(id_expression, |i| Some(CppEntity::IdExpression(i)));
-    let unknown = map(atom::unknown_entity, |()| None);
-    let lambda = map(atom::lambda, |l| Some(CppEntity::Lambda(l)));
+    let unknown = map(atoms::unknown_entity, |()| None);
+    let lambda = map(atoms::lambda, |l| Some(CppEntity::Lambda(l)));
     alt((id_expression, unknown, lambda))(s)
 }
 //
@@ -21,104 +22,26 @@ pub enum CppEntity<'source> {
     Lambda(Lambda<'source>),
 }
 
-/// Parser recognizing types (and some values that are indistinguishable from
-/// types without extra context), given a parser for the separator that is
-/// expected to come after the type name.
-fn type_like(
-    s: &str,
-    next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
-) -> IResult<&str, TypeLike> {
-    use nom::{
-        branch::alt,
-        combinator::{map, peek},
-        sequence::terminated,
-    };
-    let id_expression = |s| type_like_impl(s, id_expression);
-    fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
-        map(atom::legacy_primitive, IdExpression::from)(s)
-    }
-    let legacy_id = |s| type_like_impl(s, legacy_id);
-    alt((
-        terminated(id_expression, peek(next_delimiter)),
-        terminated(legacy_id, peek(next_delimiter)),
-    ))(s)
-}
-
-/// Parser recognizing types (and some values that are indistinguishable from
-/// types without extra context), given an underlying type identifier parser
-///
-/// Concretely, this wraps either id_expression or legacy_primitive with extra
-/// logic for CV qualifiers, pointers and references. Unfortunately, as a result
-/// of the C++ grammar being the preposterous monster that it is, we cannot
-/// fully decide at this layer of the parsing stack which of the id_expression
-/// or legacy_primitive sub-parsers should be called.
-///
-/// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
-/// template parameter lists) before taking this decision. This is what the
-/// higher-level type_like parser does.
-fn type_like_impl(
-    s: &str,
-    inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
-) -> IResult<&str, TypeLike> {
-    use nom::{
-        character::complete::{char, space0, space1},
-        combinator::{map, opt},
-        multi::{many0, many1_count},
-        sequence::{pair, preceded, terminated, tuple},
-    };
-    let bottom_cv_opt = opt(terminated(atom::cv, space1));
-    let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space0, atom::cv)));
-    let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
-    let pointers = many0(pointer);
-    let num_refs_opt = opt(preceded(space0, many1_count(char('&'))));
-    let tuple = tuple((bottom_cv_opt, inner_id, pointers, num_refs_opt));
-    map(
-        tuple,
-        |(bottom_cv_opt, bottom_id, pointers, num_refs_opt)| TypeLike {
-            bottom_cv: bottom_cv_opt.unwrap_or_default(),
-            bottom_id,
-            pointers: pointers.into_boxed_slice(),
-            num_references: num_refs_opt.unwrap_or_default() as u8,
-        },
-    )(s)
-}
-
-/// A type name, or something looking close enough to it
-#[derive(Debug, PartialEq, Clone)]
-pub struct TypeLike<'source> {
-    /// CV qualifiers applying to the leftmost id-expression
-    bottom_cv: ConstVolatile,
-
-    /// Leftmost id-expression
-    bottom_id: IdExpression<'source>,
-
-    /// Layers of pointer indirection (* const * volatile...)
-    pointers: Box<[ConstVolatile]>,
-
-    /// Number of final references between 0 (no reference) and 2 (rvalue)
-    num_references: u8,
-}
-
-/// Parser recognizing template arguments
-fn template_argument(s: &str) -> IResult<&str, TemplateArgument> {
+/// Parser recognizing a single template parameter/argument
+fn template_parameter(s: &str) -> IResult<&str, TemplateParameter> {
     use nom::{
         branch::alt,
         character::complete::{char, space0},
         combinator::map,
         sequence::pair,
     };
-    let integer_literal = map(atom::integer_literal, TemplateArgument::Integer);
+    let integer_literal = map(atoms::integer_literal, TemplateParameter::Integer);
     fn delimiter(s: &str) -> IResult<&str, ()> {
         map(pair(space0, alt((char(','), char('>')))), std::mem::drop)(s)
     }
-    let type_like = |s| type_like(s, delimiter);
-    let type_like = map(type_like, TemplateArgument::TypeLike);
+    let type_like = |s| types::type_like(s, delimiter);
+    let type_like = map(type_like, TemplateParameter::TypeLike);
     alt((integer_literal, type_like))(s)
 }
 //
-/// Template argument
+/// Template parameter
 #[derive(Debug, PartialEq, Clone)]
-pub enum TemplateArgument<'source> {
+pub enum TemplateParameter<'source> {
     /// Integer literal
     Integer(i128),
 
@@ -126,15 +49,15 @@ pub enum TemplateArgument<'source> {
     TypeLike(TypeLike<'source>),
 }
 
-/// Parser recognizing template parameters
-fn template_parameters(s: &str) -> IResult<&str, Box<[TemplateArgument]>> {
+/// Parser recognizing a set of template parameters
+fn template_parameters(s: &str) -> IResult<&str, Box<[TemplateParameter]>> {
     use nom::{
         character::complete::{char, space0},
         combinator::map,
         multi::separated_list1,
         sequence::{delimited, pair},
     };
-    let arguments = separated_list1(pair(char(','), space0), template_argument);
+    let arguments = separated_list1(pair(char(','), space0), template_parameter);
     let parameters = delimited(char('<'), arguments, pair(space0, char('>')));
     map(parameters, |p| p.into_boxed_slice())(s)
 }
@@ -148,7 +71,7 @@ fn templatable_id(s: &str) -> IResult<&str, TemplatableId> {
     };
     let parameters_or_empty = map(opt(template_parameters), |opt| opt.unwrap_or_default());
     map(
-        pair(atom::identifier, parameters_or_empty),
+        pair(atoms::identifier, parameters_or_empty),
         |(id, parameters)| TemplatableId { id, parameters },
     )(s)
 }
@@ -160,7 +83,7 @@ pub struct TemplatableId<'source> {
     id: &'source str,
 
     /// Optional template parameters
-    parameters: Box<[TemplateArgument<'source>]>,
+    parameters: Box<[TemplateParameter<'source>]>,
 }
 //
 impl<'source> From<&'source str> for TemplatableId<'source> {

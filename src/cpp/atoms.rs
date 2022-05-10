@@ -1,4 +1,4 @@
-//! Atoms from the C++ grammar
+//! Atoms from the C++ entity grammar
 
 use nom::IResult;
 use std::{ops::BitOr, path::Path};
