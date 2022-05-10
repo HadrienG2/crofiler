@@ -75,7 +75,10 @@ pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
 /// CV qualifiers
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub struct ConstVolatile {
+    /// Const qualifier
     is_const: bool,
+
+    /// Volatile qualifier
     is_volatile: bool,
 }
 //

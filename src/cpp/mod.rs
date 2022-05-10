@@ -4,8 +4,13 @@ mod atoms;
 mod templates;
 mod types;
 
-use self::{atoms::Lambda, templates::TemplatableId, types::TypeLike};
 use nom::IResult;
+
+pub use self::{
+    atoms::{ConstVolatile, Lambda},
+    templates::{TemplatableId, TemplateParameter},
+    types::TypeLike,
+};
 
 /// Parser for C++ entities
 pub fn entity(s: &str) -> IResult<&str, Option<CppEntity>> {
