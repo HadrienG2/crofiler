@@ -205,7 +205,7 @@ mod tests {
             let result: IResult<&str, i128> = super::integer_literal(&num_str);
             assert_eq!(result, Ok(("", num)));
         }
-        test_integer_literal(i64::MAX);
+        test_integer_literal(i64::MIN);
         test_integer_literal(u64::MAX);
     }
 

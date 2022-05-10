@@ -79,4 +79,32 @@ pub enum TemplateParameter<'source> {
     TypeLike(TypeLike<'source>),
 }
 
-// FIXME: Add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_parameter() {
+        fn test_template_parameter_sep(text_wo_sep: &str, sep: &str, expected: TemplateParameter) {
+            let mut text = text_wo_sep.to_owned();
+            text.push_str(sep);
+            assert_eq!(super::template_parameter(&text), Ok((sep, expected)));
+        }
+        fn test_template_parameter(text_wo_sep: &str, expected: TemplateParameter) {
+            test_template_parameter_sep(text_wo_sep, ",", expected.clone());
+            test_template_parameter_sep(text_wo_sep, ">", expected);
+        }
+        test_template_parameter(
+            &(i64::MIN.to_string()),
+            TemplateParameter::Integer(i64::MIN as _),
+        );
+        fn test_type_parameter(s: &str) {
+            test_template_parameter(
+                s,
+                TemplateParameter::TypeLike(types::type_like(s, atoms::end_of_string).unwrap().1),
+            );
+        }
+        test_type_parameter("signed char*");
+        test_type_parameter("char_traits<lol>*");
+    }
+}
