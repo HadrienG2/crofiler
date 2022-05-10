@@ -78,10 +78,26 @@ pub enum TemplateParameter<'source> {
     /// Type or value looking close enough to
     TypeLike(TypeLike<'source>),
 }
+//
+impl From<i128> for TemplateParameter<'_> {
+    fn from(i: i128) -> Self {
+        Self::Integer(i)
+    }
+}
+//
+impl<'source> From<TypeLike<'source>> for TemplateParameter<'source> {
+    fn from(t: TypeLike<'source>) -> Self {
+        Self::TypeLike(t)
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn force_parse_type(s: &str) -> TypeLike {
+        types::type_like(s, atoms::end_of_string).unwrap().1
+    }
 
     #[test]
     fn template_parameter() {
@@ -99,12 +115,53 @@ mod tests {
             TemplateParameter::Integer(i64::MIN as _),
         );
         fn test_type_parameter(s: &str) {
-            test_template_parameter(
-                s,
-                TemplateParameter::TypeLike(types::type_like(s, atoms::end_of_string).unwrap().1),
-            );
+            test_template_parameter(s, force_parse_type(s).into());
         }
         test_type_parameter("signed char*");
-        test_type_parameter("char_traits<lol>*");
+        test_type_parameter("charamel<lol>&");
+    }
+
+    #[test]
+    fn template_parameters() {
+        assert_eq!(
+            super::template_parameters("<T>"),
+            Ok(("", vec![force_parse_type("T").into()].into()))
+        );
+        assert_eq!(
+            super::template_parameters("<char, stuff>"),
+            Ok((
+                "",
+                vec![
+                    force_parse_type("char").into(),
+                    force_parse_type("stuff").into()
+                ]
+                .into()
+            ))
+        );
+    }
+
+    #[test]
+    fn templatable_id() {
+        assert_eq!(
+            super::templatable_id("no_parameters"),
+            Ok((
+                "",
+                TemplatableId {
+                    id: "no_parameters",
+                    parameters: vec![].into(),
+                }
+            ))
+        );
+        assert_eq!(
+            super::templatable_id("A<B, C>"),
+            Ok((
+                "",
+                TemplatableId {
+                    id: "A",
+                    parameters: vec![force_parse_type("B").into(), force_parse_type("C").into()]
+                        .into()
+                }
+            ))
+        );
     }
 }
