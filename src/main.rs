@@ -90,7 +90,8 @@ fn main() {
                 Ok(("", _)) => {}
                 other => {
                     if bad_entities < MAX_DISPLAY {
-                        println!("- {other:?}");
+                        println!("- {e:?}");
+                        println!("  -> {other:?}");
                     }
                     bad_entities += 1;
                 }

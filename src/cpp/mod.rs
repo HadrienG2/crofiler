@@ -21,7 +21,7 @@ pub enum CppEntity<'source> {
     Lambda(Lambda<'source>),
 }
 
-/// Parser recognizing types and some values, given an underlying identifier parser
+/// Parser recognizing types (and some values), given an underlying identifier parser
 ///
 /// This wraps either id_expression or legacy_primitive with extra logic
 /// for CV qualifiers, pointers and references. Unfortunately, as a result of
@@ -31,10 +31,10 @@ pub enum CppEntity<'source> {
 ///
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision.
-fn type_or_value_impl(
+fn type_like_impl(
     s: &str,
     inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
-) -> IResult<&str, TypeOrValue> {
+) -> IResult<&str, TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
         combinator::{map, opt},
@@ -52,7 +52,7 @@ fn type_or_value_impl(
         num_refs_opt,
     ));
     map(tuple, |(bottom_cv, bottom_id, pointers, num_refs_opt)| {
-        TypeOrValue {
+        TypeLike {
             bottom_cv: bottom_cv.unwrap_or_default(),
             bottom_id,
             pointers: pointers.into_boxed_slice(),
@@ -63,31 +63,31 @@ fn type_or_value_impl(
 
 /// Parser recognizing types and some values, given a parser for the next delimiter
 ///
-/// This resolves the type_or_value_impl ambiguity by checking out the next
+/// This resolves the type_like_impl ambiguity by checking out the next
 /// delimiter, without consuming it.
-fn type_or_value(
+fn type_like(
     s: &str,
     next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
-) -> IResult<&str, TypeOrValue> {
+) -> IResult<&str, TypeLike> {
     use nom::{
         branch::alt,
         combinator::{map, peek},
         sequence::terminated,
     };
-    let id_expression = |s| type_or_value_impl(s, id_expression);
+    let id_expression = |s| type_like_impl(s, id_expression);
     fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
         map(atom::legacy_primitive, IdExpression::from)(s)
     }
-    let legacy_id = |s| type_or_value_impl(s, legacy_id);
+    let legacy_id = |s| type_like_impl(s, legacy_id);
     alt((
         terminated(id_expression, peek(next_delimiter)),
         terminated(legacy_id, peek(next_delimiter)),
     ))(s)
 }
 
-/// Output from type_or_value parsers
+/// Output from type_like* parsers
 #[derive(Debug, PartialEq, Clone)]
-pub struct TypeOrValue<'source> {
+pub struct TypeLike<'source> {
     /// CV qualifiers applying to the leftmost type
     bottom_cv: ConstVolatile,
 
@@ -113,9 +113,9 @@ fn template_argument(s: &str) -> IResult<&str, TemplateArgument> {
     fn delimiter(s: &str) -> IResult<&str, ()> {
         map(pair(space0, alt((char(','), char('>')))), std::mem::drop)(s)
     }
-    let type_or_value = |s| type_or_value(s, delimiter);
-    let type_or_value = map(type_or_value, TemplateArgument::TypeOrValue);
-    alt((integer_literal, type_or_value))(s)
+    let type_like = |s| type_like(s, delimiter);
+    let type_like = map(type_like, TemplateArgument::TypeLike);
+    alt((integer_literal, type_like))(s)
 }
 //
 /// Template argument
@@ -124,8 +124,8 @@ pub enum TemplateArgument<'source> {
     /// Integer literal
     Integer(i128),
 
-    /// Type or value
-    TypeOrValue(TypeOrValue<'source>),
+    /// Type or value looking close enough to
+    TypeLike(TypeLike<'source>),
 }
 
 /// Parser recognizing template parameters
