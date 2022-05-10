@@ -1,7 +1,7 @@
 //! Atoms from the C++ grammar
 
 use nom::IResult;
-use std::path::Path;
+use std::{ops::BitOr, path::Path};
 use unicode_xid::UnicodeXID;
 
 /// Parser for C++ identifiers
@@ -46,10 +46,7 @@ pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
     map(cv, |opt_cv| {
         let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
         let cv2 = opt_cv2.unwrap_or_default();
-        ConstVolatile {
-            is_const: cv1.is_const | cv2.is_const,
-            is_volatile: cv1.is_volatile | cv2.is_volatile,
-        }
+        cv1 | cv2
     })(s)
 }
 //
@@ -58,6 +55,30 @@ pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
 pub struct ConstVolatile {
     is_const: bool,
     is_volatile: bool,
+}
+//
+impl ConstVolatile {
+    /// Lone const qualifier
+    pub const CONST: ConstVolatile = ConstVolatile {
+        is_const: true,
+        is_volatile: false,
+    };
+
+    /// Lone volatile qualifier
+    pub const VOLATILE: ConstVolatile = ConstVolatile {
+        is_const: false,
+        is_volatile: true,
+    };
+}
+//
+impl BitOr for ConstVolatile {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Self {
+            is_const: self.is_const | rhs.is_const,
+            is_volatile: self.is_volatile | rhs.is_volatile,
+        }
+    }
 }
 
 /// Parser recognizing primitive types inherited from C, which can have spaces
@@ -76,7 +97,7 @@ pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
         branch::alt,
         bytes::complete::tag,
         character::complete::{satisfy, space1},
-        combinator::{opt, peek, recognize},
+        combinator::{eof, map, not, opt, peek, recognize},
         multi::separated_list1,
         sequence::{pair, terminated},
     };
@@ -86,7 +107,10 @@ pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
     let anything = alt((signedness, size, base));
     terminated(
         recognize(separated_list1(space1, anything)),
-        peek(satisfy(|c| !c.is_xid_continue())),
+        peek(alt((
+            map(eof, std::mem::drop),
+            not(satisfy(UnicodeXID::is_xid_continue)),
+        ))),
     )(s)
 }
 
@@ -131,3 +155,80 @@ type Line = u32;
 type Col = u32;
 
 // FIXME: Add tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifier() {
+        const ID: &str = "_abcd_1234";
+        assert_eq!(super::identifier(ID), Ok(("", ID)));
+    }
+
+    #[test]
+    fn integer_literal() {
+        fn test_integer_literal(num: impl Into<i128>) {
+            let num: i128 = num.into();
+            let num_str = num.to_string();
+            let result: IResult<&str, i128> = super::integer_literal(&num_str);
+            assert_eq!(result, Ok(("", num)));
+        }
+        test_integer_literal(i64::MAX);
+        test_integer_literal(u64::MAX);
+    }
+
+    #[test]
+    fn cv() {
+        assert_eq!(super::cv(""), Ok(("", ConstVolatile::default())));
+        assert_eq!(super::cv("const"), Ok(("", ConstVolatile::CONST)));
+        assert_eq!(super::cv("volatile"), Ok(("", ConstVolatile::VOLATILE)));
+        let const_volatile = ConstVolatile::CONST | ConstVolatile::VOLATILE;
+        assert_eq!(super::cv("const volatile"), Ok(("", const_volatile)));
+        assert_eq!(super::cv("volatile const"), Ok(("", const_volatile)));
+    }
+
+    #[test]
+    fn legacy_primitive() {
+        let test_legacy_primitive = |s| assert_eq!(super::legacy_primitive(s), Ok(("", s)));
+
+        test_legacy_primitive("short int");
+        test_legacy_primitive("unsigned short int");
+
+        test_legacy_primitive("int");
+        test_legacy_primitive("unsigned int");
+
+        test_legacy_primitive("long int");
+        test_legacy_primitive("unsigned long int");
+
+        test_legacy_primitive("long long int");
+        test_legacy_primitive("unsigned long long int");
+        test_legacy_primitive("long int unsigned long");
+
+        test_legacy_primitive("char");
+        test_legacy_primitive("signed char");
+        test_legacy_primitive("unsigned char");
+
+        test_legacy_primitive("double");
+        test_legacy_primitive("long double");
+    }
+
+    #[test]
+    fn unknown_entity() {
+        assert_eq!(super::unknown_entity("<unknown>"), Ok(("", ())));
+    }
+
+    #[test]
+    fn lambda() {
+        assert_eq!(
+            super::lambda("(lambda at /path/to/source.cpp:123:45)"),
+            Ok((
+                "",
+                Lambda {
+                    file: Path::new("/path/to/source.cpp"),
+                    location: (123, 45)
+                }
+            ))
+        );
+    }
+}
