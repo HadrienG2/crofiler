@@ -5,7 +5,8 @@ use super::{
     functions::{self, FunctionSignature},
     id_expression, IdExpression,
 };
-use nom::IResult;
+use nom::{IResult, Parser};
+use nom_supreme::ParserExt;
 
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context), given a parser for the separator that is
@@ -14,20 +15,15 @@ pub fn type_like(
     s: &str,
     next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
 ) -> IResult<&str, TypeLike> {
-    use nom::{
-        branch::alt,
-        combinator::{map, peek},
-        sequence::terminated,
-    };
+    use nom::combinator::peek;
     let id_expression = |s| type_like_impl(s, id_expression);
     fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
-        map(atoms::legacy_primitive, IdExpression::from)(s)
+        atoms::legacy_primitive.map(IdExpression::from).parse(s)
     }
     let legacy_id = |s| type_like_impl(s, legacy_id);
-    alt((
-        terminated(id_expression, peek(next_delimiter)),
-        terminated(legacy_id, peek(next_delimiter)),
-    ))(s)
+    (id_expression.terminated(peek(next_delimiter)))
+        .or(legacy_id.terminated(peek(next_delimiter)))
+        .parse(s)
 }
 
 /// Parser recognizing types (and some values that are indistinguishable from
@@ -48,32 +44,27 @@ fn type_like_impl(
 ) -> IResult<&str, TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
-        combinator::{map, opt},
+        combinator::opt,
         multi::many0,
-        sequence::{pair, preceded, terminated, tuple},
+        sequence::{preceded, tuple},
     };
-    let bottom_cv_opt = opt(terminated(atoms::cv, space1));
-    let pointer = preceded(pair(space0, char('*')), preceded(space0, atoms::cv));
+    let bottom_cv = atoms::cv.terminated(space0);
+    let pointer = preceded(space0.and(char('*')).and(space0), atoms::cv);
     let pointers = many0(pointer);
     let reference = preceded(space0, atoms::reference);
     let function_signature = preceded(space0, opt(functions::function_signature));
-    let tuple = tuple((
-        bottom_cv_opt,
-        inner_id,
-        pointers,
-        reference,
-        function_signature,
-    ));
-    map(
-        preceded(opt(pair(atoms::keyword("typename"), space1)), tuple),
-        |(bottom_cv_opt, bottom_id, pointers, reference, function_signature)| TypeLike {
-            bottom_cv: bottom_cv_opt.unwrap_or_default(),
-            bottom_id,
-            pointers: pointers.into_boxed_slice(),
-            reference,
-            function_signature,
-        },
-    )(s)
+    let tuple = tuple((bottom_cv, inner_id, pointers, reference, function_signature));
+    preceded(opt(atoms::keyword("typename").and(space1)), tuple)
+        .map(
+            |(bottom_cv, bottom_id, pointers, reference, function_signature)| TypeLike {
+                bottom_cv,
+                bottom_id,
+                pointers: pointers.into_boxed_slice(),
+                reference,
+                function_signature,
+            },
+        )
+        .parse(s)
 }
 
 /// A type name, or something looking close enough to it

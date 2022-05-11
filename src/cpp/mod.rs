@@ -5,7 +5,8 @@ mod functions;
 mod templates;
 mod types;
 
-use nom::IResult;
+use nom::{IResult, Parser};
+use nom_supreme::ParserExt;
 
 pub use self::{
     atoms::{ConstVolatile, Lambda},
@@ -15,12 +16,11 @@ pub use self::{
 
 /// Parser for C++ entities
 pub fn entity(s: &str) -> IResult<&str, Option<CppEntity>> {
-    use nom::{branch::alt, combinator::map};
     let type_like = |s| types::type_like(s, atoms::end_of_string);
-    let type_like = map(type_like, |t| Some(CppEntity::TypeLike(t)));
-    let unknown = map(atoms::unknown_entity, |()| None);
-    let lambda = map(atoms::lambda, |l| Some(CppEntity::Lambda(l)));
-    alt((type_like, unknown, lambda))(s)
+    let type_like = type_like.map(|t| Some(CppEntity::TypeLike(t)));
+    let unknown = atoms::unknown_entity.value(None);
+    let lambda = atoms::lambda.map(|l| Some(CppEntity::Lambda(l)));
+    type_like.or(unknown).or(lambda).parse(s)
 }
 //
 /// C++ entity description
@@ -47,16 +47,12 @@ pub type UnqualifiedId<'source> = TemplatableId<'source>;
 
 /// Parser for id-expressions
 fn id_expression(s: &str) -> IResult<&str, IdExpression> {
-    use nom::{
-        bytes::complete::tag,
-        combinator::map,
-        multi::many0,
-        sequence::{pair, terminated},
-    };
-    let scope = terminated(templates::templatable_id, tag("::"));
-    let path = map(many0(scope), Vec::into_boxed_slice);
-    let path_and_id = pair(path, unqualified_id_expression);
-    map(path_and_id, |(path, id)| IdExpression { path, id })(s)
+    use nom::{bytes::complete::tag, multi::many0};
+    let scope = templates::templatable_id.terminated(tag("::"));
+    let path = many0(scope).map(Vec::into_boxed_slice);
+    (path.and(unqualified_id_expression))
+        .map(|(path, id)| IdExpression { path, id })
+        .parse(s)
 }
 //
 /// C++ id-expression

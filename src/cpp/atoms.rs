@@ -1,77 +1,65 @@
 //! Atoms from the C++ entity grammar
 
-use nom::IResult;
+use nom::{IResult, Parser};
+use nom_supreme::ParserExt;
 use std::{ops::BitOr, path::Path};
 use unicode_xid::UnicodeXID;
 
 /// Parser recognizing the end of the input string
 pub fn end_of_string(s: &str) -> IResult<&str, ()> {
-    use nom::combinator::{eof, map};
-    map(eof, std::mem::drop)(s)
+    use nom::combinator::eof;
+    eof.value(()).parse(s)
 }
 
 /// Parser recognizing the end of an identifier, without consuming it
 fn end_of_identifier(s: &str) -> IResult<&str, ()> {
-    use nom::{
-        branch::alt,
-        character::complete::satisfy,
-        combinator::{not, peek},
-    };
-    peek(alt((
-        end_of_string,
-        not(satisfy(UnicodeXID::is_xid_continue)),
-    )))(s)
+    use nom::{character::complete::satisfy, combinator::not};
+    (not(satisfy(UnicodeXID::is_xid_continue)).or(end_of_string))
+        .peek()
+        .parse(s)
 }
 
 /// Parser recognizing a C++ keyword
 pub fn keyword(word: &str) -> impl FnMut(&str) -> IResult<&str, ()> + '_ {
-    use nom::{bytes::complete::tag, combinator::map, sequence::pair};
-    move |s| map(pair(tag(word), end_of_identifier), std::mem::drop)(s)
+    use nom::bytes::complete::tag;
+    move |s| tag(word).and(end_of_identifier).value(()).parse(s)
 }
 
 /// Parser recognizing any valid C++ identifier
 pub fn identifier(s: &str) -> IResult<&str, &str> {
-    use nom::{
-        character::complete::satisfy, combinator::recognize, multi::many0_count, sequence::pair,
-    };
-    recognize(pair(
-        satisfy(|c| c.is_xid_start() || c == '_'),
-        many0_count(satisfy(UnicodeXID::is_xid_continue)),
-    ))(s)
+    use nom::{character::complete::satisfy, multi::many0_count};
+    (satisfy(|c| c.is_xid_start() || c == '_')
+        .and(many0_count(satisfy(UnicodeXID::is_xid_continue))))
+    .recognize()
+    .parse(s)
 }
 
-/// Parser for C++ integer literals
+/// Parser recognizing C++ integer literals
 pub use nom::character::complete::i128 as integer_literal;
 
-/// Parser for CV qualifiers
+/// Parser recognizing CV qualifiers
 pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
-    use nom::{
-        branch::alt,
-        character::complete::space1,
-        combinator::{map, opt},
-        sequence::{pair, preceded},
-    };
+    use nom::{character::complete::space1, combinator::opt, sequence::preceded};
     let const_ = || {
-        map(keyword("const"), |_| ConstVolatile {
+        keyword("const").value(ConstVolatile {
             is_const: true,
             is_volatile: false,
         })
     };
     let volatile = || {
-        map(keyword("volatile"), |_| ConstVolatile {
+        keyword("volatile").value(ConstVolatile {
             is_const: false,
             is_volatile: true,
         })
     };
-    let cv = opt(alt((
-        pair(const_(), opt(preceded(space1, volatile()))),
-        pair(volatile(), opt(preceded(space1, const_()))),
-    )));
-    map(cv, |opt_cv| {
+    opt((const_().and(opt(preceded(space1, volatile()))))
+        .or(volatile().and(opt(preceded(space1, const_())))))
+    .map(|opt_cv| {
         let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
         let cv2 = opt_cv2.unwrap_or_default();
         cv1 | cv2
-    })(s)
+    })
+    .parse(s)
 }
 //
 /// CV qualifiers
@@ -108,7 +96,7 @@ impl BitOr for ConstVolatile {
     }
 }
 
-/// Parser for reference signs
+/// Parser recognizing reference qualifiers
 pub fn reference(s: &str) -> IResult<&str, Reference> {
     use nom::{character::complete::char, combinator::map_opt, multi::many0_count};
     let num_refs = many0_count(char('&'));
@@ -152,27 +140,20 @@ impl Default for Reference {
 /// processing them right.
 pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
     use nom::{
-        branch::alt,
-        bytes::complete::tag,
-        character::complete::space1,
-        combinator::{map, opt, recognize},
-        multi::separated_list1,
-        sequence::{pair, terminated},
+        bytes::complete::tag, character::complete::space1, combinator::opt, multi::separated_list1,
     };
-    let signedness = map(pair(opt(tag("un")), keyword("signed")), std::mem::drop);
-    let size = alt((keyword("short"), keyword("long")));
-    let base = alt((keyword("int"), keyword("char"), keyword("double")));
-    let anything = alt((signedness, size, base));
-    terminated(
-        recognize(separated_list1(space1, anything)),
-        end_of_identifier,
-    )(s)
+    let signedness = opt(tag("un")).and(keyword("signed")).value(());
+    let size = keyword("short").or(keyword("long"));
+    let base = keyword("int").or(keyword("char")).or(keyword("double"));
+    let anything = signedness.or(size).or(base);
+    // FIXME: Write an allocation-free alternative to separated_list.recognize()
+    separated_list1(space1, anything).recognize().parse(s)
 }
 
 /// Parser for clang's <unknown> C++ entity
 pub fn unknown_entity(s: &str) -> IResult<&str, ()> {
-    use nom::{bytes::complete::tag, combinator::map};
-    map(tag("<unknown>"), std::mem::drop)(s)
+    use nom::bytes::complete::tag;
+    tag("<unknown>").value(()).parse(s)
 }
 
 /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
@@ -184,15 +165,18 @@ pub fn lambda(s: &str) -> IResult<&str, Lambda> {
     use nom::{
         bytes::complete::{tag, take_until1},
         character::complete::{anychar, char, u32},
-        combinator::{map, opt, recognize},
-        sequence::{delimited, pair, separated_pair},
+        combinator::{opt, recognize},
+        sequence::{delimited, separated_pair},
     };
-    let disk_designator = recognize(pair(anychar, char(':')));
-    let path_str = recognize(pair(opt(disk_designator), take_until1(":")));
-    let path = map(path_str, Path::new);
+
     let location = separated_pair(u32, char(':'), u32);
+
+    let disk_designator = anychar.and(char(':'));
+    let path_str = recognize(opt(disk_designator).and(take_until1(":")));
+    let path = path_str.map(Path::new);
+
     let file_location = separated_pair(path, char(':'), location);
-    let lambda = map(file_location, |(file, location)| Lambda { file, location });
+    let lambda = file_location.map(|(file, location)| Lambda { file, location });
     delimited(tag("(lambda at "), lambda, char(')'))(s)
 }
 //

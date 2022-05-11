@@ -15,3 +15,4 @@ unicode-width = "0.1"
 # TODO: Remove after integrating c++ entity parting into clang-time-trace
 unicode-xid = "0.2"
 nom = "7.1"
+nom-supreme = "0.8"

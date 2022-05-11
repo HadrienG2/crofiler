@@ -4,27 +4,29 @@ use super::{
     atoms::{self, ConstVolatile, Reference},
     types::{self, TypeLike},
 };
-use nom::IResult;
+use nom::{IResult, Parser};
+use nom_supreme::ParserExt;
 
 /// Parser recognizing a function signature (parameters + qualifiers)
 pub fn function_signature(s: &str) -> IResult<&str, FunctionSignature> {
     use nom::{
         character::complete::space0,
-        combinator::{map, opt},
+        combinator::opt,
         sequence::{preceded, tuple},
     };
     let cv = preceded(space0, atoms::cv);
     let reference = preceded(space0, atoms::reference);
     let noexcept_opt = preceded(space0, opt(atoms::keyword("noexcept")));
-    map(
-        tuple((function_parameters, cv, reference, noexcept_opt)),
-        |(parameters, cv, reference, noexcept_opt)| FunctionSignature {
-            parameters,
-            cv,
-            reference,
-            noexcept: noexcept_opt.is_some(),
-        },
-    )(s)
+    tuple((function_parameters, cv, reference, noexcept_opt))
+        .map(
+            |(parameters, cv, reference, noexcept_opt)| FunctionSignature {
+                parameters,
+                cv,
+                reference,
+                noexcept: noexcept_opt.is_some(),
+            },
+        )
+        .parse(s)
 }
 //
 /// Function signature
@@ -47,25 +49,20 @@ pub struct FunctionSignature<'source> {
 fn function_parameters(s: &str) -> IResult<&str, Box<[TypeLike]>> {
     use nom::{
         character::complete::{char, space0},
-        combinator::map,
         multi::separated_list0,
-        sequence::{delimited, pair},
+        sequence::delimited,
     };
-    let parameters = separated_list0(pair(char(','), space0), function_parameter);
-    let parameter_set = delimited(char('('), parameters, pair(space0, char(')')));
-    map(parameter_set, |p| p.into_boxed_slice())(s)
+    let parameters = separated_list0(space0.and(char(',')).and(space0), function_parameter);
+    delimited(char('('), parameters, space0.and(char(')')))
+        .map(Vec::into_boxed_slice)
+        .parse(s)
 }
 
 /// Parser recognizing a single function parameter
 fn function_parameter(s: &str) -> IResult<&str, TypeLike> {
-    use nom::{
-        branch::alt,
-        character::complete::{char, space0},
-        combinator::map,
-        sequence::pair,
-    };
+    use nom::character::complete::{char, space0};
     fn delimiter(s: &str) -> IResult<&str, ()> {
-        map(pair(space0, alt((char(','), char(')')))), std::mem::drop)(s)
+        space0.and(char(',').or(char(')'))).value(()).parse(s)
     }
     types::type_like(s, delimiter)
 }
