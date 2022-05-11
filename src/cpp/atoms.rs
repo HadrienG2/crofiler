@@ -1,18 +1,19 @@
 //! Atoms from the C++ entity grammar
 
-use nom::{IResult, Parser};
+use super::IResult;
+use nom::Parser;
 use nom_supreme::ParserExt;
 use std::{ops::BitOr, path::Path};
 use unicode_xid::UnicodeXID;
 
 /// Parser recognizing the end of the input string
-pub fn end_of_string(s: &str) -> IResult<&str, ()> {
+pub fn end_of_string(s: &str) -> IResult<()> {
     use nom::combinator::eof;
     eof.value(()).parse(s)
 }
 
 /// Parser recognizing the end of an identifier, without consuming it
-fn end_of_identifier(s: &str) -> IResult<&str, ()> {
+fn end_of_identifier(s: &str) -> IResult<()> {
     use nom::{character::complete::satisfy, combinator::not};
     (not(satisfy(UnicodeXID::is_xid_continue)).or(end_of_string))
         .peek()
@@ -20,13 +21,13 @@ fn end_of_identifier(s: &str) -> IResult<&str, ()> {
 }
 
 /// Parser recognizing a C++ keyword
-pub fn keyword(word: &str) -> impl FnMut(&str) -> IResult<&str, ()> + '_ {
-    use nom::bytes::complete::tag;
+pub fn keyword(word: &'static str) -> impl FnMut(&str) -> IResult<()> + '_ {
+    use nom_supreme::tag::complete::tag;
     move |s| tag(word).and(end_of_identifier).value(()).parse(s)
 }
 
 /// Parser recognizing any valid C++ identifier
-pub fn identifier(s: &str) -> IResult<&str, &str> {
+pub fn identifier(s: &str) -> IResult<&str> {
     use nom::{character::complete::satisfy, multi::many0_count};
     (satisfy(|c| c.is_xid_start() || c == '_')
         .and(many0_count(satisfy(UnicodeXID::is_xid_continue))))
@@ -38,7 +39,7 @@ pub fn identifier(s: &str) -> IResult<&str, &str> {
 pub use nom::character::complete::i128 as integer_literal;
 
 /// Parser recognizing CV qualifiers
-pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
+pub fn cv(s: &str) -> IResult<ConstVolatile> {
     use nom::{character::complete::space1, combinator::opt, sequence::preceded};
     let const_ = || {
         keyword("const").value(ConstVolatile {
@@ -97,7 +98,7 @@ impl BitOr for ConstVolatile {
 }
 
 /// Parser recognizing reference qualifiers
-pub fn reference(s: &str) -> IResult<&str, Reference> {
+pub fn reference(s: &str) -> IResult<Reference> {
     use nom::{character::complete::char, combinator::map_opt, multi::many0_count};
     let num_refs = many0_count(char('&'));
     map_opt(num_refs, |num| match num {
@@ -138,21 +139,27 @@ impl Default for Reference {
 /// of the C++ grammar, such as "long long short", for the sake of simplicity:
 /// clang should not normally emit these, so we don't really care about
 /// processing them right.
-pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
-    use nom::{
-        bytes::complete::tag, character::complete::space1, combinator::opt, multi::separated_list1,
-    };
-    let signedness = opt(tag("un")).and(keyword("signed")).value(());
-    let size = keyword("short").or(keyword("long"));
-    let base = keyword("int").or(keyword("char")).or(keyword("double"));
-    let anything = signedness.or(size).or(base);
-    // FIXME: Write an allocation-free alternative to separated_list.recognize()
-    separated_list1(space1, anything).recognize().parse(s)
+pub fn legacy_primitive(s: &str) -> IResult<&str> {
+    use nom::{character::complete::space1, combinator::opt, multi::many0_count};
+    use nom_supreme::tag::complete::tag;
+
+    fn anything(s: &str) -> IResult<()> {
+        let signedness = opt(tag("un")).and(keyword("signed")).value(());
+        let size = keyword("short").or(keyword("long"));
+        let base = keyword("int").or(keyword("char")).or(keyword("double"));
+        signedness.or(size).or(base).parse(s)
+    }
+
+    // This is an allocation-free alternative to
+    // separated_list1(space1, anything).recognize()
+    (anything.and(many0_count(space1.and(anything))))
+        .recognize()
+        .parse(s)
 }
 
 /// Parser for clang's <unknown> C++ entity
-pub fn unknown_entity(s: &str) -> IResult<&str, ()> {
-    use nom::bytes::complete::tag;
+pub fn unknown_entity(s: &str) -> IResult<()> {
+    use nom_supreme::tag::complete::tag;
     tag("<unknown>").value(()).parse(s)
 }
 
@@ -161,7 +168,7 @@ pub fn unknown_entity(s: &str) -> IResult<&str, ()> {
 /// This will fail if the file path contains a ':' sign other than a
 /// Windows-style disk designator at the start, because I have no idea how to
 /// handle this inherent grammar ambiguity better...
-pub fn lambda(s: &str) -> IResult<&str, Lambda> {
+pub fn lambda(s: &str) -> IResult<Lambda> {
     use nom::{
         bytes::complete::{tag, take_until1},
         character::complete::{anychar, char, u32},
@@ -224,7 +231,7 @@ mod tests {
         fn test_integer_literal(num: impl Into<i128>) {
             let num: i128 = num.into();
             let num_str = num.to_string();
-            let result: IResult<&str, i128> = super::integer_literal(&num_str);
+            let result: IResult<i128> = super::integer_literal(&num_str);
             assert_eq!(result, Ok(("", num)));
         }
         test_integer_literal(i64::MIN);

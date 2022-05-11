@@ -3,12 +3,13 @@
 use super::{
     atoms::{self, ConstVolatile, Reference},
     types::{self, TypeLike},
+    IResult,
 };
-use nom::{IResult, Parser};
+use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parser recognizing a function signature (parameters + qualifiers)
-pub fn function_signature(s: &str) -> IResult<&str, FunctionSignature> {
+pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     use nom::{
         character::complete::space0,
         combinator::opt,
@@ -46,7 +47,7 @@ pub struct FunctionSignature<'source> {
 }
 
 /// Parser recognizing a set of function parameters
-fn function_parameters(s: &str) -> IResult<&str, Box<[TypeLike]>> {
+fn function_parameters(s: &str) -> IResult<Box<[TypeLike]>> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
@@ -59,9 +60,9 @@ fn function_parameters(s: &str) -> IResult<&str, Box<[TypeLike]>> {
 }
 
 /// Parser recognizing a single function parameter
-fn function_parameter(s: &str) -> IResult<&str, TypeLike> {
+fn function_parameter(s: &str) -> IResult<TypeLike> {
     use nom::character::complete::{char, space0};
-    fn delimiter(s: &str) -> IResult<&str, ()> {
+    fn delimiter(s: &str) -> IResult<()> {
         space0.and(char(',').or(char(')'))).value(()).parse(s)
     }
     types::type_like(s, delimiter)

@@ -3,13 +3,14 @@
 use super::{
     atoms,
     types::{self, TypeLike},
+    IResult,
 };
-use nom::{IResult, Parser};
+use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parser recognizing an identifier which may or may not be coupled with
 /// template arguments, i.e. id or id<...>
-pub fn templatable_id(s: &str) -> IResult<&str, TemplatableId> {
+pub fn templatable_id(s: &str) -> IResult<TemplatableId> {
     use nom::combinator::opt;
     (atoms::identifier.and(opt(template_parameters)))
         .map(|(id, parameters)| TemplatableId { id, parameters })
@@ -36,7 +37,7 @@ impl<'source> From<&'source str> for TemplatableId<'source> {
 }
 
 /// Parser recognizing a set of template parameters
-fn template_parameters(s: &str) -> IResult<&str, Box<[TemplateParameter]>> {
+fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
@@ -49,9 +50,9 @@ fn template_parameters(s: &str) -> IResult<&str, Box<[TemplateParameter]>> {
 }
 
 /// Parser recognizing a single template parameter/argument
-fn template_parameter(s: &str) -> IResult<&str, TemplateParameter> {
+fn template_parameter(s: &str) -> IResult<TemplateParameter> {
     use nom::character::complete::{char, space0};
-    fn delimiter(s: &str) -> IResult<&str, ()> {
+    fn delimiter(s: &str) -> IResult<()> {
         space0.and(char(',').or(char('>'))).value(()).parse(s)
     }
     let type_like = (|s| types::type_like(s, delimiter)).map(TemplateParameter::TypeLike);

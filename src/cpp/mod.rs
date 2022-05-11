@@ -5,7 +5,7 @@ mod functions;
 mod templates;
 mod types;
 
-use nom::{IResult, Parser};
+use nom::Parser;
 use nom_supreme::ParserExt;
 
 pub use self::{
@@ -14,8 +14,12 @@ pub use self::{
     types::TypeLike,
 };
 
+// FIXME: Remove once done debugging
+type Error<I> = nom_supreme::error::ErrorTree<I>;
+pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
+
 /// Parser for C++ entities
-pub fn entity(s: &str) -> IResult<&str, Option<CppEntity>> {
+pub fn entity(s: &str) -> IResult<Option<CppEntity>> {
     let type_like = |s| types::type_like(s, atoms::end_of_string);
     let type_like = type_like.map(|t| Some(CppEntity::TypeLike(t)));
     let unknown = atoms::unknown_entity.value(None);
@@ -34,7 +38,7 @@ pub enum CppEntity<'source> {
 }
 
 /// Parser for unqualified id-expressions
-fn unqualified_id_expression(s: &str) -> IResult<&str, UnqualifiedId> {
+fn unqualified_id_expression(s: &str) -> IResult<UnqualifiedId> {
     // FIXME: Accept all unqualified id-expressions. In addition to identifiers,
     //        these include...
     //        - Destructors: ~identifier
@@ -46,8 +50,9 @@ fn unqualified_id_expression(s: &str) -> IResult<&str, UnqualifiedId> {
 pub type UnqualifiedId<'source> = TemplatableId<'source>;
 
 /// Parser for id-expressions
-fn id_expression(s: &str) -> IResult<&str, IdExpression> {
-    use nom::{bytes::complete::tag, multi::many0};
+fn id_expression(s: &str) -> IResult<IdExpression> {
+    use nom::multi::many0;
+    use nom_supreme::tag::complete::tag;
     let scope = templates::templatable_id.terminated(tag("::"));
     let path = many0(scope).map(Vec::into_boxed_slice);
     (path.and(unqualified_id_expression))

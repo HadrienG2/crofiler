@@ -6,6 +6,7 @@ mod cpp;
 mod path;
 
 use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
+use nom::Finish;
 use std::collections::HashMap;
 
 fn main() {
@@ -82,25 +83,30 @@ fn main() {
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
     let mut bad_entities = 0;
     let mut num_entities = 0;
-    const MAX_DISPLAY: usize = 30;
+    const MAX_ERROR_DISPLAY: usize = 1;
+    const MAX_ENTITY_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
             num_entities += 1;
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
-                _other => {
-                    if bad_entities < MAX_DISPLAY {
+                Err(error) => {
+                    if bad_entities < MAX_ENTITY_DISPLAY {
                         println!("- {e}");
+                        if bad_entities < MAX_ERROR_DISPLAY {
+                            println!("  -> {error:#?}");
+                        }
                     }
                     bad_entities += 1;
                 }
+                other => panic!("Nobody expected {other:?}"),
             }
         }
     }
-    if bad_entities >= MAX_DISPLAY {
+    if bad_entities >= MAX_ENTITY_DISPLAY {
         println!(
             "- ... and more, for a total of {}/{} badly parsed entities ...",
-            bad_entities - MAX_DISPLAY,
+            bad_entities - MAX_ENTITY_DISPLAY,
             num_entities
         );
     }

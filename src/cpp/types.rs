@@ -3,9 +3,9 @@
 use super::{
     atoms::{self, ConstVolatile, Reference},
     functions::{self, FunctionSignature},
-    id_expression, IdExpression,
+    id_expression, IResult, IdExpression,
 };
-use nom::{IResult, Parser};
+use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parser recognizing types (and some values that are indistinguishable from
@@ -13,11 +13,11 @@ use nom_supreme::ParserExt;
 /// expected to come after the type name.
 pub fn type_like(
     s: &str,
-    next_delimiter: impl FnMut(&str) -> IResult<&str, ()> + Copy,
-) -> IResult<&str, TypeLike> {
+    next_delimiter: impl FnMut(&str) -> IResult<()> + Copy,
+) -> IResult<TypeLike> {
     use nom::combinator::peek;
     let id_expression = |s| type_like_impl(s, id_expression);
-    fn legacy_id(s: &str) -> IResult<&str, IdExpression> {
+    fn legacy_id(s: &str) -> IResult<IdExpression> {
         atoms::legacy_primitive.map(IdExpression::from).parse(s)
     }
     let legacy_id = |s| type_like_impl(s, legacy_id);
@@ -38,10 +38,7 @@ pub fn type_like(
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision. This is what the
 /// higher-level type_like parser does.
-fn type_like_impl(
-    s: &str,
-    inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
-) -> IResult<&str, TypeLike> {
+fn type_like_impl(s: &str, inner_id: impl Fn(&str) -> IResult<IdExpression>) -> IResult<TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
         combinator::opt,
@@ -90,7 +87,7 @@ pub struct TypeLike<'source> {
 mod tests {
     use super::*;
 
-    fn whole_type(s: &str) -> IResult<&str, TypeLike> {
+    fn whole_type(s: &str) -> IResult<TypeLike> {
         super::type_like(s, atoms::end_of_string)
     }
 
