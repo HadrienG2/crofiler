@@ -6,7 +6,6 @@ mod cpp;
 mod path;
 
 use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
-use nom::Finish;
 use std::collections::HashMap;
 
 fn main() {

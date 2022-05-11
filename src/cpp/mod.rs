@@ -15,6 +15,9 @@ pub use self::{
 };
 
 // FIXME: Remove once done debugging
+#[cfg(test)]
+type Error<I> = nom::error::Error<I>;
+#[cfg(not(test))]
 type Error<I> = nom_supreme::error::ErrorTree<I>;
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
