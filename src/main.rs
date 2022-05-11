@@ -82,7 +82,7 @@ fn main() {
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
     let mut bad_entities = 0;
     let mut num_entities = 0;
-    const MAX_ERROR_DISPLAY: usize = 1;
+    const MAX_ERROR_DISPLAY: usize = 0;
     const MAX_ENTITY_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
