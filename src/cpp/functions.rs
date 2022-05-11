@@ -1,23 +1,59 @@
 //! Function-related parsing
 
-use super::types::{self, TypeLike};
+use super::{
+    atoms::{self, ConstVolatile, Reference},
+    types::{self, TypeLike},
+};
 use nom::IResult;
 
-// TODO: Add a function signature parser that parses a parameter list followed
-//       by optional cv qualifiers, ref-qualification and noexcept. Expose this
-//       publicly and make function_parameters private. Add a test.
+/// Parser recognizing a function signature (parameters + qualifiers)
+pub fn function_signature(s: &str) -> IResult<&str, FunctionSignature> {
+    use nom::{
+        character::complete::space0,
+        combinator::{map, opt},
+        sequence::{preceded, tuple},
+    };
+    let cv = preceded(space0, atoms::cv);
+    let reference = preceded(space0, atoms::reference);
+    let noexcept_opt = preceded(space0, opt(atoms::keyword("noexcept")));
+    map(
+        tuple((function_parameters, cv, reference, noexcept_opt)),
+        |(parameters, cv, reference, noexcept_opt)| FunctionSignature {
+            parameters,
+            cv,
+            reference,
+            noexcept: noexcept_opt.is_some(),
+        },
+    )(s)
+}
+//
+/// Function signature
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct FunctionSignature<'source> {
+    /// Parameter types
+    parameters: Box<[TypeLike<'source>]>,
+
+    /// CV qualifiers
+    cv: ConstVolatile,
+
+    /// Reference qualifiers
+    reference: Reference,
+
+    /// noexcept qualifier
+    noexcept: bool,
+}
 
 /// Parser recognizing a set of function parameters
-pub fn function_parameters(s: &str) -> IResult<&str, Box<[TypeLike]>> {
+fn function_parameters(s: &str) -> IResult<&str, Box<[TypeLike]>> {
     use nom::{
         character::complete::{char, space0},
         combinator::map,
         multi::separated_list0,
         sequence::{delimited, pair},
     };
-    let arguments = separated_list0(pair(char(','), space0), function_parameter);
-    let parameters = delimited(char('('), arguments, pair(space0, char(')')));
-    map(parameters, |p| p.into_boxed_slice())(s)
+    let parameters = separated_list0(pair(char(','), space0), function_parameter);
+    let parameter_set = delimited(char('('), parameters, pair(space0, char(')')));
+    map(parameter_set, |p| p.into_boxed_slice())(s)
 }
 
 /// Parser recognizing a single function parameter
@@ -38,6 +74,77 @@ fn function_parameter(s: &str) -> IResult<&str, TypeLike> {
 mod tests {
     use super::super::tests::force_parse_type;
     use super::*;
+
+    #[test]
+    fn function_signature() {
+        assert_eq!(
+            super::function_signature("()"),
+            Ok(("", FunctionSignature::default()))
+        );
+        assert_eq!(
+            super::function_signature("() const"),
+            Ok((
+                "",
+                FunctionSignature {
+                    cv: ConstVolatile::CONST,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() &&"),
+            Ok((
+                "",
+                FunctionSignature {
+                    reference: Reference::RValue,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() noexcept"),
+            Ok((
+                "",
+                FunctionSignature {
+                    noexcept: true,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() volatile &"),
+            Ok((
+                "",
+                FunctionSignature {
+                    cv: ConstVolatile::VOLATILE,
+                    reference: Reference::LValue,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() volatile const noexcept"),
+            Ok((
+                "",
+                FunctionSignature {
+                    cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
+                    noexcept: true,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() && noexcept"),
+            Ok((
+                "",
+                FunctionSignature {
+                    reference: Reference::RValue,
+                    noexcept: true,
+                    ..Default::default()
+                }
+            ))
+        );
+    }
 
     #[test]
     fn function_parameter() {

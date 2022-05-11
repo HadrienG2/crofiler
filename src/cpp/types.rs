@@ -1,8 +1,9 @@
 //! Types and other entities that follow the type grammar
 
 use super::{
-    atoms::{self, ConstVolatile},
-    functions, id_expression, IdExpression,
+    atoms::{self, ConstVolatile, Reference},
+    functions::{self, FunctionSignature},
+    id_expression, IdExpression,
 };
 use nom::IResult;
 
@@ -46,33 +47,31 @@ fn type_like_impl(
     inner_id: impl Fn(&str) -> IResult<&str, IdExpression>,
 ) -> IResult<&str, TypeLike> {
     use nom::{
-        bytes::complete::tag,
         character::complete::{char, space0, space1},
         combinator::{map, opt},
-        multi::{many0, many1_count},
+        multi::many0,
         sequence::{pair, preceded, terminated, tuple},
     };
     let bottom_cv_opt = opt(terminated(atoms::cv, space1));
-    let pointer_opt = preceded(pair(space0, char('*')), opt(preceded(space0, atoms::cv)));
-    let pointer = map(pointer_opt, |cv| cv.unwrap_or_default());
+    let pointer = preceded(pair(space0, char('*')), preceded(space0, atoms::cv));
     let pointers = many0(pointer);
-    let num_refs_opt = opt(preceded(space0, many1_count(char('&'))));
-    let function_parameters = preceded(space0, opt(functions::function_parameters));
+    let reference = preceded(space0, atoms::reference);
+    let function_signature = preceded(space0, opt(functions::function_signature));
     let tuple = tuple((
         bottom_cv_opt,
         inner_id,
         pointers,
-        num_refs_opt,
-        function_parameters,
+        reference,
+        function_signature,
     ));
     map(
-        preceded(opt(pair(tag("typename"), space1)), tuple),
-        |(bottom_cv_opt, bottom_id, pointers, num_refs_opt, function_parameters)| TypeLike {
+        preceded(opt(pair(atoms::keyword("typename"), space1)), tuple),
+        |(bottom_cv_opt, bottom_id, pointers, reference, function_signature)| TypeLike {
             bottom_cv: bottom_cv_opt.unwrap_or_default(),
             bottom_id,
             pointers: pointers.into_boxed_slice(),
-            num_references: num_refs_opt.unwrap_or_default() as u8,
-            function_parameters,
+            reference,
+            function_signature,
         },
     )(s)
 }
@@ -89,11 +88,11 @@ pub struct TypeLike<'source> {
     /// Layers of pointer indirection (* const * volatile...)
     pointers: Box<[ConstVolatile]>,
 
-    /// Number of final references between 0 (no reference) and 2 (rvalue)
-    num_references: u8,
+    /// Reference qualifiers
+    reference: Reference,
 
-    /// Function parameters (for function pointers)
-    function_parameters: Option<Box<[TypeLike<'source>]>>,
+    /// Function signature (for function pointers)
+    function_signature: Option<FunctionSignature<'source>>,
 }
 
 #[cfg(test)]
@@ -177,7 +176,7 @@ mod tests {
                 TypeLike {
                     bottom_cv: ConstVolatile::CONST,
                     bottom_id: IdExpression::from("anything"),
-                    num_references: 2,
+                    reference: Reference::RValue,
                     ..Default::default()
                 }
             ))
@@ -191,7 +190,7 @@ mod tests {
                 TypeLike {
                     bottom_id: IdExpression::from("stuff"),
                     pointers: vec![ConstVolatile::VOLATILE, ConstVolatile::CONST].into(),
-                    num_references: 1,
+                    reference: Reference::LValue,
                     ..Default::default()
                 }
             ))
@@ -204,7 +203,7 @@ mod tests {
                 "",
                 TypeLike {
                     bottom_id: IdExpression::from("void"),
-                    function_parameters: Some(vec![].into()),
+                    function_signature: Some(FunctionSignature::default()),
                     ..Default::default()
                 }
             ))

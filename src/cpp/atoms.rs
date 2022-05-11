@@ -10,17 +10,6 @@ pub fn end_of_string(s: &str) -> IResult<&str, ()> {
     map(eof, std::mem::drop)(s)
 }
 
-/// Parser for C++ identifiers
-pub fn identifier(s: &str) -> IResult<&str, &str> {
-    use nom::{
-        character::complete::satisfy, combinator::recognize, multi::many0_count, sequence::pair,
-    };
-    recognize(pair(
-        satisfy(|c| c.is_xid_start() || c == '_'),
-        many0_count(satisfy(UnicodeXID::is_xid_continue)),
-    ))(s)
-}
-
 /// Parser recognizing the end of an identifier, without consuming it
 fn end_of_identifier(s: &str) -> IResult<&str, ()> {
     use nom::{
@@ -34,6 +23,23 @@ fn end_of_identifier(s: &str) -> IResult<&str, ()> {
     )))(s)
 }
 
+/// Parser recognizing a C++ keyword
+pub fn keyword(word: &str) -> impl FnMut(&str) -> IResult<&str, ()> + '_ {
+    use nom::{bytes::complete::tag, combinator::map, sequence::pair};
+    move |s| map(pair(tag(word), end_of_identifier), std::mem::drop)(s)
+}
+
+/// Parser recognizing any valid C++ identifier
+pub fn identifier(s: &str) -> IResult<&str, &str> {
+    use nom::{
+        character::complete::satisfy, combinator::recognize, multi::many0_count, sequence::pair,
+    };
+    recognize(pair(
+        satisfy(|c| c.is_xid_start() || c == '_'),
+        many0_count(satisfy(UnicodeXID::is_xid_continue)),
+    ))(s)
+}
+
 /// Parser for C++ integer literals
 pub use nom::character::complete::i128 as integer_literal;
 
@@ -41,30 +47,26 @@ pub use nom::character::complete::i128 as integer_literal;
 pub fn cv(s: &str) -> IResult<&str, ConstVolatile> {
     use nom::{
         branch::alt,
-        bytes::complete::tag,
         character::complete::space1,
         combinator::{map, opt},
-        sequence::{pair, preceded, terminated},
+        sequence::{pair, preceded},
     };
     let const_ = || {
-        map(tag("const"), |_| ConstVolatile {
+        map(keyword("const"), |_| ConstVolatile {
             is_const: true,
             is_volatile: false,
         })
     };
     let volatile = || {
-        map(tag("volatile"), |_| ConstVolatile {
+        map(keyword("volatile"), |_| ConstVolatile {
             is_const: false,
             is_volatile: true,
         })
     };
-    let cv = terminated(
-        opt(alt((
-            pair(const_(), opt(preceded(space1, volatile()))),
-            pair(volatile(), opt(preceded(space1, const_()))),
-        ))),
-        end_of_identifier,
-    );
+    let cv = opt(alt((
+        pair(const_(), opt(preceded(space1, volatile()))),
+        pair(volatile(), opt(preceded(space1, const_()))),
+    )));
     map(cv, |opt_cv| {
         let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
         let cv2 = opt_cv2.unwrap_or_default();
@@ -106,6 +108,37 @@ impl BitOr for ConstVolatile {
     }
 }
 
+/// Parser for reference signs
+pub fn reference(s: &str) -> IResult<&str, Reference> {
+    use nom::{character::complete::char, combinator::map_opt, multi::many0_count};
+    let num_refs = many0_count(char('&'));
+    map_opt(num_refs, |num| match num {
+        0 => Some(Reference::None),
+        1 => Some(Reference::LValue),
+        2 => Some(Reference::RValue),
+        _ => None,
+    })(s)
+}
+//
+/// Reference signs
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Reference {
+    /// No reference signs
+    None,
+
+    /// lvalue reference = 1 reference sign
+    LValue,
+
+    /// rvalue reference = 2 reference signs
+    RValue,
+}
+//
+impl Default for Reference {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// Parser recognizing primitive types inherited from C, which can have spaces
 /// in their name
 ///
@@ -122,13 +155,13 @@ pub fn legacy_primitive(s: &str) -> IResult<&str, &str> {
         branch::alt,
         bytes::complete::tag,
         character::complete::space1,
-        combinator::{opt, recognize},
+        combinator::{map, opt, recognize},
         multi::separated_list1,
         sequence::{pair, terminated},
     };
-    let signedness = recognize(pair(opt(tag("un")), tag("signed")));
-    let size = alt((tag("short"), tag("long")));
-    let base = alt((tag("int"), tag("char"), tag("double")));
+    let signedness = map(pair(opt(tag("un")), keyword("signed")), std::mem::drop);
+    let size = alt((keyword("short"), keyword("long")));
+    let base = alt((keyword("int"), keyword("char"), keyword("double")));
     let anything = alt((signedness, size, base));
     terminated(
         recognize(separated_list1(space1, anything)),
@@ -186,15 +219,20 @@ mod tests {
     }
 
     #[test]
-    fn identifier() {
-        const ID: &str = "_abcd_1234";
-        assert_eq!(super::identifier(ID), Ok(("", ID)));
-    }
-
-    #[test]
     fn end_of_identifier() {
         assert_eq!(super::end_of_identifier(""), Ok(("", ())));
         assert_eq!(super::end_of_identifier("+"), Ok(("+", ())));
+    }
+
+    #[test]
+    fn keyword() {
+        assert_eq!(super::keyword("abc")("abc"), Ok(("", ())));
+    }
+
+    #[test]
+    fn identifier() {
+        const ID: &str = "_abcd_1234";
+        assert_eq!(super::identifier(ID), Ok(("", ID)));
     }
 
     #[test]
@@ -217,6 +255,13 @@ mod tests {
         let const_volatile = ConstVolatile::CONST | ConstVolatile::VOLATILE;
         assert_eq!(super::cv("const volatile"), Ok(("", const_volatile)));
         assert_eq!(super::cv("volatile const"), Ok(("", const_volatile)));
+    }
+
+    #[test]
+    fn reference() {
+        assert_eq!(super::reference(""), Ok(("", Reference::None)));
+        assert_eq!(super::reference("&"), Ok(("", Reference::LValue)));
+        assert_eq!(super::reference("&&"), Ok(("", Reference::RValue)));
     }
 
     #[test]

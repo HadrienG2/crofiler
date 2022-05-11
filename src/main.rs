@@ -88,10 +88,9 @@ fn main() {
             num_entities += 1;
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
-                other => {
+                _other => {
                     if bad_entities < MAX_DISPLAY {
-                        println!("- {e:?}");
-                        println!("  -> {other:?}");
+                        println!("- {e}");
                     }
                     bad_entities += 1;
                 }
