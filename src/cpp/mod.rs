@@ -8,10 +8,11 @@ mod types;
 use nom::Parser;
 use nom_supreme::ParserExt;
 
+// TODO: Keep this up to date over time
 pub use self::{
-    atoms::{ConstVolatile, Lambda},
+    atoms::Lambda,
     templates::{TemplatableId, TemplateParameter},
-    types::TypeLike,
+    types::{ConstVolatile, TypeLike},
 };
 
 // FIXME: Remove once done debugging

@@ -1,8 +1,8 @@
 //! Function-related parsing
 
 use super::{
-    atoms::{self, ConstVolatile, Reference},
-    types::{self, TypeLike},
+    atoms::{self, Reference},
+    types::{self, ConstVolatile, TypeLike},
     IResult,
 };
 use nom::Parser;
@@ -15,7 +15,7 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
         combinator::opt,
         sequence::{preceded, tuple},
     };
-    let cv = preceded(space0, atoms::cv);
+    let cv = preceded(space0, types::cv);
     let reference = preceded(space0, atoms::reference);
     let noexcept_opt = preceded(space0, opt(atoms::keyword("noexcept")));
     tuple((function_parameters, cv, reference, noexcept_opt))

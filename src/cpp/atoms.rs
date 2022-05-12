@@ -3,7 +3,7 @@
 use super::IResult;
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{ops::BitOr, path::Path};
+use std::path::Path;
 use unicode_xid::UnicodeXID;
 
 /// Parser recognizing the end of the input string
@@ -38,65 +38,6 @@ pub fn identifier(s: &str) -> IResult<&str> {
 /// Parser recognizing C++ integer literals
 pub use nom::character::complete::i128 as integer_literal;
 
-/// Parser recognizing CV qualifiers
-pub fn cv(s: &str) -> IResult<ConstVolatile> {
-    use nom::{character::complete::space1, combinator::opt, sequence::preceded};
-    let const_ = || {
-        keyword("const").value(ConstVolatile {
-            is_const: true,
-            is_volatile: false,
-        })
-    };
-    let volatile = || {
-        keyword("volatile").value(ConstVolatile {
-            is_const: false,
-            is_volatile: true,
-        })
-    };
-    opt((const_().and(opt(preceded(space1, volatile()))))
-        .or(volatile().and(opt(preceded(space1, const_())))))
-    .map(|opt_cv| {
-        let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
-        let cv2 = opt_cv2.unwrap_or_default();
-        cv1 | cv2
-    })
-    .parse(s)
-}
-//
-/// CV qualifiers
-#[derive(Default, Debug, PartialEq, Clone, Copy)]
-pub struct ConstVolatile {
-    /// Const qualifier
-    is_const: bool,
-
-    /// Volatile qualifier
-    is_volatile: bool,
-}
-//
-impl ConstVolatile {
-    /// Lone const qualifier
-    pub const CONST: ConstVolatile = ConstVolatile {
-        is_const: true,
-        is_volatile: false,
-    };
-
-    /// Lone volatile qualifier
-    pub const VOLATILE: ConstVolatile = ConstVolatile {
-        is_const: false,
-        is_volatile: true,
-    };
-}
-//
-impl BitOr for ConstVolatile {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        Self {
-            is_const: self.is_const | rhs.is_const,
-            is_volatile: self.is_volatile | rhs.is_volatile,
-        }
-    }
-}
-
 /// Parser recognizing reference qualifiers
 pub fn reference(s: &str) -> IResult<Reference> {
     use nom::{character::complete::char, combinator::map_opt, multi::many0_count};
@@ -126,35 +67,6 @@ impl Default for Reference {
     fn default() -> Self {
         Self::None
     }
-}
-
-/// Parser recognizing primitive types inherited from C, which can have spaces
-/// in their name
-///
-/// This is not a full parser for C++ primitive types, as most of them can be
-/// parsed with the regular identifier logic, and we do not need to single out
-/// primitives in our processing.
-///
-/// It will also accept a bunch of types that are invalid from the point of view
-/// of the C++ grammar, such as "long long short", for the sake of simplicity:
-/// clang should not normally emit these, so we don't really care about
-/// processing them right.
-pub fn legacy_primitive(s: &str) -> IResult<&str> {
-    use nom::{character::complete::space1, combinator::opt, multi::many0_count};
-    use nom_supreme::tag::complete::tag;
-
-    fn anything(s: &str) -> IResult<()> {
-        let signedness = opt(tag("un")).and(keyword("signed")).value(());
-        let size = keyword("short").or(keyword("long"));
-        let base = keyword("int").or(keyword("char")).or(keyword("double"));
-        signedness.or(size).or(base).parse(s)
-    }
-
-    // This is an allocation-free alternative to
-    // separated_list1(space1, anything).recognize()
-    (anything.and(many0_count(space1.and(anything))))
-        .recognize()
-        .parse(s)
 }
 
 /// Parser for clang's <unknown> C++ entity
@@ -239,45 +151,10 @@ mod tests {
     }
 
     #[test]
-    fn cv() {
-        assert_eq!(super::cv(""), Ok(("", ConstVolatile::default())));
-        assert_eq!(super::cv("const"), Ok(("", ConstVolatile::CONST)));
-        assert_eq!(super::cv("volatile"), Ok(("", ConstVolatile::VOLATILE)));
-        let const_volatile = ConstVolatile::CONST | ConstVolatile::VOLATILE;
-        assert_eq!(super::cv("const volatile"), Ok(("", const_volatile)));
-        assert_eq!(super::cv("volatile const"), Ok(("", const_volatile)));
-    }
-
-    #[test]
     fn reference() {
         assert_eq!(super::reference(""), Ok(("", Reference::None)));
         assert_eq!(super::reference("&"), Ok(("", Reference::LValue)));
         assert_eq!(super::reference("&&"), Ok(("", Reference::RValue)));
-    }
-
-    #[test]
-    fn legacy_primitive() {
-        let test_legacy_primitive = |s| assert_eq!(super::legacy_primitive(s), Ok(("", s)));
-
-        test_legacy_primitive("short int");
-        test_legacy_primitive("unsigned short int");
-
-        test_legacy_primitive("int");
-        test_legacy_primitive("unsigned int");
-
-        test_legacy_primitive("long int");
-        test_legacy_primitive("unsigned long int");
-
-        test_legacy_primitive("long long int");
-        test_legacy_primitive("unsigned long long int");
-        test_legacy_primitive("long int unsigned long");
-
-        test_legacy_primitive("char");
-        test_legacy_primitive("signed char");
-        test_legacy_primitive("unsigned char");
-
-        test_legacy_primitive("double");
-        test_legacy_primitive("long double");
     }
 
     #[test]
