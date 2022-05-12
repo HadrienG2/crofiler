@@ -91,7 +91,7 @@ fn main() {
                 Ok(("", _)) => {}
                 Err(error) => {
                     if bad_entities < MAX_ENTITY_DISPLAY {
-                        println!("- {e}");
+                        println!("- {}({e})", activity_trace.activity().name());
                         if bad_entities < MAX_ERROR_DISPLAY {
                             println!("  -> {error:#?}");
                         }
