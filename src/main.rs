@@ -104,9 +104,10 @@ fn main() {
     }
     if bad_entities >= MAX_ENTITY_DISPLAY {
         println!(
-            "- ... and more, for a total of {}/{} badly parsed entities ...",
+            "- ... and more, for a total of {}/{} badly parsed entities ({:.2}% to go) ...",
             bad_entities - MAX_ENTITY_DISPLAY,
-            num_entities
+            num_entities,
+            (bad_entities as f32) / (num_entities as f32) * 100.0
         );
     }
 
