@@ -1,13 +1,15 @@
 //! Types and other entities that follow the type grammar
 
-use super::{
-    atoms::{self, Reference},
+pub mod qualifiers;
+
+use self::qualifiers::{ConstVolatile, Reference};
+use crate::cpp::{
+    atoms,
     functions::{self, FunctionSignature},
     id_expression, IResult, IdExpression,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::ops::BitOr;
 
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context), given a parser for the separator that is
@@ -46,10 +48,10 @@ fn type_like_impl(s: &str, inner_id: impl Fn(&str) -> IResult<IdExpression>) -> 
         multi::many0,
         sequence::{preceded, tuple},
     };
-    let bottom_cv = cv.terminated(space0);
-    let pointer = preceded(space0.and(char('*')).and(space0), cv);
+    let bottom_cv = qualifiers::cv.terminated(space0);
+    let pointer = preceded(space0.and(char('*')).and(space0), qualifiers::cv);
     let pointers = many0(pointer);
-    let reference = preceded(space0, atoms::reference);
+    let reference = preceded(space0, qualifiers::reference);
     let function_signature = preceded(space0, opt(functions::function_signature));
     let tuple = tuple((bottom_cv, inner_id, pointers, reference, function_signature));
     preceded(opt(atoms::keyword("typename").and(space1)), tuple)
@@ -82,65 +84,6 @@ pub struct TypeLike<'source> {
 
     /// Function signature (for function pointers)
     function_signature: Option<FunctionSignature<'source>>,
-}
-
-/// Parser recognizing CV qualifiers
-pub fn cv(s: &str) -> IResult<ConstVolatile> {
-    use nom::{character::complete::space1, combinator::opt, sequence::preceded};
-    let const_ = || {
-        atoms::keyword("const").value(ConstVolatile {
-            is_const: true,
-            is_volatile: false,
-        })
-    };
-    let volatile = || {
-        atoms::keyword("volatile").value(ConstVolatile {
-            is_const: false,
-            is_volatile: true,
-        })
-    };
-    opt((const_().and(opt(preceded(space1, volatile()))))
-        .or(volatile().and(opt(preceded(space1, const_())))))
-    .map(|opt_cv| {
-        let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
-        let cv2 = opt_cv2.unwrap_or_default();
-        cv1 | cv2
-    })
-    .parse(s)
-}
-//
-/// CV qualifiers
-#[derive(Default, Debug, PartialEq, Clone, Copy)]
-pub struct ConstVolatile {
-    /// Const qualifier
-    is_const: bool,
-
-    /// Volatile qualifier
-    is_volatile: bool,
-}
-//
-impl ConstVolatile {
-    /// Lone const qualifier
-    pub const CONST: ConstVolatile = ConstVolatile {
-        is_const: true,
-        is_volatile: false,
-    };
-
-    /// Lone volatile qualifier
-    pub const VOLATILE: ConstVolatile = ConstVolatile {
-        is_const: false,
-        is_volatile: true,
-    };
-}
-//
-impl BitOr for ConstVolatile {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        Self {
-            is_const: self.is_const | rhs.is_const,
-            is_volatile: self.is_volatile | rhs.is_volatile,
-        }
-    }
 }
 
 /// Parser recognizing primitive types inherited from C, which can have spaces
@@ -287,16 +230,6 @@ mod tests {
                 }
             ))
         );
-    }
-
-    #[test]
-    fn cv() {
-        assert_eq!(super::cv(""), Ok(("", ConstVolatile::default())));
-        assert_eq!(super::cv("const"), Ok(("", ConstVolatile::CONST)));
-        assert_eq!(super::cv("volatile"), Ok(("", ConstVolatile::VOLATILE)));
-        let const_volatile = ConstVolatile::CONST | ConstVolatile::VOLATILE;
-        assert_eq!(super::cv("const volatile"), Ok(("", const_volatile)));
-        assert_eq!(super::cv("volatile const"), Ok(("", const_volatile)));
     }
 
     #[test]

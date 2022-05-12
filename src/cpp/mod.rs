@@ -12,7 +12,10 @@ use nom_supreme::ParserExt;
 pub use self::{
     atoms::Lambda,
     templates::{TemplatableId, TemplateParameter},
-    types::{ConstVolatile, TypeLike},
+    types::{
+        qualifiers::{ConstVolatile, Reference},
+        TypeLike,
+    },
 };
 
 // FIXME: Remove once done debugging

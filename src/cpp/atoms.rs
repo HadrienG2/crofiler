@@ -38,37 +38,6 @@ pub fn identifier(s: &str) -> IResult<&str> {
 /// Parser recognizing C++ integer literals
 pub use nom::character::complete::i128 as integer_literal;
 
-/// Parser recognizing reference qualifiers
-pub fn reference(s: &str) -> IResult<Reference> {
-    use nom::{character::complete::char, combinator::map_opt, multi::many0_count};
-    let num_refs = many0_count(char('&'));
-    map_opt(num_refs, |num| match num {
-        0 => Some(Reference::None),
-        1 => Some(Reference::LValue),
-        2 => Some(Reference::RValue),
-        _ => None,
-    })(s)
-}
-//
-/// Reference signs
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Reference {
-    /// No reference signs
-    None,
-
-    /// lvalue reference = 1 reference sign
-    LValue,
-
-    /// rvalue reference = 2 reference signs
-    RValue,
-}
-//
-impl Default for Reference {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Parser for clang's <unknown> C++ entity
 pub fn unknown_entity(s: &str) -> IResult<()> {
     use nom_supreme::tag::complete::tag;
@@ -148,13 +117,6 @@ mod tests {
         }
         test_integer_literal(i64::MIN);
         test_integer_literal(u64::MAX);
-    }
-
-    #[test]
-    fn reference() {
-        assert_eq!(super::reference(""), Ok(("", Reference::None)));
-        assert_eq!(super::reference("&"), Ok(("", Reference::LValue)));
-        assert_eq!(super::reference("&&"), Ok(("", Reference::RValue)));
     }
 
     #[test]
