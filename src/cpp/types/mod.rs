@@ -6,7 +6,9 @@ use self::qualifiers::{ConstVolatile, PointersReference};
 use crate::cpp::{
     atoms,
     functions::{self, FunctionSignature},
-    id_expression, IResult, IdExpression,
+    id_expression,
+    values::{self, ValueLike},
+    IResult, IdExpression,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -24,8 +26,8 @@ pub fn type_like(
         legacy_primitive.map(IdExpression::from).parse(s)
     }
     let legacy_id = |s| type_like_impl(s, legacy_id);
-    (id_expression.terminated(peek(next_delimiter)))
-        .or(legacy_id.terminated(peek(next_delimiter)))
+    (legacy_id.terminated(peek(next_delimiter)))
+        .or(id_expression.terminated(peek(next_delimiter)))
         .parse(s)
 }
 
@@ -41,7 +43,10 @@ pub fn type_like(
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision. This is what the
 /// higher-level type_like parser does.
-fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) -> IResult<TypeLike> {
+fn type_like_impl(
+    s: &str,
+    bottom_id: impl Fn(&str) -> IResult<IdExpression> + Copy,
+) -> IResult<TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
         combinator::{opt, verify},
@@ -52,8 +57,16 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     // C++ grammar requires that the bottom type name (along with its cv
     // qualifiers) be preceded with "typename" in some circumstances.
     let typename = opt(atoms::keyword("typename").and(space1));
-    let bottom_cv = qualifiers::cv.terminated(space0);
-    let bottom_type = preceded(typename, bottom_cv.and(bottom_id));
+    let bottom_type = delimited(
+        typename,
+        tuple((
+            qualifiers::cv.terminated(space0),
+            bottom_id,
+            preceded(space0, qualifiers::cv),
+        ))
+        .map(|(cv1, bottom_id, cv2)| (cv1 | cv2, bottom_id)),
+        space0,
+    );
 
     // Pointer and reference qualifiers must be surrounded with parentheses when
     // they are used to qualify function signatures or C-style arrays.
@@ -71,16 +84,24 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     );
     let pointers_reference = funcarr_pointers_reference.or(pointers_reference);
 
-    // Putting it all together...
+    // Handle function pointers and C-style arrays
     let function_signature = preceded(space0, opt(functions::function_signature));
-    let tuple = tuple((bottom_type, pointers_reference, function_signature));
+    let array = opt(delimited(
+        space0.and(char('[')).and(space0),
+        opt(values::value_like),
+        space0.and(char(']')),
+    ));
+
+    // Put it all together
+    let tuple = tuple((bottom_type, pointers_reference, function_signature, array));
     preceded(opt(atoms::keyword("typename").and(space1)), tuple)
         .map(
-            |((bottom_cv, bottom_id), pointers_reference, function_signature)| TypeLike {
+            |((bottom_cv, bottom_id), pointers_reference, function_signature, array)| TypeLike {
                 bottom_cv,
                 bottom_id,
                 pointers_reference,
                 function_signature,
+                array,
             },
         )
         .parse(s)
@@ -100,6 +121,12 @@ pub struct TypeLike<'source> {
 
     /// Function signature (for function pointers)
     function_signature: Option<FunctionSignature<'source>>,
+
+    /// C-style array
+    ///
+    /// There are two layers of option because there may or may not be array
+    /// brackets, and within them, there may or may not be an array length.
+    array: Option<Option<ValueLike>>,
 }
 
 /// Parser recognizing primitive types inherited from C, which can have spaces
@@ -136,6 +163,7 @@ pub fn legacy_primitive(s: &str) -> IResult<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     fn whole_type(s: &str) -> IResult<TypeLike> {
         super::type_like(s, atoms::end_of_string)
@@ -167,7 +195,7 @@ mod tests {
             ))
         );
 
-        // CV qualifiers
+        // CV qualifiers before
         assert_eq!(
             whole_type("const volatile unsigned"),
             Ok((
@@ -175,6 +203,19 @@ mod tests {
                 TypeLike {
                     bottom_cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
                     bottom_id: IdExpression::from("unsigned"),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // CV qualifiers after
+        assert_eq!(
+            whole_type("char const"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::CONST,
+                    bottom_id: IdExpression::from("char"),
                     ..Default::default()
                 }
             ))
@@ -217,6 +258,60 @@ mod tests {
                     bottom_id: IdExpression::from("void"),
                     pointers_reference: qualifiers::pointers_reference("*").unwrap().1,
                     function_signature: Some(FunctionSignature::default()),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Basic array
+        assert_eq!(
+            whole_type("T[4]"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_id: IdExpression::from("T"),
+                    array: Some(Some(4)),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Array of unknown length
+        assert_eq!(
+            whole_type("T[]"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_id: IdExpression::from("T"),
+                    array: Some(None),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Array of pointers and references
+        assert_eq!(
+            whole_type("char const (*)[7]"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::CONST,
+                    bottom_id: IdExpression::from("char"),
+                    pointers_reference: qualifiers::pointers_reference("*").unwrap().1,
+                    array: Some(Some(7)),
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            whole_type("char const (&)[7]"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_cv: ConstVolatile::CONST,
+                    bottom_id: IdExpression::from("char"),
+                    pointers_reference: qualifiers::pointers_reference("&").unwrap().1,
+                    array: Some(Some(7)),
                     ..Default::default()
                 }
             ))

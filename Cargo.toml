@@ -16,3 +16,5 @@ unicode-width = "0.1"
 unicode-xid = "0.2"
 nom = "7.1"
 nom-supreme = "0.8"
+[dev-dependencies]
+pretty_assertions = "1.2"

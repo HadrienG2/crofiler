@@ -74,8 +74,9 @@ fn function_parameter(s: &str) -> IResult<TypeLike> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::force_parse_type;
     use super::*;
+    use crate::cpp::tests::force_parse_type;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn function_signature() {

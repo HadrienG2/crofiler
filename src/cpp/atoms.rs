@@ -84,6 +84,7 @@ type Col = u32;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn end_of_string() {

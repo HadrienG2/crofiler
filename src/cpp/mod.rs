@@ -4,6 +4,7 @@ mod atoms;
 mod functions;
 mod templates;
 mod types;
+mod values;
 
 use nom::Parser;
 use nom_supreme::ParserExt;

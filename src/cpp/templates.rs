@@ -1,8 +1,9 @@
 //! Things that could be templates
 
-use super::{
+use crate::cpp::{
     atoms,
     types::{self, TypeLike},
+    values::{self, ValueLike},
     IResult,
 };
 use nom::Parser;
@@ -56,23 +57,23 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
         space0.and(char(',').or(char('>'))).value(()).parse(s)
     }
     let type_like = (|s| types::type_like(s, delimiter)).map(TemplateParameter::TypeLike);
-    let integer_literal = atoms::integer_literal.map(TemplateParameter::Integer);
+    let integer_literal = values::value_like.map(TemplateParameter::ValueLike);
     type_like.or(integer_literal).parse(s)
 }
 //
 /// Template parameter
 #[derive(Debug, PartialEq, Clone)]
 pub enum TemplateParameter<'source> {
-    /// Integer literal
-    Integer(i128),
-
-    /// Type or value looking close enough to
+    /// Type or value looking close enough to a type
     TypeLike(TypeLike<'source>),
+
+    /// Value
+    ValueLike(ValueLike),
 }
 //
-impl From<i128> for TemplateParameter<'_> {
-    fn from(i: i128) -> Self {
-        Self::Integer(i)
+impl From<ValueLike> for TemplateParameter<'_> {
+    fn from(v: ValueLike) -> Self {
+        Self::ValueLike(v)
     }
 }
 //
@@ -84,8 +85,9 @@ impl<'source> From<TypeLike<'source>> for TemplateParameter<'source> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::force_parse_type;
     use super::*;
+    use crate::cpp::tests::force_parse_type;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn template_parameter() {
@@ -100,7 +102,7 @@ mod tests {
         }
         test_template_parameter(
             &(i64::MIN.to_string()),
-            TemplateParameter::Integer(i64::MIN as _),
+            TemplateParameter::ValueLike(i64::MIN.into()),
         );
         fn test_type_parameter(s: &str) {
             test_template_parameter(s, force_parse_type(s).into());
