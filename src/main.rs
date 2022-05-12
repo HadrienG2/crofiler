@@ -87,11 +87,14 @@ fn main() {
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
             num_entities += 1;
+            /*if e.contains("(lambda") && e.contains(")::") {
+                println!("- Oh look a lambda with nested stuff ! {}", e);
+            }*/
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
                 Err(error) => {
                     if bad_entities < MAX_ENTITY_DISPLAY {
-                        println!("- {}({e})", activity_trace.activity().name());
+                        println!("- {}(\"{e}\")", activity_trace.activity().name());
                         if bad_entities < MAX_ERROR_DISPLAY {
                             println!("  -> {error:#?}");
                         }
