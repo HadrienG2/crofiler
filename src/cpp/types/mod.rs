@@ -2,7 +2,7 @@
 
 pub mod qualifiers;
 
-use self::qualifiers::{ConstVolatile, Reference};
+use self::qualifiers::{ConstVolatile, PointersReference};
 use crate::cpp::{
     atoms,
     functions::{self, FunctionSignature},
@@ -41,26 +41,45 @@ pub fn type_like(
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision. This is what the
 /// higher-level type_like parser does.
-fn type_like_impl(s: &str, inner_id: impl Fn(&str) -> IResult<IdExpression>) -> IResult<TypeLike> {
+fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) -> IResult<TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
-        combinator::opt,
-        multi::many0,
-        sequence::{preceded, tuple},
+        combinator::{opt, verify},
+        sequence::{delimited, preceded, tuple},
     };
+    use qualifiers::pointers_reference;
+
+    // C++ grammar requires that the bottom type name (along with its cv
+    // qualifiers) be preceded with "typename" in some circumstances.
+    let typename = opt(atoms::keyword("typename").and(space1));
     let bottom_cv = qualifiers::cv.terminated(space0);
-    let pointer = preceded(space0.and(char('*')).and(space0), qualifiers::cv);
-    let pointers = many0(pointer);
-    let reference = preceded(space0, qualifiers::reference);
+    let bottom_type = preceded(typename, bottom_cv.and(bottom_id));
+
+    // Pointer and reference qualifiers must be surrounded with parentheses when
+    // they are used to qualify function signatures or C-style arrays.
+    //
+    // This configuration must exclude the empty set of pointer and reference
+    // qualifiers, otherwise, we'll accidentally match function pointers with
+    // no argument like () as an empty set of pointers/references.
+    //
+    // We must also match the parenthesized version first, as otherwise the
+    // unparenthesized pointer/reference matcher will successfully match nothing.
+    let funcarr_pointers_reference = delimited(
+        space0.and(char('(')).and(space0),
+        verify(pointers_reference, |pr| pr != &PointersReference::default()),
+        space0.and(char(')')),
+    );
+    let pointers_reference = funcarr_pointers_reference.or(pointers_reference);
+
+    // Putting it all together...
     let function_signature = preceded(space0, opt(functions::function_signature));
-    let tuple = tuple((bottom_cv, inner_id, pointers, reference, function_signature));
+    let tuple = tuple((bottom_type, pointers_reference, function_signature));
     preceded(opt(atoms::keyword("typename").and(space1)), tuple)
         .map(
-            |(bottom_cv, bottom_id, pointers, reference, function_signature)| TypeLike {
+            |((bottom_cv, bottom_id), pointers_reference, function_signature)| TypeLike {
                 bottom_cv,
                 bottom_id,
-                pointers: pointers.into_boxed_slice(),
-                reference,
+                pointers_reference,
                 function_signature,
             },
         )
@@ -76,11 +95,8 @@ pub struct TypeLike<'source> {
     /// Leftmost id-expression
     bottom_id: IdExpression<'source>,
 
-    /// Layers of pointer indirection (* const * volatile...)
-    pointers: Box<[ConstVolatile]>,
-
-    /// Reference qualifiers
-    reference: Reference,
+    /// Pointer and reference qualifiers
+    pointers_reference: PointersReference,
 
     /// Function signature (for function pointers)
     function_signature: Option<FunctionSignature<'source>>,
@@ -164,55 +180,16 @@ mod tests {
             ))
         );
 
-        // Basic pointer
-        assert_eq!(
-            whole_type("long int long*"),
-            Ok((
-                "",
-                TypeLike {
-                    bottom_id: IdExpression::from("long int long"),
-                    pointers: vec![ConstVolatile::default()].into(),
-                    ..Default::default()
-                }
-            ))
-        );
-
-        // Multiple pointers with CV qualifiers
-        assert_eq!(
-            whole_type("long double*const*"),
-            Ok((
-                "",
-                TypeLike {
-                    bottom_id: IdExpression::from("long double"),
-                    pointers: vec![ConstVolatile::CONST, ConstVolatile::default()].into(),
-                    ..Default::default()
-                }
-            ))
-        );
-
-        // Reference
-        assert_eq!(
-            whole_type("const anything&&"),
-            Ok((
-                "",
-                TypeLike {
-                    bottom_cv: ConstVolatile::CONST,
-                    bottom_id: IdExpression::from("anything"),
-                    reference: Reference::RValue,
-                    ..Default::default()
-                }
-            ))
-        );
-
-        // Mixing references and pointers
+        // Pointer and reference qualifiers
         assert_eq!(
             whole_type("stuff*volatile*const&"),
             Ok((
                 "",
                 TypeLike {
                     bottom_id: IdExpression::from("stuff"),
-                    pointers: vec![ConstVolatile::VOLATILE, ConstVolatile::CONST].into(),
-                    reference: Reference::LValue,
+                    pointers_reference: qualifiers::pointers_reference("*volatile*const&")
+                        .unwrap()
+                        .1,
                     ..Default::default()
                 }
             ))
@@ -225,6 +202,20 @@ mod tests {
                 "",
                 TypeLike {
                     bottom_id: IdExpression::from("void"),
+                    function_signature: Some(FunctionSignature::default()),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Pointer to a function returning a void* pointer
+        assert_eq!(
+            whole_type("void(*)()"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_id: IdExpression::from("void"),
+                    pointers_reference: qualifiers::pointers_reference("*").unwrap().1,
                     function_signature: Some(FunctionSignature::default()),
                     ..Default::default()
                 }

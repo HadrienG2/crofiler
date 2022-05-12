@@ -95,6 +95,34 @@ impl Default for Reference {
     }
 }
 
+/// Parser recognizing pointer + reference qualifiers
+pub fn pointers_reference(s: &str) -> IResult<PointersReference> {
+    use nom::{
+        character::complete::{char, space0},
+        multi::many0,
+        sequence::preceded,
+    };
+    let pointer = preceded(space0.and(char('*')).and(space0), cv);
+    let pointers = many0(pointer).map(Vec::into_boxed_slice);
+    let reference = preceded(space0, reference);
+    (pointers.and(reference))
+        .map(|(pointers, reference)| PointersReference {
+            pointers,
+            reference,
+        })
+        .parse(s)
+}
+//
+/// Pointer and reference qualifiers
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct PointersReference {
+    /// Layers of pointer indirection (* const * volatile...)
+    pointers: Box<[ConstVolatile]>,
+
+    /// Reference qualifiers
+    reference: Reference,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +142,86 @@ mod tests {
         assert_eq!(super::reference(""), Ok(("", Reference::None)));
         assert_eq!(super::reference("&"), Ok(("", Reference::LValue)));
         assert_eq!(super::reference("&&"), Ok(("", Reference::RValue)));
+    }
+
+    #[test]
+    fn pointers_reference() {
+        // Empty set of qualifiers
+        assert_eq!(
+            super::pointers_reference(""),
+            Ok(("", PointersReference::default()))
+        );
+
+        // Lone pointer qualifier
+        assert_eq!(
+            super::pointers_reference("*"),
+            Ok((
+                "",
+                PointersReference {
+                    pointers: vec![ConstVolatile::default()].into(),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Pointer qualifier with cv annotations
+        assert_eq!(
+            super::pointers_reference("* const"),
+            Ok((
+                "",
+                PointersReference {
+                    pointers: vec![ConstVolatile::CONST].into(),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Multiple pointer qualifiers
+        assert_eq!(
+            super::pointers_reference("**"),
+            Ok((
+                "",
+                PointersReference {
+                    pointers: vec![ConstVolatile::default(); 2].into(),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // LValue reference
+        assert_eq!(
+            super::pointers_reference("&"),
+            Ok((
+                "",
+                PointersReference {
+                    reference: Reference::LValue,
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // RValue reference
+        assert_eq!(
+            super::pointers_reference("&&"),
+            Ok((
+                "",
+                PointersReference {
+                    reference: Reference::RValue,
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Pointer and lvalue
+        assert_eq!(
+            super::pointers_reference("*const &"),
+            Ok((
+                "",
+                PointersReference {
+                    pointers: vec![ConstVolatile::CONST].into(),
+                    reference: Reference::LValue,
+                }
+            ))
+        );
     }
 }
