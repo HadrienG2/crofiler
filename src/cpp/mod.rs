@@ -42,16 +42,17 @@ fn unqualified_id_expression(s: &str) -> IResult<UnqualifiedId> {
     //        - Destructors: ~identifier
     //        - Templates: identifier<param...>
     //        - Operators, including conversion operators
-    let scope = scope.map(UnqualifiedId::ScopeLike);
+    let templatable_or_anonymous =
+        templatable_or_anonymous.map(UnqualifiedId::TemplatableOrAnonymous);
     let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
-    scope.or(lambda).parse(s)
+    templatable_or_anonymous.or(lambda).parse(s)
 }
 //
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnqualifiedId<'source> {
-    /// Anything that parses as a scope also parses as an UnqualifiedId, so we
-    /// reuse the scope parsing infrastructure for UnqualifiedIds...
-    ScopeLike(Scope<'source>),
+    /// Templatable identifiers and anonymous entities can appear in
+    /// unqualified-id position
+    TemplatableOrAnonymous(TemplatableOrAnonymous<'source>),
 
     /// A lambda can also appear in unqualified-id position
     Lambda(Lambda<'source>),
@@ -59,46 +60,24 @@ pub enum UnqualifiedId<'source> {
 //
 impl Default for UnqualifiedId<'_> {
     fn default() -> Self {
-        Self::ScopeLike(Scope::default())
+        Self::TemplatableOrAnonymous(TemplatableOrAnonymous::default())
     }
 }
 //
 impl<'source> From<&'source str> for UnqualifiedId<'source> {
     fn from(id: &'source str) -> Self {
-        Self::ScopeLike(Scope::from(id))
+        Self::TemplatableOrAnonymous(TemplatableOrAnonymous::from(id))
     }
 }
 
-/// Parser for scopes (namespaces, classes, and anything else in which
-/// identifiers could possibly be stored).
+/// Parser for scopes
 fn scope(s: &str) -> IResult<Scope> {
-    let templatable_id = templates::templatable_id.map(Scope::TemplatableId);
-    let anonymous = anonymous::anonymous.map(Scope::Anonymous);
-    templatable_id.or(anonymous).parse(s)
+    templatable_or_anonymous(s)
 }
 //
-/// Scope
-#[derive(Clone, Debug, PartialEq)]
-pub enum Scope<'source> {
-    /// Identifier that may have template parameters
-    TemplatableId(TemplatableId<'source>),
-
-    /// Anonymous entity, if present the argument clarifies if this is an
-    /// anonymous class, namespace...
-    Anonymous(Option<&'source str>),
-}
-//
-impl Default for Scope<'_> {
-    fn default() -> Self {
-        Self::TemplatableId(TemplatableId::default())
-    }
-}
-//
-impl<'source> From<&'source str> for Scope<'source> {
-    fn from(id: &'source str) -> Self {
-        Self::TemplatableId(TemplatableId::from(id))
-    }
-}
+/// Scope (namespaces, classes, and anything else to which inner identifiers
+/// could possibly belong).
+pub type Scope<'source> = TemplatableOrAnonymous<'source>;
 
 /// Parser for id-expressions
 fn id_expression(s: &str) -> IResult<IdExpression> {
@@ -135,6 +114,36 @@ impl<'source> From<&'source str> for IdExpression<'source> {
             path: Default::default(),
             id: UnqualifiedId::from(id),
         }
+    }
+}
+
+/// Parser for a templatable identifier or anonymous entity.
+fn templatable_or_anonymous(s: &str) -> IResult<TemplatableOrAnonymous> {
+    let templatable_id = templates::templatable_id.map(TemplatableOrAnonymous::TemplatableId);
+    let anonymous = anonymous::anonymous.map(TemplatableOrAnonymous::Anonymous);
+    templatable_id.or(anonymous).parse(s)
+}
+//
+/// Templatable identifier or anonymous entity
+#[derive(Clone, Debug, PartialEq)]
+pub enum TemplatableOrAnonymous<'source> {
+    /// Identifier that may have template parameters
+    TemplatableId(TemplatableId<'source>),
+
+    /// Anonymous entity, if present the argument clarifies if this is an
+    /// anonymous class, namespace...
+    Anonymous(Option<&'source str>),
+}
+//
+impl Default for TemplatableOrAnonymous<'_> {
+    fn default() -> Self {
+        Self::TemplatableId(TemplatableId::default())
+    }
+}
+//
+impl<'source> From<&'source str> for TemplatableOrAnonymous<'source> {
+    fn from(id: &'source str) -> Self {
+        Self::TemplatableId(TemplatableId::from(id))
     }
 }
 
