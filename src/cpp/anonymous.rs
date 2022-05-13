@@ -52,11 +52,11 @@ type Col = u32;
 /// Parser for other anonymous clang entities following the
 pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
     use nom::{
-        bytes::complete::tag,
         character::complete::char,
         combinator::opt,
         sequence::{delimited, preceded},
     };
+    use nom_supreme::tag::complete::tag;
     delimited(
         tag("(anonymous"),
         opt(preceded(char(' '), atoms::identifier)),
@@ -69,7 +69,7 @@ pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
 /// So far, only anonymous classes and namespaces were seen, but for all I know
 /// there might be others... In any case, if the <something> is specified, it is
 /// reported back as the string argument to this option.
-type AnonymousEntity<'source> = Option<&'source str>;
+pub type AnonymousEntity<'source> = Option<&'source str>;
 
 #[cfg(test)]
 mod tests {

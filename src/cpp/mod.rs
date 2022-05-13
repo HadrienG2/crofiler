@@ -13,9 +13,9 @@ use nom_supreme::ParserExt;
 
 // TODO: Keep this up to date over time
 pub use self::{
-    anonymous::Lambda,
+    anonymous::{AnonymousEntity, Lambda},
     functions::FunctionSignature,
-    id_expressions::{Scope, UnqualifiedId},
+    id_expressions::{IdExpression, Scope, UnqualifiedId},
     templates::TemplateParameter,
     types::{
         qualifiers::{ConstVolatile, Reference},
