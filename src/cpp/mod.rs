@@ -38,12 +38,23 @@ pub fn entity(s: &str) -> IResult<Option<TypeLike>> {
     type_like.or(unknown).parse(s)
 }
 
-// FIXME: Modularize and add tests
 #[cfg(test)]
 pub mod tests {
     use super::*;
 
     pub fn force_parse_type(s: &str) -> TypeLike {
         types::type_like(s, atoms::end_of_string).unwrap().1
+    }
+
+    #[test]
+    fn entity() {
+        // Something that looks like a tyme name
+        assert_eq!(
+            super::entity("type_name"),
+            Ok(("", Some(force_parse_type("type_name"))))
+        );
+
+        // The infamous unknown clang entity
+        assert_eq!(super::entity("<unknown>"), Ok(("", None)));
     }
 }
