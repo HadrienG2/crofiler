@@ -4,6 +4,7 @@ mod anonymous;
 mod atoms;
 mod functions;
 mod id_expressions;
+mod operators;
 mod templates;
 mod types;
 mod values;
