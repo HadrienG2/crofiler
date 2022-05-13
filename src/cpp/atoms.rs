@@ -1,6 +1,6 @@
 //! Atoms from the C++ entity grammar
 
-use super::IResult;
+use crate::cpp::IResult;
 use nom::Parser;
 use nom_supreme::ParserExt;
 use unicode_xid::UnicodeXID;

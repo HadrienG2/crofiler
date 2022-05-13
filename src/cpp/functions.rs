@@ -1,7 +1,7 @@
 //! Function-related parsing
 
 use crate::cpp::{
-    atoms::{self},
+    atoms,
     types::{
         self,
         qualifiers::{self, ConstVolatile, Reference},
