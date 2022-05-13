@@ -1,7 +1,6 @@
 //! Things that could be templates
 
 use crate::cpp::{
-    atoms,
     types::{self, TypeLike},
     values::{self, ValueLike},
     IResult,
@@ -9,36 +8,8 @@ use crate::cpp::{
 use nom::Parser;
 use nom_supreme::ParserExt;
 
-/// Parser recognizing an identifier which may or may not be coupled with
-/// template arguments, i.e. id or id<...>
-pub fn templatable_id(s: &str) -> IResult<TemplatableId> {
-    use nom::combinator::opt;
-    (atoms::identifier.and(opt(template_parameters)))
-        .map(|(id, parameters)| TemplatableId { id, parameters })
-        .parse(s)
-}
-//
-/// Identifier which may or may not have template arguments
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct TemplatableId<'source> {
-    /// Identifier
-    id: &'source str,
-
-    /// Optional template parameters
-    parameters: Option<Box<[TemplateParameter<'source>]>>,
-}
-//
-impl<'source> From<&'source str> for TemplatableId<'source> {
-    fn from(id: &'source str) -> Self {
-        Self {
-            id,
-            parameters: Default::default(),
-        }
-    }
-}
-
 /// Parser recognizing a set of template parameters
-fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
+pub fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
@@ -127,42 +98,6 @@ mod tests {
                     force_parse_type("stuff").into()
                 ]
                 .into()
-            ))
-        );
-    }
-
-    #[test]
-    fn templatable_id() {
-        assert_eq!(
-            super::templatable_id("no_parameters"),
-            Ok((
-                "",
-                TemplatableId {
-                    id: "no_parameters",
-                    parameters: None,
-                }
-            ))
-        );
-        assert_eq!(
-            super::templatable_id("empty_parameters<>"),
-            Ok((
-                "",
-                TemplatableId {
-                    id: "empty_parameters",
-                    parameters: Some(vec![].into()),
-                }
-            ))
-        );
-        assert_eq!(
-            super::templatable_id("A<B, C>"),
-            Ok((
-                "",
-                TemplatableId {
-                    id: "A",
-                    parameters: Some(
-                        vec![force_parse_type("B").into(), force_parse_type("C").into()].into()
-                    )
-                }
             ))
         );
     }

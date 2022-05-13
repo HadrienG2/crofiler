@@ -49,8 +49,11 @@ pub struct Lambda<'source> {
 type Line = u32;
 type Col = u32;
 
-/// Parser for other anonymous entities following the (anonymous <xyz>) grammar
-/// (so far, anonymous classes and namespaces were seen, there might be others)
+/// Parser for other anonymous clang entities following the
+/// "\(anonymous( <identifier>)?\)" pattern.
+///
+/// So far, only anonymous classes and namespaces were seen, but for all I know
+/// there might be others...
 pub fn anonymous(s: &str) -> IResult<Option<&str>> {
     use nom::{
         bytes::complete::tag,

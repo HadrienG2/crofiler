@@ -14,7 +14,7 @@ use nom_supreme::ParserExt;
 pub use self::{
     anonymous::Lambda,
     functions::FunctionSignature,
-    templates::{TemplatableId, TemplateParameter},
+    templates::TemplateParameter,
     types::{
         qualifiers::{ConstVolatile, Reference},
         TypeLike,
@@ -36,9 +36,37 @@ pub fn entity(s: &str) -> IResult<Option<TypeLike>> {
     type_like.or(unknown).parse(s)
 }
 
+/// Parser recognizing an identifier which may or may not be coupled with
+/// template arguments, i.e. id or id<...>
+pub fn templatable_id(s: &str) -> IResult<TemplatableId> {
+    use nom::combinator::opt;
+    (atoms::identifier.and(opt(templates::template_parameters)))
+        .map(|(id, parameters)| TemplatableId { id, parameters })
+        .parse(s)
+}
+//
+/// Identifier which may or may not have template arguments
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct TemplatableId<'source> {
+    /// Identifier
+    id: &'source str,
+
+    /// Optional template parameters
+    parameters: Option<Box<[TemplateParameter<'source>]>>,
+}
+//
+impl<'source> From<&'source str> for TemplatableId<'source> {
+    fn from(id: &'source str) -> Self {
+        Self {
+            id,
+            parameters: Default::default(),
+        }
+    }
+}
+
 /// Parser for a templatable identifier or anonymous entity.
 fn templatable_or_anonymous(s: &str) -> IResult<TemplatableOrAnonymous> {
-    let templatable_id = templates::templatable_id.map(TemplatableOrAnonymous::TemplatableId);
+    let templatable_id = templatable_id.map(TemplatableOrAnonymous::TemplatableId);
     let anonymous = anonymous::anonymous.map(TemplatableOrAnonymous::Anonymous);
     templatable_id.or(anonymous).parse(s)
 }
@@ -136,7 +164,7 @@ fn id_expression(s: &str) -> IResult<IdExpression> {
 /// C++ id-expression
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IdExpression<'source> {
-    /// Hierarchical scope (types or namespaces)
+    /// Hierarchical scope
     path: Box<[Scope<'source>]>,
 
     /// Unqualified id-expression
@@ -165,8 +193,45 @@ impl<'source> From<&'source str> for IdExpression<'source> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     pub fn force_parse_type(s: &str) -> TypeLike {
         types::type_like(s, atoms::end_of_string).unwrap().1
+    }
+
+    #[test]
+    fn templatable_id() {
+        assert_eq!(
+            super::templatable_id("no_parameters"),
+            Ok((
+                "",
+                TemplatableId {
+                    id: "no_parameters",
+                    parameters: None,
+                }
+            ))
+        );
+        assert_eq!(
+            super::templatable_id("empty_parameters<>"),
+            Ok((
+                "",
+                TemplatableId {
+                    id: "empty_parameters",
+                    parameters: Some(vec![].into()),
+                }
+            ))
+        );
+        assert_eq!(
+            super::templatable_id("A<B, C>"),
+            Ok((
+                "",
+                TemplatableId {
+                    id: "A",
+                    parameters: Some(
+                        vec![force_parse_type("B").into(), force_parse_type("C").into()].into()
+                    )
+                }
+            ))
+        );
     }
 }
