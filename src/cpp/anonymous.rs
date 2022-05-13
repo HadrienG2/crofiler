@@ -50,11 +50,7 @@ type Line = u32;
 type Col = u32;
 
 /// Parser for other anonymous clang entities following the
-/// "\(anonymous( <identifier>)?\)" pattern.
-///
-/// So far, only anonymous classes and namespaces were seen, but for all I know
-/// there might be others...
-pub fn anonymous(s: &str) -> IResult<Option<&str>> {
+pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
     use nom::{
         bytes::complete::tag,
         character::complete::char,
@@ -67,6 +63,13 @@ pub fn anonymous(s: &str) -> IResult<Option<&str>> {
         char(')'),
     )(s)
 }
+//
+/// Anonymous clang entity (known as "(anonymous)" or "(anonymous <something>)")
+///
+/// So far, only anonymous classes and namespaces were seen, but for all I know
+/// there might be others... In any case, if the <something> is specified, it is
+/// reported back as the string argument to this option.
+type AnonymousEntity<'source> = Option<&'source str>;
 
 #[cfg(test)]
 mod tests {

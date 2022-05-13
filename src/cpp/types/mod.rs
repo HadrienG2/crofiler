@@ -6,9 +6,9 @@ use self::qualifiers::{ConstVolatile, PointersReference};
 use crate::cpp::{
     atoms,
     functions::{self, FunctionSignature},
-    id_expression,
+    id_expressions::{self, IdExpression},
     values::{self, ValueLike},
-    IResult, IdExpression,
+    IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -21,7 +21,7 @@ pub fn type_like(
     next_delimiter: impl FnMut(&str) -> IResult<()> + Copy,
 ) -> IResult<TypeLike> {
     use nom::combinator::peek;
-    let id_expression = |s| type_like_impl(s, id_expression);
+    let id_expression = |s| type_like_impl(s, id_expressions::id_expression);
     fn legacy_id(s: &str) -> IResult<IdExpression> {
         legacy_primitive.map(IdExpression::from).parse(s)
     }
