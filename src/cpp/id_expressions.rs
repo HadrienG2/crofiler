@@ -91,6 +91,8 @@ pub enum UnqualifiedId<'source> {
     /// A lambda function, with source location information
     Lambda(Lambda<'source>),
 
+    // FIXME: Overloaded operators go here in order of frequency appearance
+    //
     /// Another kind of anonymous entity from clang
     Anonymous(AnonymousEntity<'source>),
 }

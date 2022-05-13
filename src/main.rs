@@ -87,9 +87,6 @@ fn main() {
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
             num_entities += 1;
-            /* if e.contains("()::") {
-                println!("- Oh look a function with nested stuff ! {}", e);
-            } */
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
                 Err(error) => {
