@@ -48,6 +48,7 @@ enum Symbol {
 }
 
 /// C++ operators that can be overloaded
+// FIXME: Order this in at least rough order of occurence frequency
 enum Operator<'source> {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
