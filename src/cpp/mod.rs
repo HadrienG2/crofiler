@@ -26,15 +26,14 @@ pub use self::{
 
 // FIXME: Remove once done debugging
 //#[cfg(test)]
-type Error<I> = nom::error::Error<I>;
+pub type Error<I> = nom::error::Error<I>;
 /*#[cfg(not(test))]
 type Error<I> = nom_supreme::error::ErrorTree<I>;*/
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
 /// Parser for C++ entities
 pub fn entity(s: &str) -> IResult<Option<TypeLike>> {
-    let type_like = |s| types::type_like(s, atoms::end_of_string);
-    let type_like = type_like.map(Some);
+    let type_like = types::type_like.map(Some);
     let unknown = anonymous::unknown_entity.value(None);
     type_like.or(unknown).parse(s)
 }
@@ -42,9 +41,10 @@ pub fn entity(s: &str) -> IResult<Option<TypeLike>> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     pub fn force_parse_type(s: &str) -> TypeLike {
-        types::type_like(s, atoms::end_of_string).unwrap().1
+        types::type_like(s).unwrap().1
     }
 
     #[test]

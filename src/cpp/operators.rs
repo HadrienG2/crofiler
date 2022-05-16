@@ -9,23 +9,19 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parse any supported operator overload
-pub fn operator_overload(
-    s: &str,
-    next_delimiter: impl Fn(&str) -> IResult<()>,
-) -> IResult<Operator> {
+pub fn operator_overload(s: &str) -> IResult<Operator> {
     use nom::{character::complete::char, sequence::preceded};
-    use nom_supreme::tag::complete::tag;
-    let next_delimiter = &next_delimiter;
-    let type_like = move |s| types::type_like(s, next_delimiter);
     preceded(
-        tag("operator"),
-        (arithmetic_or_comparison.or(call_index)).or(preceded(
+        atoms::keyword("operator"),
+        (arithmetic_or_comparison
+            .or(call_or_index)
+            .or(custom_literal))
+        .or(preceded(
             char(' '),
-            new_delete
-                .or(custom_literal)
+            new_or_delete
                 .or(co_await)
                 // Must come last as it matches keywords
-                .or(type_like.map(Operator::Conversion)),
+                .or(types::type_like.map(|ty| Operator::Conversion(Box::new(ty)))),
         )),
     )
     .parse(s)
@@ -47,18 +43,18 @@ fn arithmetic_or_comparison(s: &str) -> IResult<Operator> {
                 equal: false,
             }),
 
-            // Duplicate symbol, including ==
-            (symbol, Some(symbol2), None) if symbol2 == symbol => Some(Operator::Basic {
-                symbol,
-                twice: true,
-                equal: false,
-            }),
-
-            // Arbitrary symbol with equal sign (not including ==)
+            // Symbol with equal sign (includes == for consistency with comparisons)
             (symbol, Some(Symbol::AssignEq), None) => Some(Operator::Basic {
                 symbol,
                 twice: false,
                 equal: true,
+            }),
+
+            // Duplicate symbol other than ==
+            (symbol, Some(symbol2), None) if symbol2 == symbol => Some(Operator::Basic {
+                symbol,
+                twice: true,
+                equal: false,
             }),
 
             // Duplicate symbol with assignment
@@ -88,23 +84,11 @@ fn arithmetic_or_comparison(s: &str) -> IResult<Operator> {
 }
 
 /// Parse bracket pair operators: calling and array indexing
-fn call_index(s: &str) -> IResult<Operator> {
+fn call_or_index(s: &str) -> IResult<Operator> {
     use nom_supreme::tag::complete::tag;
     (tag("()").or(tag("[]")))
         .map(|s| Operator::CallIndex {
             is_index: s == "[]",
-        })
-        .parse(s)
-}
-
-/// Parse allocation and deallocation functions
-fn new_delete(s: &str) -> IResult<Operator> {
-    use nom::combinator::opt;
-    use nom_supreme::tag::complete::tag;
-    ((tag("new").or(tag("delete"))).and(opt(tag("[]"))))
-        .map(|(new_delete, array)| Operator::NewDelete {
-            is_delete: new_delete == "delete",
-            array: array.is_some(),
         })
         .parse(s)
 }
@@ -117,10 +101,24 @@ fn custom_literal(s: &str) -> IResult<Operator> {
         .parse(s)
 }
 
+/// Parse allocation and deallocation functions
+fn new_or_delete(s: &str) -> IResult<Operator> {
+    use nom::combinator::opt;
+    use nom_supreme::tag::complete::tag;
+    ((atoms::keyword("new")
+        .value(false)
+        .or(atoms::keyword("delete").value(true)))
+    .and(opt(tag("[]"))))
+    .map(|(is_delete, array)| Operator::NewDelete {
+        is_delete,
+        array: array.is_some(),
+    })
+    .parse(s)
+}
+
 /// Parse co_await
 fn co_await(s: &str) -> IResult<Operator> {
-    use nom_supreme::tag::complete::tag;
-    tag("co_await").value(Operator::CoAwait).parse(s)
+    atoms::keyword("co_await").value(Operator::CoAwait).parse(s)
 }
 
 /// C++ operators that can be overloaded
@@ -154,6 +152,9 @@ pub enum Operator<'source> {
         is_index: bool,
     },
 
+    /// Custom literal operator (operator "" <suffix-identifier>)
+    CustomLiteral(&'source str),
+
     /// Allocation/deallocation functions
     NewDelete {
         /// new if this is false, delete if this is true
@@ -163,14 +164,11 @@ pub enum Operator<'source> {
         array: bool,
     },
 
-    /// Custom literal operator (operator "" <suffix-identifier>)
-    CustomLiteral(&'source str),
-
     /// Overloaded co_await operator
     CoAwait,
 
     /// Type conversion operator ("operator <type>")
-    Conversion(TypeLike<'source>),
+    Conversion(Box<TypeLike<'source>>),
 }
 
 /// Parser for symbols most commonly found in C++ operator names
@@ -242,4 +240,231 @@ pub enum Symbol {
     Comma,
 }
 
-// FIXME: Add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cpp::tests::force_parse_type;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn symbol() {
+        assert_eq!(super::symbol("+"), Ok(("", Symbol::Add)));
+        assert_eq!(super::symbol("-"), Ok(("", Symbol::SubNeg)));
+        assert_eq!(super::symbol("*"), Ok(("", Symbol::MulDeref)));
+        assert_eq!(super::symbol("/"), Ok(("", Symbol::Div)));
+        assert_eq!(super::symbol("%"), Ok(("", Symbol::Mod)));
+        assert_eq!(super::symbol("^"), Ok(("", Symbol::Xor)));
+        assert_eq!(super::symbol("&"), Ok(("", Symbol::AndRef)));
+        assert_eq!(super::symbol("|"), Ok(("", Symbol::Or)));
+        assert_eq!(super::symbol("~"), Ok(("", Symbol::BitNot)));
+        assert_eq!(super::symbol("!"), Ok(("", Symbol::Not)));
+        assert_eq!(super::symbol("="), Ok(("", Symbol::AssignEq)));
+        assert_eq!(super::symbol("<"), Ok(("", Symbol::Less)));
+        assert_eq!(super::symbol(">"), Ok(("", Symbol::Greater)));
+        assert_eq!(super::symbol(","), Ok(("", Symbol::Comma)));
+    }
+
+    #[test]
+    fn arithmetic_or_comparison() {
+        // Lone symbol
+        assert_eq!(
+            super::arithmetic_or_comparison("+"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Add,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+
+        // Symbol with equal sign
+        assert_eq!(
+            super::arithmetic_or_comparison("-="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::SubNeg,
+                    twice: false,
+                    equal: true,
+                }
+            ))
+        );
+
+        // Duplicated symbol
+        assert_eq!(
+            super::arithmetic_or_comparison("<<"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Less,
+                    twice: true,
+                    equal: false,
+                }
+            ))
+        );
+
+        // Duplicated symbol with equal sign
+        assert_eq!(
+            super::arithmetic_or_comparison(">>="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Greater,
+                    twice: true,
+                    equal: true,
+                }
+            ))
+        );
+
+        // Equality can, in principle, be parsed either as a duplicated symbol
+        // or as a symbol with an equal sign. We go for consistency with other
+        // comparison operators, which will be parsed as the latter.
+        assert_eq!(
+            super::arithmetic_or_comparison("=="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::AssignEq,
+                    twice: false,
+                    equal: true,
+                }
+            ))
+        );
+
+        // Spaceship operator gets its own variant because it's too weird
+        assert_eq!(
+            super::arithmetic_or_comparison("<=>"),
+            Ok(("", Operator::Spaceship))
+        );
+
+        // Same for dereference operator
+        assert_eq!(
+            super::arithmetic_or_comparison("->"),
+            Ok(("", Operator::Deref { star: false }))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison("->*"),
+            Ok(("", Operator::Deref { star: true }))
+        );
+    }
+
+    #[test]
+    fn call_or_index() {
+        assert_eq!(
+            super::call_or_index("()"),
+            Ok(("", Operator::CallIndex { is_index: false }))
+        );
+        assert_eq!(
+            super::call_or_index("[]"),
+            Ok(("", Operator::CallIndex { is_index: true }))
+        );
+    }
+
+    #[test]
+    fn custom_literal() {
+        assert_eq!(
+            super::custom_literal("\"\" _whatever"),
+            Ok(("", Operator::CustomLiteral("_whatever")))
+        );
+    }
+
+    #[test]
+    fn new_or_delete() {
+        assert_eq!(
+            super::new_or_delete("new"),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: false,
+                    array: false
+                }
+            ))
+        );
+        assert_eq!(
+            super::new_or_delete("new[]"),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: false,
+                    array: true
+                }
+            ))
+        );
+        assert_eq!(
+            super::new_or_delete("delete"),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: true,
+                    array: false
+                }
+            ))
+        );
+        assert_eq!(
+            super::new_or_delete("delete[]"),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: true,
+                    array: true
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn co_await() {
+        assert_eq!(super::co_await("co_await"), Ok(("", Operator::CoAwait)));
+    }
+
+    #[test]
+    fn operator_overload() {
+        // Symbol-based operators don't need spaces
+        assert_eq!(
+            super::operator_overload("operator*="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::MulDeref,
+                    twice: false,
+                    equal: true
+                }
+            ))
+        );
+        assert_eq!(
+            super::operator_overload("operator[]"),
+            Ok(("", Operator::CallIndex { is_index: true }))
+        );
+        assert_eq!(
+            super::operator_overload("operator\"\" _stuff"),
+            Ok(("", Operator::CustomLiteral("_stuff")))
+        );
+
+        // Keyword-based operators need spaces
+        assert_eq!(
+            super::operator_overload("operator new[]"),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: false,
+                    array: true
+                }
+            ))
+        );
+        assert_eq!(
+            super::operator_overload("operator co_await"),
+            Ok(("", Operator::CoAwait))
+        );
+
+        // Type conversion operator works
+        assert_eq!(
+            super::operator_overload("operator unsigned long long"),
+            Ok((
+                "",
+                Operator::Conversion(Box::new(force_parse_type("unsigned long long")))
+            ))
+        );
+    }
+}

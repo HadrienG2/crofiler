@@ -10,7 +10,6 @@ use crate::cpp::{
     IResult,
 };
 use nom::Parser;
-use nom_supreme::ParserExt;
 
 /// Parser recognizing a function signature (parameters + qualifiers)
 pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
@@ -57,19 +56,10 @@ fn function_parameters(s: &str) -> IResult<Box<[TypeLike]>> {
         multi::separated_list0,
         sequence::delimited,
     };
-    let parameters = separated_list0(space0.and(char(',')).and(space0), function_parameter);
+    let parameters = separated_list0(space0.and(char(',')).and(space0), types::type_like);
     delimited(char('('), parameters, space0.and(char(')')))
         .map(Vec::into_boxed_slice)
         .parse(s)
-}
-
-/// Parser recognizing a single function parameter
-fn function_parameter(s: &str) -> IResult<TypeLike> {
-    use nom::character::complete::{char, space0};
-    fn delimiter(s: &str) -> IResult<()> {
-        space0.and(char(',').or(char(')'))).value(()).parse(s)
-    }
-    types::type_like(s, delimiter)
 }
 
 #[cfg(test)]
@@ -150,33 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn function_parameter() {
-        fn test_function_parameter_sep(text_wo_sep: &str, sep: &str, expected: TypeLike) {
-            let mut text = text_wo_sep.to_owned();
-            text.push_str(sep);
-            assert_eq!(super::function_parameter(&text), Ok((sep, expected)));
-        }
-        fn test_function_parameter(text_wo_sep: &str) {
-            let expected = force_parse_type(text_wo_sep);
-            test_function_parameter_sep(text_wo_sep, ",", expected.clone());
-            test_function_parameter_sep(text_wo_sep, ")", expected);
-        }
-        test_function_parameter("signed char*");
-        test_function_parameter("charamel<lol>&");
-    }
-
-    #[test]
     fn function_parameters() {
         assert_eq!(super::function_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
-            super::function_parameters("(A)"),
-            Ok(("", vec![force_parse_type("A")].into()))
+            super::function_parameters("(signed char*)"),
+            Ok(("", vec![force_parse_type("signed char*")].into()))
         );
         assert_eq!(
-            super::function_parameters("(A, B)"),
+            super::function_parameters("(charamel<lol>&, T)"),
             Ok((
                 "",
-                vec![force_parse_type("A"), force_parse_type("B")].into()
+                vec![force_parse_type("charamel<lol>&"), force_parse_type("T")].into()
             ))
         );
     }

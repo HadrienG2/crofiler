@@ -14,21 +14,14 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parser recognizing types (and some values that are indistinguishable from
-/// types without extra context), given a parser for the separator that is
-/// expected to come after the type name.
-pub fn type_like(
-    s: &str,
-    next_delimiter: impl Fn(&str) -> IResult<()> + Clone,
-) -> IResult<TypeLike> {
-    use nom::combinator::peek;
+/// types without extra context)
+pub fn type_like(s: &str) -> IResult<TypeLike> {
     let id_expression = |s| type_like_impl(s, id_expressions::id_expression);
     fn legacy_id(s: &str) -> IResult<IdExpression> {
         legacy_primitive.map(IdExpression::from).parse(s)
     }
     let legacy_id = |s| type_like_impl(s, legacy_id);
-    (legacy_id.terminated(peek(next_delimiter.clone())))
-        .or(id_expression.terminated(peek(next_delimiter)))
-        .parse(s)
+    (legacy_id.or(id_expression)).parse(s)
 }
 
 /// Parser recognizing types (and some values that are indistinguishable from
@@ -162,15 +155,11 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    fn whole_type(s: &str) -> IResult<TypeLike> {
-        super::type_like(s, atoms::end_of_string)
-    }
-
     #[test]
     fn type_like() {
         // Normal branch
         assert_eq!(
-            whole_type("whatever"),
+            super::type_like("whatever"),
             Ok((
                 "",
                 TypeLike {
@@ -182,7 +171,7 @@ mod tests {
 
         // Legacy primitive branch
         assert_eq!(
-            whole_type("unsigned int"),
+            super::type_like("unsigned int"),
             Ok((
                 "",
                 TypeLike {
@@ -194,7 +183,7 @@ mod tests {
 
         // CV qualifiers before
         assert_eq!(
-            whole_type("const volatile unsigned"),
+            super::type_like("const volatile unsigned"),
             Ok((
                 "",
                 TypeLike {
@@ -207,7 +196,7 @@ mod tests {
 
         // CV qualifiers after
         assert_eq!(
-            whole_type("char const"),
+            super::type_like("char const"),
             Ok((
                 "",
                 TypeLike {
@@ -220,7 +209,7 @@ mod tests {
 
         // Pointer and reference qualifiers
         assert_eq!(
-            whole_type("stuff*volatile*const&"),
+            super::type_like("stuff*volatile*const&"),
             Ok((
                 "",
                 TypeLike {
@@ -235,7 +224,7 @@ mod tests {
 
         // Basic function pointer
         assert_eq!(
-            whole_type("void()"),
+            super::type_like("void()"),
             Ok((
                 "",
                 TypeLike {
@@ -248,7 +237,7 @@ mod tests {
 
         // Pointer to a function returning a void* pointer
         assert_eq!(
-            whole_type("void(*)()"),
+            super::type_like("void(*)()"),
             Ok((
                 "",
                 TypeLike {
@@ -262,7 +251,7 @@ mod tests {
 
         // Basic array
         assert_eq!(
-            whole_type("T[4]"),
+            super::type_like("T[4]"),
             Ok((
                 "",
                 TypeLike {
@@ -275,7 +264,7 @@ mod tests {
 
         // Array of unknown length
         assert_eq!(
-            whole_type("T[]"),
+            super::type_like("T[]"),
             Ok((
                 "",
                 TypeLike {
@@ -288,7 +277,7 @@ mod tests {
 
         // Array of pointers and references
         assert_eq!(
-            whole_type("char const (*)[7]"),
+            super::type_like("char const (*)[7]"),
             Ok((
                 "",
                 TypeLike {
@@ -301,7 +290,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            whole_type("char const (&)[7]"),
+            super::type_like("char const (&)[7]"),
             Ok((
                 "",
                 TypeLike {

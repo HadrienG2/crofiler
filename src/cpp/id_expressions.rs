@@ -8,6 +8,7 @@ use crate::cpp::{
     anonymous::{self, AnonymousEntity, Lambda},
     atoms,
     functions::{self, FunctionSignature},
+    operators::{self, Operator},
     templates::{self, TemplateParameter},
     IResult,
 };
@@ -54,8 +55,6 @@ impl<'source> From<&'source str> for IdExpression<'source> {
 /// Parser for unqualified id-expressions
 fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
     use nom::{character::complete::char, combinator::opt, sequence::tuple};
-    // FIXME: Accept all unqualified id-expressions. Currently missing...
-    //        - Operators, including conversion operators
     let is_destructor = opt(char('~')).map(|opt| opt.is_some());
     let named = tuple((
         is_destructor,
@@ -70,8 +69,15 @@ fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
         },
     );
     let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
+    let operator = operators::operator_overload
+        .and(opt(templates::template_parameters))
+        .map(|(operator, template_parameters)| UnqualifiedId::Operator {
+            operator,
+            template_parameters,
+        });
     let anonymous = anonymous::anonymous.map(UnqualifiedId::Anonymous);
-    named.or(lambda).or(anonymous).parse(s)
+    // Operator must go before names as named matches keywords
+    operator.or(named).or(lambda).or(anonymous).parse(s)
 }
 //
 #[derive(Clone, Debug, PartialEq)]
@@ -91,8 +97,15 @@ pub enum UnqualifiedId<'source> {
     /// A lambda function, with source location information
     Lambda(Lambda<'source>),
 
-    // FIXME: Overloaded operators go here in order of frequency appearance
-    //
+    /// An operator overload
+    Operator {
+        /// Which operator was overloaded
+        operator: Operator<'source>,
+
+        /// Optional template parameters
+        template_parameters: Option<Box<[TemplateParameter<'source>]>>,
+    },
+
     /// Another kind of anonymous entity from clang
     Anonymous(AnonymousEntity<'source>),
 }
@@ -220,6 +233,18 @@ pub mod tests {
                         .unwrap()
                         .1
                 )
+            ))
+        );
+
+        // Operator overload
+        assert_eq!(
+            super::unqualified_id("operator()"),
+            Ok((
+                "",
+                UnqualifiedId::Operator {
+                    operator: Operator::CallIndex { is_index: false },
+                    template_parameters: Default::default(),
+                }
             ))
         );
 

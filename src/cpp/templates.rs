@@ -6,7 +6,6 @@ use crate::cpp::{
     IResult,
 };
 use nom::Parser;
-use nom_supreme::ParserExt;
 
 /// Parser recognizing a set of template parameters
 pub fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
@@ -23,11 +22,7 @@ pub fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
 
 /// Parser recognizing a single template parameter/argument
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {
-    use nom::character::complete::{char, space0};
-    fn delimiter(s: &str) -> IResult<()> {
-        space0.and(char(',').or(char('>'))).value(()).parse(s)
-    }
-    let type_like = (|s| types::type_like(s, delimiter)).map(TemplateParameter::TypeLike);
+    let type_like = types::type_like.map(TemplateParameter::TypeLike);
     let integer_literal = values::value_like.map(TemplateParameter::ValueLike);
     type_like.or(integer_literal).parse(s)
 }

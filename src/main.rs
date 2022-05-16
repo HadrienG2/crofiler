@@ -89,16 +89,15 @@ fn main() {
             num_entities += 1;
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
-                Err(error) => {
+                other => {
                     if bad_entities < MAX_ENTITY_DISPLAY {
                         println!("- {}(\"{e}\")", activity_trace.activity().name());
                         if bad_entities < MAX_ERROR_DISPLAY {
-                            println!("  -> {error:#?}");
+                            println!("  -> {other:#?}");
                         }
                     }
                     bad_entities += 1;
                 }
-                other => panic!("Nobody expected {other:?}"),
             }
         }
     }
