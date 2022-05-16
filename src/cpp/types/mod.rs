@@ -18,7 +18,7 @@ use nom_supreme::ParserExt;
 /// expected to come after the type name.
 pub fn type_like(
     s: &str,
-    next_delimiter: impl FnMut(&str) -> IResult<()> + Copy,
+    next_delimiter: impl Fn(&str) -> IResult<()> + Clone,
 ) -> IResult<TypeLike> {
     use nom::combinator::peek;
     let id_expression = |s| type_like_impl(s, id_expressions::id_expression);
@@ -26,7 +26,7 @@ pub fn type_like(
         legacy_primitive.map(IdExpression::from).parse(s)
     }
     let legacy_id = |s| type_like_impl(s, legacy_id);
-    (legacy_id.terminated(peek(next_delimiter)))
+    (legacy_id.terminated(peek(next_delimiter.clone())))
         .or(id_expression.terminated(peek(next_delimiter)))
         .parse(s)
 }
@@ -43,10 +43,7 @@ pub fn type_like(
 /// Instead, we must reach the next delimiter character (e.g. ',' or '>' in
 /// template parameter lists) before taking this decision. This is what the
 /// higher-level type_like parser does.
-fn type_like_impl(
-    s: &str,
-    bottom_id: impl Fn(&str) -> IResult<IdExpression> + Copy,
-) -> IResult<TypeLike> {
+fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) -> IResult<TypeLike> {
     use nom::{
         character::complete::{char, space0, space1},
         combinator::{opt, verify},

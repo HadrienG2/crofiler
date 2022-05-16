@@ -20,7 +20,7 @@ fn end_of_identifier(s: &str) -> IResult<()> {
 }
 
 /// Parser recognizing a C++ keyword
-pub fn keyword(word: &'static str) -> impl FnMut(&str) -> IResult<()> + '_ {
+pub fn keyword(word: &'static str) -> impl Fn(&str) -> IResult<()> {
     use nom_supreme::tag::complete::tag;
     move |s| tag(word).and(end_of_identifier).value(()).parse(s)
 }
