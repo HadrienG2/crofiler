@@ -91,7 +91,11 @@ pub enum UnqualifiedId<'source> {
         id: &'source str,
 
         /// Optional template parameters
-        template_parameters: Option<Box<[TemplateParameter<'source>]>>,
+        ///
+        /// The first layer of Option denotes presence or absence of template
+        /// parameters, and the second layer denotes whether the template
+        /// parameters are valid or known invalid syntax from clang.
+        template_parameters: Option<Option<Box<[TemplateParameter<'source>]>>>,
     },
 
     /// A lambda function, with source location information
@@ -103,7 +107,11 @@ pub enum UnqualifiedId<'source> {
         operator: Operator<'source>,
 
         /// Optional template parameters
-        template_parameters: Option<Box<[TemplateParameter<'source>]>>,
+        ///
+        /// The first layer of Option denotes presence or absence of template
+        /// parameters, and the second layer denotes whether the template
+        /// parameters are valid or known invalid syntax from clang.
+        template_parameters: Option<Option<Box<[TemplateParameter<'source>]>>>,
     },
 
     /// Another kind of anonymous entity from clang
@@ -203,7 +211,7 @@ pub mod tests {
                 UnqualifiedId::Named {
                     is_destructor: false,
                     id: "no_parameters",
-                    template_parameters: Some(vec![].into()),
+                    template_parameters: Some(Some(vec![].into())),
                 }
             ))
         );
@@ -216,9 +224,9 @@ pub mod tests {
                 UnqualifiedId::Named {
                     is_destructor: false,
                     id: "A",
-                    template_parameters: Some(
+                    template_parameters: Some(Some(
                         vec![force_parse_type("B").into(), force_parse_type("C").into()].into()
-                    )
+                    ))
                 }
             ))
         );
@@ -309,9 +317,9 @@ pub mod tests {
                     id: UnqualifiedId::Named {
                         is_destructor: false,
                         id: "to_t",
-                        template_parameters: Some(
+                        template_parameters: Some(Some(
                             vec![force_parse_type("unsigned long long").into()].into()
-                        )
+                        ))
                     }
                 }
             ))

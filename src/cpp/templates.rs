@@ -6,17 +6,22 @@ use crate::cpp::{
     IResult,
 };
 use nom::Parser;
+use nom_supreme::ParserExt;
 
 /// Parser recognizing a set of template parameters
-pub fn template_parameters(s: &str) -> IResult<Box<[TemplateParameter]>> {
+///
+/// None will be returned upon encountering the invalid "<, void>" pattern,
+/// which clang unfortunately occasionally emits...
+pub fn template_parameters(s: &str) -> IResult<Option<Box<[TemplateParameter]>>> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
         sequence::delimited,
     };
+    use nom_supreme::tag::complete::tag;
     let arguments = separated_list0(char(',').and(space0), template_parameter);
-    delimited(char('<'), arguments, space0.and(char('>')))
-        .map(Vec::into_boxed_slice)
+    (delimited(char('<'), arguments, space0.and(char('>'))).map(|v| Some(v.into_boxed_slice())))
+        .or(tag("<, void>").value(None))
         .parse(s)
 }
 
@@ -79,21 +84,27 @@ mod tests {
 
     #[test]
     fn template_parameters() {
-        assert_eq!(super::template_parameters("<>"), Ok(("", vec![].into())));
+        assert_eq!(
+            super::template_parameters("<>"),
+            Ok(("", Some(vec![].into())))
+        );
         assert_eq!(
             super::template_parameters("<T>"),
-            Ok(("", vec![force_parse_type("T").into()].into()))
+            Ok(("", Some(vec![force_parse_type("T").into()].into())))
         );
         assert_eq!(
             super::template_parameters("<char, stuff>"),
             Ok((
                 "",
-                vec![
-                    force_parse_type("char").into(),
-                    force_parse_type("stuff").into()
-                ]
-                .into()
+                Some(
+                    vec![
+                        force_parse_type("char").into(),
+                        force_parse_type("stuff").into()
+                    ]
+                    .into()
+                )
             ))
         );
+        assert_eq!(super::template_parameters("<, void>"), Ok(("", None)));
     }
 }
