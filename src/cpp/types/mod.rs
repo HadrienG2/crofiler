@@ -107,7 +107,7 @@ pub struct TypeLike<'source> {
     bottom_id: IdExpression<'source>,
 
     /// Pointer and reference qualifiers
-    pointers_reference: PointersReference,
+    pointers_reference: PointersReference<'source>,
 
     /// Function signature (for function pointers)
     function_signature: Option<FunctionSignature<'source>>,

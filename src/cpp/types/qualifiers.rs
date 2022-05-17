@@ -1,6 +1,10 @@
 //! Qualifiers that can appear in the type syntax
 
-use crate::cpp::{atoms, IResult};
+use crate::cpp::{
+    atoms,
+    names::{self, NestedNameSpecifier},
+    IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::ops::BitOr;
@@ -97,12 +101,7 @@ impl Default for Reference {
 
 /// Parser recognizing pointer + reference qualifiers
 pub fn pointers_reference(s: &str) -> IResult<PointersReference> {
-    use nom::{
-        character::complete::{char, space0},
-        multi::many0,
-        sequence::preceded,
-    };
-    let pointer = preceded(space0.and(char('*')).and(space0), cv);
+    use nom::{character::complete::space0, multi::many0, sequence::preceded};
     let pointers = many0(pointer).map(Vec::into_boxed_slice);
     let reference = preceded(space0, reference);
     (pointers.and(reference))
@@ -115,12 +114,34 @@ pub fn pointers_reference(s: &str) -> IResult<PointersReference> {
 //
 /// Pointer and reference qualifiers
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct PointersReference {
+pub struct PointersReference<'source> {
     /// Layers of pointer indirection (* const * volatile...)
-    pointers: Box<[ConstVolatile]>,
+    pointers: Box<[Pointer<'source>]>,
 
     /// Reference qualifiers
     reference: Reference,
+}
+
+/// Parser recognizing a pointer declaration
+fn pointer(s: &str) -> IResult<Pointer> {
+    use nom::{
+        character::complete::{char, space0},
+        sequence::delimited,
+    };
+    let nested_star = names::nested_name_specifier.terminated(char('*'));
+    (delimited(space0, nested_star, space0).and(cv))
+        .map(|(path, cv)| Pointer { path, cv })
+        .parse(s)
+}
+
+/// Pointer declaration
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct Pointer<'source> {
+    /// Nested name specifier (for pointer-to-member)
+    path: NestedNameSpecifier<'source>,
+
+    /// Const and volatile qualifiers,
+    cv: ConstVolatile,
 }
 
 #[cfg(test)]
@@ -146,6 +167,36 @@ mod tests {
     }
 
     #[test]
+    fn pointer() {
+        // Basic pointer syntax
+        assert_eq!(super::pointer("*"), Ok(("", Pointer::default())));
+
+        // Pointer with CV qualifier
+        assert_eq!(
+            super::pointer("* const"),
+            Ok((
+                "",
+                Pointer {
+                    cv: ConstVolatile::CONST,
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Pointer to member
+        assert_eq!(
+            super::pointer("A::B::*"),
+            Ok((
+                "",
+                Pointer {
+                    path: vec!["A".into(), "B".into()].into(),
+                    ..Default::default()
+                }
+            ))
+        );
+    }
+
+    #[test]
     fn pointers_reference() {
         // Empty set of qualifiers
         assert_eq!(
@@ -159,7 +210,7 @@ mod tests {
             Ok((
                 "",
                 PointersReference {
-                    pointers: vec![ConstVolatile::default()].into(),
+                    pointers: vec![Pointer::default()].into(),
                     ..Default::default()
                 }
             ))
@@ -171,7 +222,11 @@ mod tests {
             Ok((
                 "",
                 PointersReference {
-                    pointers: vec![ConstVolatile::CONST].into(),
+                    pointers: vec![Pointer {
+                        cv: ConstVolatile::CONST,
+                        ..Default::default()
+                    }]
+                    .into(),
                     ..Default::default()
                 }
             ))
@@ -183,7 +238,7 @@ mod tests {
             Ok((
                 "",
                 PointersReference {
-                    pointers: vec![ConstVolatile::default(); 2].into(),
+                    pointers: vec![Pointer::default(); 2].into(),
                     ..Default::default()
                 }
             ))
@@ -219,7 +274,11 @@ mod tests {
             Ok((
                 "",
                 PointersReference {
-                    pointers: vec![ConstVolatile::CONST].into(),
+                    pointers: vec![Pointer {
+                        cv: ConstVolatile::CONST,
+                        ..Default::default()
+                    }]
+                    .into(),
                     reference: Reference::LValue,
                 }
             ))
