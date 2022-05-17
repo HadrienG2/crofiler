@@ -28,8 +28,8 @@ pub fn template_parameters(s: &str) -> IResult<Option<Box<[TemplateParameter]>>>
 /// Parser recognizing a single template parameter/argument
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {
     let type_like = types::type_like.map(TemplateParameter::TypeLike);
-    let integer_literal = values::value_like.map(TemplateParameter::ValueLike);
-    type_like.or(integer_literal).parse(s)
+    let value_like = values::value_like.map(TemplateParameter::ValueLike);
+    type_like.or(value_like).parse(s)
 }
 //
 /// Template parameter
