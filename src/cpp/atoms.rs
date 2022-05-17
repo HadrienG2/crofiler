@@ -34,12 +34,8 @@ pub fn identifier(s: &str) -> IResult<&str> {
     .parse(s)
 }
 
-/// Parser recognizing C++ integer literals
-pub use nom::character::complete::i128 as integer_literal;
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -62,17 +58,5 @@ mod tests {
     fn identifier() {
         const ID: &str = "_abcd_1234";
         assert_eq!(super::identifier(ID), Ok(("", ID)));
-    }
-
-    #[test]
-    fn integer_literal() {
-        fn test_integer_literal(num: impl Into<i128>) {
-            let num: i128 = num.into();
-            let num_str = num.to_string();
-            let result: IResult<i128> = super::integer_literal(&num_str);
-            assert_eq!(result, Ok(("", num)));
-        }
-        test_integer_literal(i64::MIN);
-        test_integer_literal(u64::MAX);
     }
 }
