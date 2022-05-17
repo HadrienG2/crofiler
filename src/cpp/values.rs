@@ -24,7 +24,7 @@ pub enum ValueLike {
     Character(char),
 }
 //
-// Can't just impl<I: Into<i128>> due to coherence...
+// Can't just impl<I: Into<i128>> at it would break other From impls...
 macro_rules! value_from_integer {
     ($($integer:ident),*) => {
         $(
