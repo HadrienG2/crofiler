@@ -3,7 +3,7 @@
 mod anonymous;
 mod atoms;
 mod functions;
-mod id_expressions;
+mod names;
 mod operators;
 mod templates;
 mod types;
@@ -16,7 +16,7 @@ use nom_supreme::ParserExt;
 pub use self::{
     anonymous::{AnonymousEntity, Lambda},
     functions::FunctionSignature,
-    id_expressions::{IdExpression, Scope, UnqualifiedId},
+    names::{IdExpression, NestedNameSpecifier, Scope, UnqualifiedId},
     templates::TemplateParameter,
     types::{
         qualifiers::{ConstVolatile, Reference},

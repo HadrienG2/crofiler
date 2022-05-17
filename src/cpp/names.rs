@@ -17,9 +17,7 @@ use nom_supreme::ParserExt;
 
 /// Parser for id-expressions
 pub fn id_expression(s: &str) -> IResult<IdExpression> {
-    use nom::multi::many0;
-    let path = many0(scope).map(Vec::into_boxed_slice);
-    (path.and(unqualified_id))
+    (nested_name_specifier.and(unqualified_id))
         .map(|(path, id)| IdExpression { path, id })
         .parse(s)
 }
@@ -28,7 +26,7 @@ pub fn id_expression(s: &str) -> IResult<IdExpression> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IdExpression<'source> {
     /// Hierarchical scope
-    path: Box<[Scope<'source>]>,
+    path: NestedNameSpecifier<'source>,
 
     /// Unqualified id-expression
     id: UnqualifiedId<'source>,
@@ -51,6 +49,15 @@ impl<'source> From<&'source str> for IdExpression<'source> {
         }
     }
 }
+
+/// Parser for nested name-specifiers (= a sequence of scopes)
+pub fn nested_name_specifier(s: &str) -> IResult<NestedNameSpecifier> {
+    use nom::multi::many0;
+    many0(scope).map(Vec::into_boxed_slice).parse(s)
+}
+
+/// A nested name specifier
+pub type NestedNameSpecifier<'source> = Box<[Scope<'source>]>;
 
 /// Parser for unqualified id-expressions
 fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
@@ -290,6 +297,22 @@ pub mod tests {
                     function_signature: Some(FunctionSignature::default()),
                 }
             ))
+        );
+    }
+
+    #[test]
+    fn nested_name_specifier() {
+        assert_eq!(
+            super::nested_name_specifier(""),
+            Ok(("", Default::default()))
+        );
+        assert_eq!(
+            super::nested_name_specifier("boost::"),
+            Ok(("", vec!["boost".into()].into()))
+        );
+        assert_eq!(
+            super::nested_name_specifier("boost::hana::"),
+            Ok(("", vec!["boost".into(), "hana".into()].into()))
         );
     }
 

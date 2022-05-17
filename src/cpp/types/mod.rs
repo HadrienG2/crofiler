@@ -6,7 +6,7 @@ use self::qualifiers::{ConstVolatile, PointersReference};
 use crate::cpp::{
     atoms,
     functions::{self, FunctionSignature},
-    id_expressions::{self, IdExpression},
+    names::{self, IdExpression},
     values::{self, ValueLike},
     IResult,
 };
@@ -16,7 +16,7 @@ use nom_supreme::ParserExt;
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context)
 pub fn type_like(s: &str) -> IResult<TypeLike> {
-    let id_expression = |s| type_like_impl(s, id_expressions::id_expression);
+    let id_expression = |s| type_like_impl(s, names::id_expression);
     fn legacy_id(s: &str) -> IResult<IdExpression> {
         legacy_primitive.map(IdExpression::from).parse(s)
     }
