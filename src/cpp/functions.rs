@@ -7,6 +7,7 @@ use crate::cpp::{
         qualifiers::{self, ConstVolatile, Reference},
         TypeLike,
     },
+    values::{self, ValueLike},
     IResult,
 };
 use nom::Parser;
@@ -20,16 +21,14 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     };
     let cv = preceded(space0, qualifiers::cv);
     let reference = preceded(space0, qualifiers::reference);
-    let noexcept_opt = preceded(space0, opt(atoms::keyword("noexcept")));
-    tuple((function_parameters, cv, reference, noexcept_opt))
-        .map(
-            |(parameters, cv, reference, noexcept_opt)| FunctionSignature {
-                parameters,
-                cv,
-                reference,
-                noexcept: noexcept_opt.is_some(),
-            },
-        )
+    let noexcept = preceded(space0, opt(noexcept));
+    tuple((function_parameters, cv, reference, noexcept))
+        .map(|(parameters, cv, reference, noexcept)| FunctionSignature {
+            parameters,
+            cv,
+            reference,
+            noexcept,
+        })
         .parse(s)
 }
 //
@@ -46,7 +45,11 @@ pub struct FunctionSignature<'source> {
     reference: Reference,
 
     /// noexcept qualifier
-    noexcept: bool,
+    ///
+    /// The first layer of Option represents presence or absence of the
+    /// "noexcept" keyword, the second layer represents the optional expression
+    /// that can be passed as an argument to noexcept.
+    noexcept: Option<Option<ValueLike>>,
 }
 
 /// Parser recognizing a set of function parameters
@@ -62,11 +65,34 @@ fn function_parameters(s: &str) -> IResult<Box<[TypeLike]>> {
         .parse(s)
 }
 
+/// Parser recognizing the noexcept qualifier and its optional argument
+fn noexcept(s: &str) -> IResult<Option<ValueLike>> {
+    use nom::{
+        character::complete::char,
+        combinator::opt,
+        sequence::{delimited, preceded},
+    };
+    preceded(
+        atoms::keyword("noexcept"),
+        opt(delimited(char('('), values::value_like, char(')'))),
+    )
+    .parse(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cpp::tests::force_parse_type;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn noexcept() {
+        assert_eq!(super::noexcept("noexcept"), Ok(("", None)));
+        assert_eq!(
+            super::noexcept("noexcept(123)"),
+            Ok(("", Some(values::value_like("123").unwrap().1)))
+        );
+    }
 
     #[test]
     fn function_signature() {
@@ -99,7 +125,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
-                    noexcept: true,
+                    noexcept: Some(None),
                     ..Default::default()
                 }
             ))
@@ -121,18 +147,18 @@ mod tests {
                 "",
                 FunctionSignature {
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
-                    noexcept: true,
+                    noexcept: Some(None),
                     ..Default::default()
                 }
             ))
         );
         assert_eq!(
-            super::function_signature("() && noexcept"),
+            super::function_signature("() && noexcept(456)"),
             Ok((
                 "",
                 FunctionSignature {
                     reference: Reference::RValue,
-                    noexcept: true,
+                    noexcept: Some(Some(values::value_like("456").unwrap().1)),
                     ..Default::default()
                 }
             ))

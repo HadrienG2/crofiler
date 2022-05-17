@@ -82,6 +82,7 @@ fn main() {
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
     let mut bad_entities = 0;
     let mut num_entities = 0;
+    let mut bad_entities_by_name = HashMap::<&'static str, usize>::new();
     const MAX_ERROR_DISPLAY: usize = 0;
     const MAX_ENTITY_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
@@ -90,13 +91,15 @@ fn main() {
             match cpp::entity(&e) {
                 Ok(("", _)) => {}
                 other => {
+                    let activity_name = activity_trace.activity().name();
                     if bad_entities < MAX_ENTITY_DISPLAY {
-                        println!("- {}(\"{e}\")", activity_trace.activity().name());
+                        println!("- {}(\"{e}\")", activity_name);
                         if bad_entities < MAX_ERROR_DISPLAY {
                             println!("  -> {other:#?}");
                         }
                     }
                     bad_entities += 1;
+                    *bad_entities_by_name.entry(activity_name).or_default() += 1;
                 }
             }
         }
@@ -108,6 +111,11 @@ fn main() {
             num_entities,
             (bad_entities as f32) / (num_entities as f32) * 100.0
         );
+    }
+    println!("---");
+    println!("Bad entities by activity name:");
+    for (name, count) in bad_entities_by_name {
+        println!("* {name}: {count}");
     }
 
     // Hierarchical profile prototype
