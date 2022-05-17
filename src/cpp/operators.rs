@@ -95,9 +95,10 @@ fn call_or_index(s: &str) -> IResult<Operator> {
 
 /// Parse custom literal
 fn custom_literal(s: &str) -> IResult<Operator> {
+    use nom::{character::complete::space0, sequence::preceded};
     use nom_supreme::tag::complete::tag;
-    (tag("\"\" ").and(atoms::identifier))
-        .map(|(_, identifier)| Operator::CustomLiteral(identifier))
+    preceded(tag("\"\"").and(space0), atoms::identifier)
+        .map(Operator::CustomLiteral)
         .parse(s)
 }
 
