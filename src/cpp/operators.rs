@@ -2,6 +2,7 @@
 
 use crate::cpp::{
     atoms,
+    templates::{self, TemplateParameters},
     types::{self, TypeLike},
     IResult,
 };
@@ -9,78 +10,125 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parse any supported operator overload
-pub fn operator_overload(s: &str) -> IResult<Operator> {
-    use nom::{character::complete::char, sequence::preceded};
+///
+/// The following template parameter set must be parsed in the same go in order
+/// to handle the syntaxically ambiguous nature of < and >.
+pub fn operator_overload(s: &str) -> IResult<(Operator, Option<TemplateParameters>)> {
+    use nom::{character::complete::char, combinator::opt, sequence::preceded};
+    use templates::template_parameters;
+    let arith_and_templates = arith_and_templates::<1>
+        .or(arith_and_templates::<2>)
+        .or(arith_and_templates::<3>);
+    let template_oblivious = (call_or_index.or(custom_literal)).or(preceded(
+        char(' '),
+        new_or_delete
+            .or(co_await)
+            // Must come last as it matches keywords
+            .or(types::type_like.map(|ty| Operator::Conversion(Box::new(ty)))),
+    ));
     preceded(
         atoms::keyword("operator"),
-        (arithmetic_or_comparison
-            .or(call_or_index)
-            .or(custom_literal))
-        .or(preceded(
-            char(' '),
-            new_or_delete
-                .or(co_await)
-                // Must come last as it matches keywords
-                .or(types::type_like.map(|ty| Operator::Conversion(Box::new(ty)))),
-        )),
+        arith_and_templates.or(template_oblivious.and(opt(template_parameters))),
     )
     .parse(s)
 }
 
-/// Parse arithmetic and comparison operators
-fn arithmetic_or_comparison(s: &str) -> IResult<Operator> {
+/// Try to parse input as an arithmetic or comparison operator name, optionally
+/// followed by a set of template parameters.
+///
+/// Reject the parse if there are operator-like symbols coming up next in the
+/// stream, as it suggests that LEN was insufficient and a higher LEN must be
+/// experimented with.
+fn arith_and_templates<const LEN: usize>(
+    s: &str,
+) -> IResult<(Operator, Option<TemplateParameters>)> {
     use nom::{
-        combinator::{map_opt, opt},
+        combinator::{map_opt, opt, peek},
         sequence::tuple,
     };
     map_opt(
-        tuple((symbol, opt(symbol), opt(symbol))),
-        |tuple| match tuple {
-            // Isolated symbol
-            (symbol, None, None) => Some(Operator::Basic {
+        tuple((
+            arithmetic_or_comparison::<LEN>,
+            opt(templates::template_parameters),
+            peek(opt(symbol)),
+        )),
+        |(operator, parameters_opt, symbol)| {
+            if symbol.is_none() {
+                Some((operator, parameters_opt))
+            } else {
+                None
+            }
+        },
+    )(s)
+}
+
+/// Parse arithmetic and comparison operators
+///
+/// Unfortunately, the grammatically ambiguous nature of characters < and >
+/// strikes here. If a template parameter list can be expected after this
+/// operator (as in "operator<<void>"), you will need to call this parser with
+/// LEN varying from 1 to 3 in a context where the validity of the overall parse
+/// can be assessed.
+fn arithmetic_or_comparison<const LEN: usize>(s: &str) -> IResult<Operator> {
+    use nom::{combinator::map_opt, sequence::tuple};
+    match LEN {
+        // Single-character operator
+        1 => symbol
+            .map(|symbol| Operator::Basic {
                 symbol,
                 twice: false,
                 equal: false,
-            }),
+            })
+            .parse(s),
 
+        // Two-character operator
+        2 => map_opt(symbol.and(symbol), |symbol_pair| match symbol_pair {
             // Symbol with equal sign (includes == for consistency with comparisons)
-            (symbol, Some(Symbol::AssignEq), None) => Some(Operator::Basic {
+            (symbol, Symbol::AssignEq) => Some(Operator::Basic {
                 symbol,
                 twice: false,
                 equal: true,
             }),
 
             // Duplicate symbol other than ==
-            (symbol, Some(symbol2), None) if symbol2 == symbol => Some(Operator::Basic {
+            (symbol, symbol2) if symbol2 == symbol => Some(Operator::Basic {
                 symbol,
                 twice: true,
                 equal: false,
             }),
 
+            // Pointer dereference
+            (Symbol::SubNeg, Symbol::Greater) => Some(Operator::Deref { star: false }),
+
+            // Anything else sounds bad
+            _ => None,
+        })
+        .parse(s),
+
+        // Three-character operator
+        3 => map_opt(tuple((symbol, symbol, symbol)), |tuple| match tuple {
             // Duplicate symbol with assignment
-            (symbol, Some(symbol2), Some(Symbol::AssignEq)) if symbol2 == symbol => {
-                Some(Operator::Basic {
-                    symbol,
-                    twice: true,
-                    equal: true,
-                })
-            }
+            (symbol, symbol2, Symbol::AssignEq) if symbol2 == symbol => Some(Operator::Basic {
+                symbol,
+                twice: true,
+                equal: true,
+            }),
 
             // Dereference operators
-            (Symbol::SubNeg, Some(Symbol::Greater), None) => Some(Operator::Deref { star: false }),
-            (Symbol::SubNeg, Some(Symbol::Greater), Some(Symbol::MulDeref)) => {
+            (Symbol::SubNeg, Symbol::Greater, Symbol::MulDeref) => {
                 Some(Operator::Deref { star: true })
             }
 
             // Spaceship operator
-            (Symbol::Less, Some(Symbol::AssignEq), Some(Symbol::Greater)) => {
-                Some(Operator::Spaceship)
-            }
+            (Symbol::Less, Symbol::AssignEq, Symbol::Greater) => Some(Operator::Spaceship),
 
             // Anything else sounds bad
             _ => None,
-        },
-    )(s)
+        })
+        .parse(s),
+
+        _ => panic!("C++ does not have {LEN}-symbol operators (yet?)"),
+    }
 }
 
 /// Parse bracket pair operators: calling and array indexing
@@ -269,7 +317,7 @@ mod tests {
     fn arithmetic_or_comparison() {
         // Lone symbol
         assert_eq!(
-            super::arithmetic_or_comparison("+"),
+            super::arithmetic_or_comparison::<1>("+"),
             Ok((
                 "",
                 Operator::Basic {
@@ -282,7 +330,18 @@ mod tests {
 
         // Symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison("-="),
+            super::arithmetic_or_comparison::<1>("-="),
+            Ok((
+                "=",
+                Operator::Basic {
+                    symbol: Symbol::SubNeg,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison::<2>("-="),
             Ok((
                 "",
                 Operator::Basic {
@@ -295,7 +354,18 @@ mod tests {
 
         // Duplicated symbol
         assert_eq!(
-            super::arithmetic_or_comparison("<<"),
+            super::arithmetic_or_comparison::<1>("<<"),
+            Ok((
+                "<",
+                Operator::Basic {
+                    symbol: Symbol::Less,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison::<2>("<<"),
             Ok((
                 "",
                 Operator::Basic {
@@ -308,7 +378,29 @@ mod tests {
 
         // Duplicated symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison(">>="),
+            super::arithmetic_or_comparison::<1>(">>="),
+            Ok((
+                ">=",
+                Operator::Basic {
+                    symbol: Symbol::Greater,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison::<2>(">>="),
+            Ok((
+                "=",
+                Operator::Basic {
+                    symbol: Symbol::Greater,
+                    twice: true,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison::<3>(">>="),
             Ok((
                 "",
                 Operator::Basic {
@@ -323,7 +415,7 @@ mod tests {
         // or as a symbol with an equal sign. We go for consistency with other
         // comparison operators, which will be parsed as the latter.
         assert_eq!(
-            super::arithmetic_or_comparison("=="),
+            super::arithmetic_or_comparison::<2>("=="),
             Ok((
                 "",
                 Operator::Basic {
@@ -336,17 +428,28 @@ mod tests {
 
         // Spaceship operator gets its own variant because it's too weird
         assert_eq!(
-            super::arithmetic_or_comparison("<=>"),
+            super::arithmetic_or_comparison::<3>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Same for dereference operator
         assert_eq!(
-            super::arithmetic_or_comparison("->"),
+            super::arithmetic_or_comparison::<1>("->"),
+            Ok((
+                ">",
+                Operator::Basic {
+                    symbol: Symbol::SubNeg,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::arithmetic_or_comparison::<2>("->"),
             Ok(("", Operator::Deref { star: false }))
         );
         assert_eq!(
-            super::arithmetic_or_comparison("->*"),
+            super::arithmetic_or_comparison::<3>("->*"),
             Ok(("", Operator::Deref { star: true }))
         );
     }
@@ -427,20 +530,23 @@ mod tests {
             super::operator_overload("operator*="),
             Ok((
                 "",
-                Operator::Basic {
-                    symbol: Symbol::MulDeref,
-                    twice: false,
-                    equal: true
-                }
+                (
+                    Operator::Basic {
+                        symbol: Symbol::MulDeref,
+                        twice: false,
+                        equal: true
+                    },
+                    None
+                )
             ))
         );
         assert_eq!(
             super::operator_overload("operator[]"),
-            Ok(("", Operator::CallIndex { is_index: true }))
+            Ok(("", (Operator::CallIndex { is_index: true }, None)))
         );
         assert_eq!(
             super::operator_overload("operator\"\" _stuff"),
-            Ok(("", Operator::CustomLiteral("_stuff")))
+            Ok(("", (Operator::CustomLiteral("_stuff"), None)))
         );
 
         // Keyword-based operators need spaces
@@ -448,15 +554,18 @@ mod tests {
             super::operator_overload("operator new[]"),
             Ok((
                 "",
-                Operator::NewDelete {
-                    is_delete: false,
-                    array: true
-                }
+                (
+                    Operator::NewDelete {
+                        is_delete: false,
+                        array: true
+                    },
+                    None
+                )
             ))
         );
         assert_eq!(
             super::operator_overload("operator co_await"),
-            Ok(("", Operator::CoAwait))
+            Ok(("", (Operator::CoAwait, None)))
         );
 
         // Type conversion operator works
@@ -464,7 +573,40 @@ mod tests {
             super::operator_overload("operator unsigned long long"),
             Ok((
                 "",
-                Operator::Conversion(Box::new(force_parse_type("unsigned long long")))
+                (
+                    Operator::Conversion(Box::new(force_parse_type("unsigned long long"))),
+                    None
+                )
+            ))
+        );
+
+        // Ambiguities between template and operator syntax are handled well
+        assert_eq!(
+            super::operator_overload("operator<<>"),
+            Ok((
+                "",
+                (
+                    Operator::Basic {
+                        symbol: Symbol::Less,
+                        twice: false,
+                        equal: false,
+                    },
+                    Some(Some(Default::default()))
+                )
+            ))
+        );
+        assert_eq!(
+            super::operator_overload("operator<<void>"),
+            Ok((
+                "",
+                (
+                    Operator::Basic {
+                        symbol: Symbol::Less,
+                        twice: false,
+                        equal: false,
+                    },
+                    Some(Some(vec![force_parse_type("void").into()].into()))
+                )
             ))
         );
     }

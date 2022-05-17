@@ -9,10 +9,7 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 
 /// Parser recognizing a set of template parameters
-///
-/// None will be returned upon encountering the invalid "<, void>" pattern,
-/// which clang unfortunately occasionally emits...
-pub fn template_parameters(s: &str) -> IResult<Option<Box<[TemplateParameter]>>> {
+pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
@@ -24,6 +21,12 @@ pub fn template_parameters(s: &str) -> IResult<Option<Box<[TemplateParameter]>>>
         .or(tag("<, void>").value(None))
         .parse(s)
 }
+//
+/// Set of template parameters
+///
+/// None means that a known invalid template parameter set printout from clang,
+/// such as "<, void>", was encountered.
+pub type TemplateParameters<'source> = Option<Box<[TemplateParameter<'source>]>>;
 
 /// Parser recognizing a single template parameter/argument
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {

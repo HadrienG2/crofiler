@@ -9,7 +9,7 @@ use crate::cpp::{
     atoms,
     functions::{self, FunctionSignature},
     operators::{self, Operator},
-    templates::{self, TemplateParameter},
+    templates::{self, TemplateParameters},
     IResult,
 };
 use nom::Parser;
@@ -76,12 +76,12 @@ fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
         },
     );
     let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
-    let operator = operators::operator_overload
-        .and(opt(templates::template_parameters))
-        .map(|(operator, template_parameters)| UnqualifiedId::Operator {
+    let operator = operators::operator_overload.map(|(operator, template_parameters)| {
+        UnqualifiedId::Operator {
             operator,
             template_parameters,
-        });
+        }
+    });
     let anonymous = anonymous::anonymous.map(UnqualifiedId::Anonymous);
     // Operator must go before names as named matches keywords
     operator.or(named).or(lambda).or(anonymous).parse(s)
@@ -98,11 +98,7 @@ pub enum UnqualifiedId<'source> {
         id: &'source str,
 
         /// Optional template parameters
-        ///
-        /// The first layer of Option denotes presence or absence of template
-        /// parameters, and the second layer denotes whether the template
-        /// parameters are valid or known invalid syntax from clang.
-        template_parameters: Option<Option<Box<[TemplateParameter<'source>]>>>,
+        template_parameters: Option<TemplateParameters<'source>>,
     },
 
     /// A lambda function, with source location information
@@ -114,11 +110,7 @@ pub enum UnqualifiedId<'source> {
         operator: Operator<'source>,
 
         /// Optional template parameters
-        ///
-        /// The first layer of Option denotes presence or absence of template
-        /// parameters, and the second layer denotes whether the template
-        /// parameters are valid or known invalid syntax from clang.
-        template_parameters: Option<Option<Box<[TemplateParameter<'source>]>>>,
+        template_parameters: Option<TemplateParameters<'source>>,
     },
 
     /// Another kind of anonymous entity from clang
