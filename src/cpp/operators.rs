@@ -15,20 +15,28 @@ use nom_supreme::ParserExt;
 /// to handle the syntaxically ambiguous nature of < and >.
 pub fn operator_overload(s: &str) -> IResult<(Operator, Option<TemplateParameters>)> {
     use nom::{character::complete::char, combinator::opt, sequence::preceded};
-    use templates::template_parameters;
+
+    // Try arithmetic operators of increasing length until hopefully finding one
+    // that matches optimally.
     let arith_and_templates = arith_and_templates::<1>
         .or(arith_and_templates::<2>)
         .or(arith_and_templates::<3>);
-    let template_oblivious = (call_or_index.or(custom_literal)).or(preceded(
-        char(' '),
-        new_or_delete
-            .or(co_await)
-            // Must come last as it matches keywords
-            .or(types::type_like.map(|ty| Operator::Conversion(Box::new(ty)))),
-    ));
+
+    // The other operator parses don't care about template parameters
+    let template_oblivious = (call_or_index.or(custom_literal))
+        .or(preceded(
+            char(' '),
+            new_or_delete
+                .or(co_await)
+                // Must come last as it matches keywords
+                .or(types::type_like.map(|ty| Operator::Conversion(Box::new(ty)))),
+        ))
+        .and(opt(templates::template_parameters));
+
+    // And for an operator overload, we need the operator keyword...
     preceded(
         atoms::keyword("operator"),
-        arith_and_templates.or(template_oblivious.and(opt(template_parameters))),
+        arith_and_templates.or(template_oblivious),
     )
     .parse(s)
 }
@@ -37,8 +45,8 @@ pub fn operator_overload(s: &str) -> IResult<(Operator, Option<TemplateParameter
 /// followed by a set of template parameters.
 ///
 /// Reject the parse if there are operator-like symbols coming up next in the
-/// stream, as it suggests that LEN was insufficient and a higher LEN must be
-/// experimented with.
+/// stream, as it strongly suggests that the entirety of the operator name was
+/// not parsed and the parse must be retried at a greater LEN.
 fn arith_and_templates<const LEN: usize>(
     s: &str,
 ) -> IResult<(Operator, Option<TemplateParameters>)> {
