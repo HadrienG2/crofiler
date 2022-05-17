@@ -45,10 +45,12 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     use qualifiers::pointers_reference;
 
     // C++ grammar requires that the bottom type name (along with its cv
-    // qualifiers) be preceded with "typename" in some circumstances.
-    let typename = opt(atoms::keyword("typename").and(space1));
+    // qualifiers) be preceded with "typename" or "class" in some circumstances.
+    let header = opt(atoms::keyword("typename")
+        .or(atoms::keyword("class"))
+        .and(space1));
     let bottom_type = delimited(
-        typename,
+        header,
         tuple((
             qualifiers::cv.terminated(space0),
             bottom_id,
