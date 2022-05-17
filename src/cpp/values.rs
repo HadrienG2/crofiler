@@ -1,6 +1,9 @@
 //! Values and other things that follow the value grammar
 
-use crate::cpp::IResult;
+use crate::cpp::{
+    operators::{self, Operator},
+    IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -9,26 +12,32 @@ use nom_supreme::ParserExt;
 pub fn value_like(s: &str) -> IResult<ValueLike> {
     let integer = integer.map(ValueLike::Integer);
     let character = character.map(ValueLike::Character);
+    let unary_op = operators::unary_expr_prefix
+        .and(value_like.map(Box::new))
+        .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
     // TODO: Should accept id-expressions here, but not necessary yet since they
     //       are accepted by TypeLike as well.
-    integer.or(character).parse(s)
+    integer.or(character).or(unary_op).parse(s)
 }
 //
 /// A value, or something that looks close enough to it
 #[derive(Clone, Debug, PartialEq)]
-pub enum ValueLike {
+pub enum ValueLike<'source> {
     /// Integer
     Integer(i128),
 
     /// Character
     Character(char),
+
+    /// Unary operator AST
+    UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
 }
 //
 // Can't just impl<I: Into<i128>> at it would break other From impls...
 macro_rules! value_from_integer {
     ($($integer:ident),*) => {
         $(
-            impl From<$integer> for ValueLike {
+            impl From<$integer> for ValueLike<'_> {
                 fn from(i: $integer) -> Self {
                     ValueLike::Integer(i.into())
                 }
@@ -38,7 +47,7 @@ macro_rules! value_from_integer {
 }
 value_from_integer!(i8, u8, i16, u16, i32, u32, i64, u64);
 //
-impl From<char> for ValueLike {
+impl From<char> for ValueLike<'_> {
     fn from(c: char) -> Self {
         ValueLike::Character(c)
     }
@@ -86,6 +95,7 @@ fn character(s: &str) -> IResult<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use operators::Symbol;
     use pretty_assertions::assert_eq;
     use std::fmt::Write;
 
@@ -145,5 +155,12 @@ mod tests {
     fn value_like() {
         assert_eq!(super::value_like("-123"), Ok(("", (-123i8).into())));
         assert_eq!(super::value_like("'c'"), Ok(("", 'c'.into())));
+        assert_eq!(
+            super::value_like("&123"),
+            Ok((
+                "",
+                ValueLike::UnaryOp(Symbol::AndRef.into(), Box::new((123i8).into()))
+            ))
+        );
     }
 }

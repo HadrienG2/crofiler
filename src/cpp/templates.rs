@@ -42,11 +42,11 @@ pub enum TemplateParameter<'source> {
     TypeLike(TypeLike<'source>),
 
     /// Value
-    ValueLike(ValueLike),
+    ValueLike(ValueLike<'source>),
 }
 //
-impl From<ValueLike> for TemplateParameter<'_> {
-    fn from(v: ValueLike) -> Self {
+impl<'source> From<ValueLike<'source>> for TemplateParameter<'source> {
+    fn from(v: ValueLike<'source>) -> Self {
         Self::ValueLike(v)
     }
 }

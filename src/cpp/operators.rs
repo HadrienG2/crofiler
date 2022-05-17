@@ -9,6 +9,53 @@ use crate::cpp::{
 use nom::Parser;
 use nom_supreme::ParserExt;
 
+/// Parse an unary operator that can be applied to an expression in prefix position
+pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
+    use nom::{
+        character::complete::{char, space0, space1},
+        combinator::map_opt,
+        sequence::delimited,
+    };
+    use Symbol::*;
+
+    // Must be run before unary_symbol to prevent under-parsing
+    let increment_decrement = map_opt(symbol.and(symbol), |sym_pair| match sym_pair {
+        (Add, Add) => Some(Operator::Basic {
+            symbol: Add,
+            twice: true,
+            equal: false,
+        }),
+        (SubNeg, SubNeg) => Some(Operator::Basic {
+            symbol: SubNeg,
+            twice: true,
+            equal: false,
+        }),
+        _ => None,
+    });
+
+    let unary_symbol = symbol
+        .verify(|s| [Add, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
+        .map(Operator::from);
+
+    // Must run after everything else at it matches keywords
+    let cast = types::type_like
+        .or(delimited(char('('), types::type_like, char(')')))
+        .map(|ty| Operator::Conversion(Box::new(ty)));
+
+    let delete = new_or_delete.verify(|op| {
+        if let Operator::NewDelete { is_delete, .. } = op {
+            *is_delete
+        } else {
+            unreachable!();
+        }
+    });
+
+    (increment_decrement.or(unary_symbol).terminated(space0))
+        .or((co_await.or(delete)).terminated(space1))
+        .or(cast.terminated(space0))
+        .parse(s)
+}
+
 /// Parse any supported operator overload
 ///
 /// The following template parameter set must be parsed in the same go in order
@@ -81,13 +128,7 @@ fn arithmetic_or_comparison<const LEN: usize>(s: &str) -> IResult<Operator> {
     use nom::{combinator::map_opt, sequence::tuple};
     match LEN {
         // Single-character operator
-        1 => symbol
-            .map(|symbol| Operator::Basic {
-                symbol,
-                twice: false,
-                equal: false,
-            })
-            .parse(s),
+        1 => symbol.map(Operator::from).parse(s),
 
         // Two-character operator
         2 => map_opt(symbol.and(symbol), |symbol_pair| match symbol_pair {
@@ -226,6 +267,16 @@ pub enum Operator<'source> {
 
     /// Type conversion operator ("operator <type>")
     Conversion(Box<TypeLike<'source>>),
+}
+//
+impl From<Symbol> for Operator<'_> {
+    fn from(symbol: Symbol) -> Self {
+        Self::Basic {
+            symbol,
+            twice: false,
+            equal: false,
+        }
+    }
 }
 
 /// Parser for symbols most commonly found in C++ operator names
@@ -615,6 +666,97 @@ mod tests {
                     },
                     Some(Some(vec![force_parse_type("void").into()].into()))
                 )
+            ))
+        );
+    }
+
+    #[test]
+    fn unary_expr_prefix() {
+        /*
+
+        let delete = new_or_delete.verify(|op| {
+            if let Operator::NewDelete { is_delete, .. } = op {
+                *is_delete
+            } else {
+                unreachable!();
+            }
+        });
+
+        .or((co_await.or(delete)).terminated(space1))
+        .parse(s) */
+
+        // Lone symbol
+        assert_eq!(super::unary_expr_prefix("+"), Ok(("", Symbol::Add.into())));
+        assert_eq!(
+            super::unary_expr_prefix("- "),
+            Ok(("", Symbol::SubNeg.into()))
+        );
+        assert_eq!(
+            super::unary_expr_prefix("*"),
+            Ok(("", Symbol::MulDeref.into()))
+        );
+        assert_eq!(
+            super::unary_expr_prefix("& "),
+            Ok(("", Symbol::AndRef.into()))
+        );
+        assert_eq!(
+            super::unary_expr_prefix("~"),
+            Ok(("", Symbol::BitNot.into()))
+        );
+        assert_eq!(super::unary_expr_prefix("!"), Ok(("", Symbol::Not.into())));
+
+        // Increment and decrement
+        assert_eq!(
+            super::unary_expr_prefix("++"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Add,
+                    twice: true,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::unary_expr_prefix("--"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::SubNeg,
+                    twice: true,
+                    equal: false,
+                }
+            ))
+        );
+
+        // Casts
+        assert_eq!(
+            super::unary_expr_prefix("int"),
+            Ok(("", Operator::Conversion(Box::new(force_parse_type("int")))))
+        );
+        assert_eq!(
+            super::unary_expr_prefix("(float)"),
+            Ok((
+                "",
+                Operator::Conversion(Box::new(force_parse_type("float")))
+            ))
+        );
+
+        // co_await
+        assert_eq!(
+            super::unary_expr_prefix("co_await  "),
+            Ok(("", Operator::CoAwait))
+        );
+
+        // delete
+        assert_eq!(
+            super::unary_expr_prefix("delete[] "),
+            Ok((
+                "",
+                Operator::NewDelete {
+                    is_delete: true,
+                    array: true
+                }
             ))
         );
     }

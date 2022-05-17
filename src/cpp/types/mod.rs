@@ -118,7 +118,7 @@ pub struct TypeLike<'source> {
     ///
     /// There are two layers of option because there may or may not be array
     /// brackets, and within them, there may or may not be an array length.
-    array: Option<Option<ValueLike>>,
+    array: Option<Option<ValueLike<'source>>>,
 }
 
 /// Parser recognizing primitive types inherited from C, which can have spaces

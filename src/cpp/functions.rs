@@ -49,7 +49,7 @@ pub struct FunctionSignature<'source> {
     /// The first layer of Option represents presence or absence of the
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
-    noexcept: Option<Option<ValueLike>>,
+    noexcept: Option<Option<ValueLike<'source>>>,
 }
 
 /// Parser recognizing a set of function parameters
