@@ -7,11 +7,42 @@ use nom_supreme::ParserExt;
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
 pub fn value_like(s: &str) -> IResult<ValueLike> {
-    integer(s)
+    let integer = integer.map(ValueLike::Integer);
+    let character = character.map(ValueLike::Character);
+    // TODO: Should accept id-expressions here, but not necessary yet since they
+    //       are accepted by TypeLike as well.
+    integer.or(character).parse(s)
 }
 //
 /// A value, or something that looks close enough to it
-pub type ValueLike = i128;
+#[derive(Clone, Debug, PartialEq)]
+pub enum ValueLike {
+    /// Integer
+    Integer(i128),
+
+    /// Character
+    Character(char),
+}
+//
+// Can't just impl<I: Into<i128>> due to coherence...
+macro_rules! value_from_integer {
+    ($($integer:ident),*) => {
+        $(
+            impl From<$integer> for ValueLike {
+                fn from(i: $integer) -> Self {
+                    ValueLike::Integer(i.into())
+                }
+            }
+        )*
+    }
+}
+value_from_integer!(i8, u8, i16, u16, i32, u32, i64, u64);
+//
+impl From<char> for ValueLike {
+    fn from(c: char) -> Self {
+        ValueLike::Character(c)
+    }
+}
 
 /// Parser recognizing C-style integer literals + negative numbers
 fn integer(s: &str) -> IResult<i128> {
@@ -26,10 +57,37 @@ fn integer(s: &str) -> IResult<i128> {
     .parse(s)
 }
 
+/// Parser recognizing C-style character literals
+fn character(s: &str) -> IResult<char> {
+    use nom::{
+        character::complete::{anychar, char},
+        combinator::opt,
+        sequence::{delimited, preceded},
+    };
+    use nom_supreme::tag::complete::tag;
+    let prefix = opt(tag("u8")
+        .value('8')
+        .or(char('u'))
+        .or(char('U'))
+        .or(char('L')));
+    let escape_sequence = (char('t').value('\t'))
+        .or(char('r').value('\r'))
+        .or(char('n').value('\n'))
+        .or(char('\''))
+        .or(char('"'))
+        .or(char('\\'));
+    delimited(
+        prefix.and(char('\'')),
+        preceded(char('\\'), escape_sequence).or(anychar),
+        char('\''),
+    )(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::fmt::Write;
 
     #[test]
     fn integer() {
@@ -65,5 +123,27 @@ mod tests {
         }
         test_integer(i64::MIN);
         test_integer(u64::MAX);
+    }
+
+    #[test]
+    fn character() {
+        fn test_character_str(c: char) {
+            for prefix in ["", "u8", "u", "U", "L"] {
+                let mut char_str = prefix.to_string();
+                write!(&mut char_str, "'{}'", c.escape_default()).unwrap();
+                println!("{char_str}");
+                assert_eq!(super::character(&char_str), Ok(("", c)));
+            }
+        }
+        test_character_str('x');
+        test_character_str('\t');
+        test_character_str('\n');
+        test_character_str('\'');
+    }
+
+    #[test]
+    fn value_like() {
+        assert_eq!(super::value_like("-123"), Ok(("", (-123i8).into())));
+        assert_eq!(super::value_like("'c'"), Ok(("", 'c'.into())));
     }
 }

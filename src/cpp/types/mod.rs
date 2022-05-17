@@ -258,7 +258,7 @@ mod tests {
                 "",
                 TypeLike {
                     bottom_id: IdExpression::from("T"),
-                    array: Some(Some(4)),
+                    array: Some(Some(4u8.into())),
                     ..Default::default()
                 }
             ))
@@ -286,7 +286,7 @@ mod tests {
                     bottom_cv: ConstVolatile::CONST,
                     bottom_id: IdExpression::from("char"),
                     pointers_reference: qualifiers::pointers_reference("*").unwrap().1,
-                    array: Some(Some(7)),
+                    array: Some(Some(7u8.into())),
                     ..Default::default()
                 }
             ))
@@ -299,7 +299,7 @@ mod tests {
                     bottom_cv: ConstVolatile::CONST,
                     bottom_id: IdExpression::from("char"),
                     pointers_reference: qualifiers::pointers_reference("&").unwrap().1,
-                    array: Some(Some(7)),
+                    array: Some(Some(7u8.into())),
                     ..Default::default()
                 }
             ))
