@@ -30,6 +30,14 @@ pub enum ValueLike<'source> {
     Character(char),
 
     /// Unary operator AST
+    //
+    // TODO: Investigate ways to avoid excessive boxing, something like struct {
+    //    prefix: Operator,
+    //    inner: ...
+    //    calls_and_indices: Box<[...]>
+    // }
+    // A priori, only values that combine multiple unrelated expressions like
+    // BinaryOp and TernaryOp strictly need boxing.
     UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
 }
 //
