@@ -4,6 +4,7 @@ pub mod literals;
 
 use self::literals::Literal;
 use crate::cpp::{
+    functions,
     names::{self, IdExpression},
     operators::{self, Operator},
     IResult,
@@ -13,24 +14,37 @@ use nom::Parser;
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
 pub fn value_like(s: &str) -> IResult<ValueLike> {
-    use nom::{character::complete::space0, combinator::opt, sequence::preceded};
-    (value_like_no_head_recursion.and(preceded(space0, opt(after_value))))
-        .map(|value_and_trailer| match value_and_trailer {
-            // Plain value
-            (value, None) => value,
-
-            // Array indexing
-            (value, Some(AfterValue::ArrayIndex(value2))) => {
-                ValueLike::ArrayIndex(Box::new(value), Box::new(value2))
-            }
-        })
+    use nom::{character::complete::space0, multi::many0, sequence::preceded};
+    value_without_trailer
+        .and(many0(preceded(space0, after_value)).map(|v| v.into_boxed_slice()))
+        .map(|(header, trailer)| ValueLike { header, trailer })
         .parse(s)
 }
 //
+/// A value, or something that looks close enough to it
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValueLike<'source> {
+    /// Initial value-like entity
+    header: ValueWithoutTrailer<'source>,
+
+    /// Stream of additional entities (indexing operators, function calls,
+    /// other operators...) that build this into a more complex value.
+    trailer: Box<[AfterValue<'source>]>,
+}
+//
+impl<'source, T: Into<ValueWithoutTrailer<'source>>> From<T> for ValueLike<'source> {
+    fn from(literal: T) -> Self {
+        Self {
+            header: literal.into(),
+            trailer: Box::default(),
+        }
+    }
+}
+
 /// Like value_like but excluding patterns that start with a value_like
 ///
 /// Used by value_like to prevent infinite recursion on the expression head.
-fn value_like_no_head_recursion(s: &str) -> IResult<ValueLike> {
+fn value_without_trailer(s: &str) -> IResult<ValueWithoutTrailer> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, separated_pair},
@@ -38,15 +52,15 @@ fn value_like_no_head_recursion(s: &str) -> IResult<ValueLike> {
 
     let value_like = || value_like.map(Box::new);
 
-    let literal = literals::literal.map(ValueLike::Literal);
+    let literal = literals::literal.map(ValueWithoutTrailer::Literal);
 
     let parenthesized = delimited(char('(').and(space0), value_like(), space0.and(char(')')))
-        .map(ValueLike::Parenthesized);
+        .map(ValueWithoutTrailer::Parenthesized);
 
     let unary_op = separated_pair(operators::unary_expr_prefix, space0, value_like())
-        .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
+        .map(|(op, expr)| ValueWithoutTrailer::UnaryOp(op, expr));
 
-    let id_expression = names::id_expression.map(ValueLike::IdExpression);
+    let id_expression = names::id_expression.map(ValueWithoutTrailer::IdExpression);
 
     literal
         .or(parenthesized)
@@ -59,9 +73,9 @@ fn value_like_no_head_recursion(s: &str) -> IResult<ValueLike> {
         .parse(s)
 }
 //
-/// A value, or something that looks close enough to it
+/// Values that are not expressions starting with a value
 #[derive(Clone, Debug, PartialEq)]
-pub enum ValueLike<'source> {
+pub enum ValueWithoutTrailer<'source> {
     /// Literal
     Literal(Literal<'source>),
 
@@ -73,12 +87,9 @@ pub enum ValueLike<'source> {
 
     /// Named value
     IdExpression(IdExpression<'source>),
-
-    /// Array indexing
-    ArrayIndex(Box<ValueLike<'source>>, Box<ValueLike<'source>>),
 }
 //
-impl<'source, T: Into<Literal<'source>>> From<T> for ValueLike<'source> {
+impl<'source, T: Into<Literal<'source>>> From<T> for ValueWithoutTrailer<'source> {
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
     }
@@ -91,19 +102,25 @@ fn after_value(s: &str) -> IResult<AfterValue> {
         sequence::delimited,
     };
 
-    let mut array_index = delimited(char('[').and(space0), value_like, space0.and(char(']')))
+    let array_index = delimited(char('[').and(space0), value_like, space0.and(char(']')))
         .map(AfterValue::ArrayIndex);
 
-    // TODO: Add function calls, binary operators, ternary operator
+    let function_call = |s| functions::function_parameters(s, value_like);
+    let function_call = function_call.map(AfterValue::FunctionCall);
 
-    array_index.parse(s)
+    // TODO: Add binary operators, ternary operator
+
+    array_index.or(function_call).parse(s)
 }
 
 /// Things that can come up after a value to form a more complex value
 #[derive(Clone, Debug, PartialEq)]
-enum AfterValue<'source> {
+pub enum AfterValue<'source> {
     /// Array indexing
     ArrayIndex(ValueLike<'source>),
+
+    /// Function call
+    FunctionCall(Box<[ValueLike<'source>]>),
 }
 
 #[cfg(test)]
@@ -113,31 +130,67 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn value_like() {
-        assert_eq!(super::value_like("'@'"), Ok(("", '@'.into())));
+    fn value_without_trailer() {
+        assert_eq!(super::value_without_trailer("'@'"), Ok(("", '@'.into())));
         assert_eq!(
-            super::value_like("(42)"),
-            Ok(("", ValueLike::Parenthesized(Box::new(42u8.into()))))
-        );
-        assert_eq!(
-            super::value_like("&123"),
+            super::value_without_trailer("(42)"),
             Ok((
                 "",
-                ValueLike::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
+                ValueWithoutTrailer::Parenthesized(Box::new(42u8.into()))
             ))
         );
         assert_eq!(
-            super::value_like("MyValue"),
-            Ok(("", ValueLike::IdExpression("MyValue".into())))
+            super::value_without_trailer("&123"),
+            Ok((
+                "",
+                ValueWithoutTrailer::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
+            ))
         );
+        assert_eq!(
+            super::value_without_trailer("MyValue"),
+            Ok(("", ValueWithoutTrailer::IdExpression("MyValue".into())))
+        );
+    }
+
+    #[test]
+    fn after_value() {
+        assert_eq!(
+            super::after_value("[666]"),
+            Ok(("", AfterValue::ArrayIndex(666u16.into()),))
+        );
+        assert_eq!(
+            super::after_value("('c', -5)"),
+            Ok((
+                "",
+                AfterValue::FunctionCall(vec!['c'.into(), (-5i8).into()].into()),
+            ))
+        );
+    }
+
+    #[test]
+    fn value_like() {
         assert_eq!(
             super::value_like("array[666]"),
             Ok((
                 "",
-                ValueLike::ArrayIndex(
-                    Box::new(ValueLike::IdExpression("array".into())),
-                    Box::new(666u16.into())
-                )
+                ValueLike {
+                    header: ValueWithoutTrailer::IdExpression("array".into()),
+                    trailer: vec![AfterValue::ArrayIndex(666u16.into())].into(),
+                }
+            ))
+        );
+        assert_eq!(
+            super::value_like("func(3,'x' )[666]"),
+            Ok((
+                "",
+                ValueLike {
+                    header: ValueWithoutTrailer::IdExpression("func".into()),
+                    trailer: vec![
+                        AfterValue::FunctionCall(vec![(3u8).into(), 'x'.into()].into()),
+                        AfterValue::ArrayIndex(666u16.into())
+                    ]
+                    .into(),
+                }
             ))
         );
     }

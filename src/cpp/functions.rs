@@ -19,6 +19,7 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
         combinator::opt,
         sequence::{preceded, tuple},
     };
+    let function_parameters = |s| function_parameters(s, types::type_like);
     let cv = preceded(space0, qualifiers::cv);
     let reference = preceded(space0, qualifiers::reference);
     let noexcept = preceded(space0, opt(noexcept));
@@ -52,15 +53,21 @@ pub struct FunctionSignature<'source> {
     noexcept: Option<Option<ValueLike<'source>>>,
 }
 
-/// Parser recognizing a set of function parameters
-fn function_parameters(s: &str) -> IResult<Box<[TypeLike]>> {
+/// Parser recognizing a set of function parameters, given a parameter grammar
+///
+/// With a type grammar, this parses function signatures, and with a value
+/// grammar, this parses function calls.
+pub fn function_parameters<'source, T: 'source>(
+    s: &'source str,
+    parameter: impl FnMut(&'source str) -> IResult<T>,
+) -> IResult<Box<[T]>> {
     use nom::{
         character::complete::{char, space0},
         multi::separated_list0,
         sequence::delimited,
     };
-    let parameters = separated_list0(space0.and(char(',')).and(space0), types::type_like);
-    delimited(char('('), parameters, space0.and(char(')')))
+    let parameters = separated_list0(space0.and(char(',')).and(space0), parameter);
+    delimited(char('(').and(space0), parameters, space0.and(char(')')))
         .map(Vec::into_boxed_slice)
         .parse(s)
 }
@@ -167,17 +174,29 @@ mod tests {
 
     #[test]
     fn function_parameters() {
-        assert_eq!(super::function_parameters("()"), Ok(("", vec![].into())));
+        let type_parameters = |s| super::function_parameters(s, types::type_like);
+        assert_eq!(type_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
-            super::function_parameters("(signed char*)"),
+            type_parameters("(signed char*)"),
             Ok(("", vec![force_parse_type("signed char*")].into()))
         );
         assert_eq!(
-            super::function_parameters("(charamel<lol>&, T)"),
+            type_parameters("(charamel<lol>&, T)"),
             Ok((
                 "",
                 vec![force_parse_type("charamel<lol>&"), force_parse_type("T")].into()
             ))
+        );
+
+        let value_parameters = |s| super::function_parameters(s, values::value_like);
+        assert_eq!(value_parameters("()"), Ok(("", vec![].into())));
+        assert_eq!(
+            value_parameters("(123)"),
+            Ok(("", vec![123u8.into()].into()))
+        );
+        assert_eq!(
+            value_parameters("(42, 'a')"),
+            Ok(("", vec![42u8.into(), 'a'.into()].into()))
         );
     }
 }
