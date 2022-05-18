@@ -13,8 +13,8 @@ use nom::Parser;
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
 pub fn value_like(s: &str) -> IResult<ValueLike> {
-    use nom::combinator::opt;
-    (value_like_no_head_recursion.and(opt(after_value)))
+    use nom::{character::complete::space0, combinator::opt, sequence::preceded};
+    (value_like_no_head_recursion.and(preceded(space0, opt(after_value))))
         .map(|value_and_trailer| match value_and_trailer {
             // Plain value
             (value, None) => value,
@@ -29,15 +29,25 @@ pub fn value_like(s: &str) -> IResult<ValueLike> {
 //
 /// Like value_like but excluding patterns that start with a value_like
 ///
-/// Used by value_like to prevent infinite head recursion.
+/// Used by value_like to prevent infinite recursion on the expression head.
 fn value_like_no_head_recursion(s: &str) -> IResult<ValueLike> {
-    use nom::{character::complete::char, sequence::delimited};
+    use nom::{
+        character::complete::{char, space0},
+        sequence::{delimited, separated_pair},
+    };
+
     let value_like = || value_like.map(Box::new);
+
     let literal = literals::literal.map(ValueLike::Literal);
-    let parenthesized = delimited(char('('), value_like(), char(')')).map(ValueLike::Parenthesized);
-    let unary_op = (operators::unary_expr_prefix.and(value_like()))
+
+    let parenthesized = delimited(char('(').and(space0), value_like(), space0.and(char(')')))
+        .map(ValueLike::Parenthesized);
+
+    let unary_op = separated_pair(operators::unary_expr_prefix, space0, value_like())
         .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
+
     let id_expression = names::id_expression.map(ValueLike::IdExpression);
+
     literal
         .or(parenthesized)
         .or(unary_op)
@@ -80,13 +90,12 @@ fn after_value(s: &str) -> IResult<AfterValue> {
         character::complete::{char, space0},
         sequence::delimited,
     };
+
+    let mut array_index = delimited(char('[').and(space0), value_like, space0.and(char(']')))
+        .map(AfterValue::ArrayIndex);
+
     // TODO: Add function calls, binary operators, ternary operator
-    let mut array_index = delimited(
-        space0.and(char('[')).and(space0),
-        value_like,
-        space0.and(char(']')),
-    )
-    .map(AfterValue::ArrayIndex);
+
     array_index.parse(s)
 }
 
