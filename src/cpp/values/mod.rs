@@ -204,7 +204,10 @@ mod tests {
         );
         assert_eq!(
             after_value("+42"),
-            Ok(("", AfterValue::BinaryOp(Symbol::Add.into(), (42u8).into())))
+            Ok((
+                "",
+                AfterValue::BinaryOp(Symbol::AddPlus.into(), (42u8).into())
+            ))
         );
         assert_eq!(
             after_value("? 123 : 456"),

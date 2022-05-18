@@ -25,7 +25,7 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator>
             use Symbol::*;
             match symbol {
                 BitNot | Not => false,
-                Add | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less
+                AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less
                 | Greater => true,
                 Comma => ALLOW_COMMA,
             }
@@ -43,7 +43,7 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator>
         } => {
             use Symbol::*;
             match symbol {
-                Add | SubNeg => false,
+                AddPlus | SubNeg => false,
                 AndRef | Or | AssignEq | Less | Greater => true,
                 Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
             }
@@ -70,8 +70,8 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
 
     // Must be run before unary_symbol to prevent under-parsing
     let increment_decrement = map_opt(symbol.and(symbol), |sym_pair| match sym_pair {
-        (Add, Add) => Some(Operator::Basic {
-            symbol: Add,
+        (AddPlus, AddPlus) => Some(Operator::Basic {
+            symbol: AddPlus,
             twice: true,
             equal: false,
         }),
@@ -84,7 +84,7 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
     });
 
     let unary_symbol = symbol
-        .verify(|s| [Add, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
+        .verify(|s| [AddPlus, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
         .map(Operator::from);
 
     let cast = delimited(char('('), types::type_like, char(')'))
@@ -332,7 +332,7 @@ fn symbol(s: &str) -> IResult<Symbol> {
     use nom::{character::complete::anychar, combinator::map_opt};
     use Symbol::*;
     map_opt(anychar, |c| match c {
-        '+' => Some(Add),
+        '+' => Some(AddPlus),
         '-' => Some(SubNeg),
         '*' => Some(MulDeref),
         '/' => Some(Div),
@@ -354,7 +354,7 @@ fn symbol(s: &str) -> IResult<Symbol> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Symbol {
     /// +
-    Add,
+    AddPlus,
 
     /// -
     SubNeg,
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn symbol() {
-        assert_eq!(super::symbol("+"), Ok(("", Symbol::Add)));
+        assert_eq!(super::symbol("+"), Ok(("", Symbol::AddPlus)));
         assert_eq!(super::symbol("-"), Ok(("", Symbol::SubNeg)));
         assert_eq!(super::symbol("*"), Ok(("", Symbol::MulDeref)));
         assert_eq!(super::symbol("/"), Ok(("", Symbol::Div)));
@@ -428,7 +428,7 @@ mod tests {
             Ok((
                 "",
                 Operator::Basic {
-                    symbol: Symbol::Add,
+                    symbol: Symbol::AddPlus,
                     twice: false,
                     equal: false,
                 }
@@ -721,7 +721,10 @@ mod tests {
     #[test]
     fn unary_expr_prefix() {
         // Lone symbol
-        assert_eq!(super::unary_expr_prefix("+"), Ok(("", Symbol::Add.into())));
+        assert_eq!(
+            super::unary_expr_prefix("+"),
+            Ok(("", Symbol::AddPlus.into()))
+        );
         assert_eq!(
             super::unary_expr_prefix("- "),
             Ok(("", Symbol::SubNeg.into()))
@@ -746,7 +749,7 @@ mod tests {
             Ok((
                 "",
                 Operator::Basic {
-                    symbol: Symbol::Add,
+                    symbol: Symbol::AddPlus,
                     twice: true,
                     equal: false,
                 }
@@ -813,7 +816,7 @@ mod tests {
             Ok((
                 "",
                 Operator::Basic {
-                    symbol: Symbol::Add,
+                    symbol: Symbol::AddPlus,
                     twice: false,
                     equal: true,
                 }
