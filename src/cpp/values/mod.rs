@@ -105,8 +105,25 @@ impl<'source, T: Into<Literal<'source>>> From<T> for ValueWithoutTrailer<'source
 fn after_value<const ALLOW_COMMA: bool>(s: &str) -> IResult<AfterValue> {
     use nom::{
         character::complete::{char, space0},
-        sequence::{delimited, separated_pair},
+        sequence::{delimited, preceded, separated_pair},
     };
+
+    let binary_op = separated_pair(
+        operators::binary_expr_middle::<ALLOW_COMMA>,
+        space0,
+        value_like::<ALLOW_COMMA>,
+    )
+    .map(|(op, value)| AfterValue::BinaryOp(op, value));
+
+    let ternary_op = preceded(
+        char('?').and(space0),
+        separated_pair(
+            value_like::<ALLOW_COMMA>,
+            space0.and(char(':')).and(space0),
+            value_like::<ALLOW_COMMA>,
+        ),
+    )
+    .map(|(value1, value2)| AfterValue::TernaryOp(value1, value2));
 
     let array_index = delimited(
         char('[').and(space0),
@@ -118,16 +135,11 @@ fn after_value<const ALLOW_COMMA: bool>(s: &str) -> IResult<AfterValue> {
     let function_call = |s| functions::function_parameters(s, value_like::<false>);
     let function_call = function_call.map(AfterValue::FunctionCall);
 
-    let binary_op = separated_pair(
-        operators::binary_expr_middle::<ALLOW_COMMA>,
-        space0,
-        value_like::<ALLOW_COMMA>,
-    )
-    .map(|(op, value)| AfterValue::BinaryOp(op, value));
-
-    // TODO: Ternary operator
-
-    binary_op.or(array_index).or(function_call).parse(s)
+    binary_op
+        .or(ternary_op)
+        .or(array_index)
+        .or(function_call)
+        .parse(s)
 }
 
 /// Things that can come up after a value to form a more complex value
@@ -139,8 +151,11 @@ pub enum AfterValue<'source> {
     /// Function call
     FunctionCall(Box<[ValueLike<'source>]>),
 
-    /// Binary operator
+    /// Binary operator (OP x)
     BinaryOp(Operator<'source>, ValueLike<'source>),
+
+    /// Ternary operator (? x : y)
+    TernaryOp(ValueLike<'source>, ValueLike<'source>),
 }
 
 #[cfg(test)]
@@ -190,6 +205,10 @@ mod tests {
         assert_eq!(
             after_value("+42"),
             Ok(("", AfterValue::BinaryOp(Symbol::Add.into(), (42u8).into())))
+        );
+        assert_eq!(
+            after_value("? 123 : 456"),
+            Ok(("", AfterValue::TernaryOp(123u8.into(), 456u16.into())))
         );
     }
 
