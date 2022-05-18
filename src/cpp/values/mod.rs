@@ -4,6 +4,7 @@ pub mod literals;
 
 use self::literals::Literal;
 use crate::cpp::{
+    names::{self, IdExpression},
     operators::{self, Operator},
     IResult,
 };
@@ -18,9 +19,14 @@ pub fn value_like(s: &str) -> IResult<ValueLike> {
     let parentheses = delimited(char('('), value_like(), char(')')).map(ValueLike::Parentheses);
     let unary_op = (operators::unary_expr_prefix.and(value_like()))
         .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
-    // TODO: Should accept id-expressions here, but not necessary yet since they
-    //       are accepted by TypeLike as well.
-    literal.or(parentheses).or(unary_op).parse(s)
+    let id_expression = names::id_expression.map(ValueLike::IdExpression);
+    literal
+        .or(parentheses)
+        .or(unary_op)
+        // Must come late in the trial chain as it can match keywords, including
+        // the name of some operators.
+        .or(id_expression)
+        .parse(s)
 }
 //
 /// A value, or something that looks close enough to it
@@ -34,6 +40,9 @@ pub enum ValueLike<'source> {
 
     /// Unary operator applied to a value
     UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
+
+    /// Named value
+    IdExpression(IdExpression<'source>),
 }
 //
 impl<'source, T: Into<Literal<'source>>> From<T> for ValueLike<'source> {
@@ -61,6 +70,10 @@ mod tests {
                 "",
                 ValueLike::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
             ))
+        );
+        assert_eq!(
+            super::value_like("MyValue"),
+            Ok(("", ValueLike::IdExpression("MyValue".into())))
         );
     }
 }
