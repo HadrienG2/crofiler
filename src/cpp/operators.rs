@@ -69,6 +69,7 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
     use Symbol::*;
 
     // Must be run before unary_symbol to prevent under-parsing
+    // TODO: Extract and make public so it can be used to parse post-inc/dec
     let increment_decrement = map_opt(symbol.and(symbol), |sym_pair| match sym_pair {
         (AddPlus, AddPlus) => Some(Operator::Basic {
             symbol: AddPlus,
