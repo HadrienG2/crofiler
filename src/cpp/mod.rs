@@ -22,6 +22,10 @@ pub use self::{
         qualifiers::{ConstVolatile, Reference},
         TypeLike,
     },
+    values::{
+        literals::{Literal, LiteralValue},
+        ValueLike,
+    },
 };
 
 // FIXME: Remove once done debugging

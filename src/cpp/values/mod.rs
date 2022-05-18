@@ -2,7 +2,7 @@
 
 pub mod literals;
 
-use self::literals::{Literal, LiteralValue};
+use self::literals::Literal;
 use crate::cpp::{
     operators::{self, Operator},
     IResult,
@@ -36,9 +36,9 @@ pub enum ValueLike<'source> {
     UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
 }
 //
-impl<T: Into<LiteralValue>> From<T> for ValueLike<'_> {
-    fn from(value: T) -> Self {
-        Self::Literal(Literal::from(value))
+impl<'source, T: Into<Literal<'source>>> From<T> for ValueLike<'source> {
+    fn from(literal: T) -> Self {
+        Self::Literal(literal.into())
     }
 }
 
