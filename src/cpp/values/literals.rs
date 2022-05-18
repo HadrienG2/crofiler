@@ -1,63 +1,73 @@
-//! Values and other things that follow the value grammar
+//! Literals (and things that should be literals like negative numbers)
 
-use crate::cpp::{
-    operators::{self, Operator},
-    IResult,
-};
+use crate::cpp::{atoms, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
-/// Parser recognizing values (and some values that are indistinguishable from
-/// values without extra context)
-pub fn value_like(s: &str) -> IResult<ValueLike> {
-    let integer = integer.map(ValueLike::Integer);
-    let character = character.map(ValueLike::Character);
-    let unary_op = operators::unary_expr_prefix
-        .and(value_like.map(Box::new))
-        .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
-    // TODO: Should accept id-expressions here, but not necessary yet since they
-    //       are accepted by TypeLike as well.
-    integer.or(character).or(unary_op).parse(s)
+/// Parser for literals
+pub fn literal(s: &str) -> IResult<Literal> {
+    use nom::combinator::opt;
+    (literal_value.and(opt(atoms::identifier)))
+        .map(|(value, custom_suffix)| Literal {
+            value,
+            custom_suffix,
+        })
+        .parse(s)
+}
+
+/// A modern C++ literal, accounting for custom literals
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Literal<'source> {
+    /// Inner value
+    value: LiteralValue,
+
+    /// Custom literal suffix, if any
+    custom_suffix: Option<&'source str>,
 }
 //
-/// A value, or something that looks close enough to it
-#[derive(Clone, Debug, PartialEq)]
-pub enum ValueLike<'source> {
+impl<T: Into<LiteralValue>> From<T> for Literal<'_> {
+    fn from(value: T) -> Self {
+        Self {
+            value: value.into(),
+            custom_suffix: None,
+        }
+    }
+}
+
+/// Parser for literal values
+fn literal_value(s: &str) -> IResult<LiteralValue> {
+    let integer = integer.map(LiteralValue::Integer);
+    let character = character.map(LiteralValue::Character);
+    integer.or(character).parse(s)
+}
+
+/// A literal value, or something that looks close enough to it
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LiteralValue {
     /// Integer
     Integer(i128),
 
     /// Character
     Character(char),
-
-    /// Unary operator AST
-    //
-    // TODO: Investigate ways to avoid excessive boxing, something like struct {
-    //    prefix: Operator,
-    //    inner: ...
-    //    calls_and_indices: Box<[...]>
-    // }
-    // A priori, only values that combine multiple unrelated expressions like
-    // BinaryOp and TernaryOp strictly need boxing.
-    UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
 }
 //
 // Can't just impl<I: Into<i128>> at it would break other From impls...
-macro_rules! value_from_integer {
+macro_rules! literal_value_from_integer {
     ($($integer:ident),*) => {
         $(
-            impl From<$integer> for ValueLike<'_> {
+            impl From<$integer> for LiteralValue {
                 fn from(i: $integer) -> Self {
-                    ValueLike::Integer(i.into())
+                    LiteralValue::Integer(i.into())
                 }
             }
         )*
     }
 }
-value_from_integer!(i8, u8, i16, u16, i32, u32, i64, u64);
+literal_value_from_integer!(i8, u8, i16, u16, i32, u32, i64, u64);
 //
-impl From<char> for ValueLike<'_> {
+impl From<char> for LiteralValue {
     fn from(c: char) -> Self {
-        ValueLike::Character(c)
+        LiteralValue::Character(c)
     }
 }
 
@@ -103,7 +113,6 @@ fn character(s: &str) -> IResult<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use operators::Symbol;
     use pretty_assertions::assert_eq;
     use std::fmt::Write;
 
@@ -160,14 +169,22 @@ mod tests {
     }
 
     #[test]
-    fn value_like() {
-        assert_eq!(super::value_like("-123"), Ok(("", (-123i8).into())));
-        assert_eq!(super::value_like("'c'"), Ok(("", 'c'.into())));
+    fn literal_value() {
+        assert_eq!(super::literal_value("-123"), Ok(("", (-123i8).into())));
+        assert_eq!(super::literal_value("'c'"), Ok(("", 'c'.into())));
+    }
+
+    #[test]
+    fn literal() {
+        assert_eq!(super::literal("'x'"), Ok(("", 'x'.into())));
         assert_eq!(
-            super::value_like("&123"),
+            super::literal("42_m"),
             Ok((
                 "",
-                ValueLike::UnaryOp(Symbol::AndRef.into(), Box::new((123i8).into()))
+                Literal {
+                    value: 42u8.into(),
+                    custom_suffix: Some("_m")
+                }
             ))
         );
     }
