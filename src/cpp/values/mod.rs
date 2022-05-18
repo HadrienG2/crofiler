@@ -13,16 +13,26 @@ use nom::Parser;
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
 pub fn value_like(s: &str) -> IResult<ValueLike> {
+    // TODO: Add function calls, indexing, binary operators, ternary operator
+    value_like_no_head_recursion(s)
+}
+//
+/// Like value_like but excluding patterns that start with a value_like
+///
+/// Used by value_like to prevent infinite head recursion.
+fn value_like_no_head_recursion(s: &str) -> IResult<ValueLike> {
     use nom::{character::complete::char, sequence::delimited};
     let value_like = || value_like.map(Box::new);
     let literal = literals::literal.map(ValueLike::Literal);
-    let parentheses = delimited(char('('), value_like(), char(')')).map(ValueLike::Parentheses);
+    let parenthesized = delimited(char('('), value_like(), char(')')).map(ValueLike::Parenthesized);
     let unary_op = (operators::unary_expr_prefix.and(value_like()))
         .map(|(op, expr)| ValueLike::UnaryOp(op, expr));
     let id_expression = names::id_expression.map(ValueLike::IdExpression);
     literal
-        .or(parentheses)
+        .or(parenthesized)
         .or(unary_op)
+        // TODO: Add new-expression here, see https://en.cppreference.com/w/cpp/language/new
+        //
         // Must come late in the trial chain as it can match keywords, including
         // the name of some operators.
         .or(id_expression)
@@ -36,7 +46,7 @@ pub enum ValueLike<'source> {
     Literal(Literal<'source>),
 
     /// Value with parentheses around it
-    Parentheses(Box<ValueLike<'source>>),
+    Parenthesized(Box<ValueLike<'source>>),
 
     /// Unary operator applied to a value
     UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
@@ -62,7 +72,7 @@ mod tests {
         assert_eq!(super::value_like("'@'"), Ok(("", '@'.into())));
         assert_eq!(
             super::value_like("(42)"),
-            Ok(("", ValueLike::Parentheses(Box::new(42u8.into()))))
+            Ok(("", ValueLike::Parenthesized(Box::new(42u8.into()))))
         );
         assert_eq!(
             super::value_like("&123"),
