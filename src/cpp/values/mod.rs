@@ -13,8 +13,18 @@ use nom::Parser;
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
 pub fn value_like(s: &str) -> IResult<ValueLike> {
-    // TODO: Add function calls, indexing, binary operators, ternary operator
-    value_like_no_head_recursion(s)
+    use nom::combinator::opt;
+    (value_like_no_head_recursion.and(opt(after_value)))
+        .map(|value_and_trailer| match value_and_trailer {
+            // Plain value
+            (value, None) => value,
+
+            // Array indexing
+            (value, Some(AfterValue::ArrayIndex(value2))) => {
+                ValueLike::ArrayIndex(Box::new(value), Box::new(value2))
+            }
+        })
+        .parse(s)
 }
 //
 /// Like value_like but excluding patterns that start with a value_like
@@ -53,12 +63,38 @@ pub enum ValueLike<'source> {
 
     /// Named value
     IdExpression(IdExpression<'source>),
+
+    /// Array indexing
+    ArrayIndex(Box<ValueLike<'source>>, Box<ValueLike<'source>>),
 }
 //
 impl<'source, T: Into<Literal<'source>>> From<T> for ValueLike<'source> {
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
     }
+}
+
+/// Parse things that can come up after a value to form a more complex value
+fn after_value(s: &str) -> IResult<AfterValue> {
+    use nom::{
+        character::complete::{char, space0},
+        sequence::delimited,
+    };
+    // TODO: Add function calls, binary operators, ternary operator
+    let mut array_index = delimited(
+        space0.and(char('[')).and(space0),
+        value_like,
+        space0.and(char(']')),
+    )
+    .map(AfterValue::ArrayIndex);
+    array_index.parse(s)
+}
+
+/// Things that can come up after a value to form a more complex value
+#[derive(Clone, Debug, PartialEq)]
+enum AfterValue<'source> {
+    /// Array indexing
+    ArrayIndex(ValueLike<'source>),
 }
 
 #[cfg(test)]
@@ -84,6 +120,16 @@ mod tests {
         assert_eq!(
             super::value_like("MyValue"),
             Ok(("", ValueLike::IdExpression("MyValue".into())))
+        );
+        assert_eq!(
+            super::value_like("array[666]"),
+            Ok((
+                "",
+                ValueLike::ArrayIndex(
+                    Box::new(ValueLike::IdExpression("array".into())),
+                    Box::new(666u16.into())
+                )
+            ))
         );
     }
 }
