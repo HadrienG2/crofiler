@@ -80,7 +80,7 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     let function_signature = preceded(space0, opt(functions::function_signature));
     let array = opt(delimited(
         space0.and(char('[')).and(space0),
-        opt(values::value_like),
+        opt(values::value_like::<false>),
         space0.and(char(']')),
     ));
 

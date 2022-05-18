@@ -9,6 +9,56 @@ use crate::cpp::{
 use nom::Parser;
 use nom_supreme::ParserExt;
 
+/// Parse a binary operator that can be put between two expressions
+///
+/// We may sometimes not want to allow the comma operator in order to avoid
+/// confusing comma-delimited parsers like function calls...
+pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator> {
+    // Most 1-character operators can be used in binary position, except for
+    // the negation operators Not and BitNot
+    let arith1 = arithmetic_or_comparison::<1>.verify(|op| match op {
+        Operator::Basic {
+            symbol,
+            twice: false,
+            equal: false,
+        } => {
+            use Symbol::*;
+            match symbol {
+                BitNot | Not => false,
+                Add | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less
+                | Greater => true,
+                Comma => ALLOW_COMMA,
+            }
+        }
+        _ => unreachable!(),
+    });
+
+    // Most 2-character operators can be used in binary position, except for
+    // increment and decrement.
+    let arith2 = arithmetic_or_comparison::<2>.verify(|op| match op {
+        Operator::Basic {
+            symbol,
+            twice: true,
+            equal: false,
+        } => {
+            use Symbol::*;
+            match symbol {
+                Add | SubNeg => false,
+                AndRef | Or | AssignEq | Less | Greater => true,
+                Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
+            }
+        }
+        // This may need to be revised as C++ evolves
+        _ => true,
+    });
+
+    // All 3-character operators can be used in binary position
+    let arith3 = arithmetic_or_comparison::<3>;
+
+    // No other operator can be used in binary position
+    arith3.or(arith2).or(arith1).parse(s)
+}
+
 /// Parse an unary operator that can be applied to an expression in prefix position
 pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
     use nom::{
@@ -37,9 +87,7 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
         .verify(|s| [Add, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
         .map(Operator::from);
 
-    // Must run after everything else at it matches keywords
-    let cast = types::type_like
-        .or(delimited(char('('), types::type_like, char(')')))
+    let cast = delimited(char('('), types::type_like, char(')'))
         .map(|ty| Operator::Conversion(Box::new(ty)));
 
     let delete = new_or_delete.verify(|op| {
@@ -672,19 +720,6 @@ mod tests {
 
     #[test]
     fn unary_expr_prefix() {
-        /*
-
-        let delete = new_or_delete.verify(|op| {
-            if let Operator::NewDelete { is_delete, .. } = op {
-                *is_delete
-            } else {
-                unreachable!();
-            }
-        });
-
-        .or((co_await.or(delete)).terminated(space1))
-        .parse(s) */
-
         // Lone symbol
         assert_eq!(super::unary_expr_prefix("+"), Ok(("", Symbol::Add.into())));
         assert_eq!(
@@ -731,10 +766,6 @@ mod tests {
 
         // Casts
         assert_eq!(
-            super::unary_expr_prefix("int"),
-            Ok(("", Operator::Conversion(Box::new(force_parse_type("int")))))
-        );
-        assert_eq!(
             super::unary_expr_prefix("(float)"),
             Ok((
                 "",
@@ -756,6 +787,55 @@ mod tests {
                 Operator::NewDelete {
                     is_delete: true,
                     array: true
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn binary_expr_middle() {
+        // Lone symbol, other than not
+        assert_eq!(
+            super::binary_expr_middle::<false>("="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::AssignEq,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+
+        // Two-character, other than increment/decrement
+        assert_eq!(
+            super::binary_expr_middle::<false>("+="),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Add,
+                    twice: false,
+                    equal: true,
+                }
+            ))
+        );
+
+        // Three-character
+        assert_eq!(
+            super::binary_expr_middle::<false>("<=>"),
+            Ok(("", Operator::Spaceship))
+        );
+
+        // Only accept comma if instructed to do so
+        assert!(super::binary_expr_middle::<false>(",").is_err());
+        assert_eq!(
+            super::binary_expr_middle::<true>(","),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Comma,
+                    twice: false,
+                    equal: false,
                 }
             ))
         );
