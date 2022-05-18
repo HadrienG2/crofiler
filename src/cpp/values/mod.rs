@@ -180,7 +180,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::value_like("func(3,'x' )[666]"),
+            super::value_like("func( 3,'x' )[666]"),
             Ok((
                 "",
                 ValueLike {
