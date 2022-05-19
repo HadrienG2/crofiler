@@ -1,13 +1,14 @@
 //! C++ entity name parsing
 
-mod anonymous;
-mod atoms;
-mod functions;
-mod names;
-mod operators;
-mod templates;
-mod types;
-mod values;
+// FIXME: Remove pub once done debugging
+pub mod anonymous;
+pub mod atoms;
+pub mod functions;
+pub mod names;
+pub mod operators;
+pub mod templates;
+pub mod types;
+pub mod values;
 
 use nom::Parser;
 use nom_supreme::ParserExt;
