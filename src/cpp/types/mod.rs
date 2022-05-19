@@ -85,8 +85,7 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     ));
 
     // Put it all together
-    let tuple = tuple((bottom_type, pointers_reference, function_signature, array));
-    preceded(opt(atoms::keyword("typename").and(space1)), tuple)
+    tuple((bottom_type, pointers_reference, function_signature, array))
         .map(
             |((bottom_cv, bottom_id), pointers_reference, function_signature, array)| TypeLike {
                 bottom_cv,
