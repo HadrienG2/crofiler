@@ -42,7 +42,16 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
         combinator::{opt, verify},
         sequence::{delimited, preceded, tuple},
     };
+    use nom_supreme::tag::complete::tag;
     use qualifiers::pointers_reference;
+
+    // I think attributes should come first
+    let attributes = opt(delimited(
+        tag("__attribute__("),
+        functions::function_call,
+        char(')').and(space0),
+    ))
+    .map(Option::unwrap_or_default);
 
     // C++ grammar requires that the bottom type name (along with its cv
     // qualifiers) be preceded with "typename" or "class" in some circumstances.
@@ -85,22 +94,34 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     ));
 
     // Put it all together
-    tuple((bottom_type, pointers_reference, function_signature, array))
-        .map(
-            |((bottom_cv, bottom_id), pointers_reference, function_signature, array)| TypeLike {
+    tuple((
+        attributes,
+        bottom_type,
+        pointers_reference,
+        function_signature,
+        array,
+    ))
+    .map(
+        |(attributes, (bottom_cv, bottom_id), pointers_reference, function_signature, array)| {
+            TypeLike {
+                attributes,
                 bottom_cv,
                 bottom_id,
                 pointers_reference,
                 function_signature,
                 array,
-            },
-        )
-        .parse(s)
+            }
+        },
+    )
+    .parse(s)
 }
 
 /// A type name, or something looking close enough to it
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct TypeLike<'source> {
+    /// GNU-style attributes __attribute__((...))
+    attributes: Box<[ValueLike<'source>]>,
+
     /// CV qualifiers applying to the leftmost id-expression
     bottom_cv: ConstVolatile,
 
@@ -177,6 +198,20 @@ mod tests {
                 "",
                 TypeLike {
                     bottom_id: IdExpression::from("unsigned int"),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Attributes before
+        assert_eq!(
+            super::type_like("__attribute__((unused)) something"),
+            Ok((
+                "",
+                TypeLike {
+                    attributes: vec![values::value_like::<false, false>("unused").unwrap().1]
+                        .into(),
+                    bottom_id: IdExpression::from("something"),
                     ..Default::default()
                 }
             ))

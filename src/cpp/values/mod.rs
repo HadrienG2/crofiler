@@ -139,8 +139,7 @@ fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> I
     )
     .map(AfterValue::ArrayIndex);
 
-    let function_call = |s| functions::function_parameters(s, value_like::<false, true>);
-    let function_call = function_call.map(AfterValue::FunctionCall);
+    let function_call = functions::function_call.map(AfterValue::FunctionCall);
 
     binary_op
         .or(ternary_op)

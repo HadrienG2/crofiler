@@ -12,6 +12,11 @@ use crate::cpp::{
 };
 use nom::Parser;
 
+/// Parser recognizing a function call
+pub fn function_call(s: &str) -> IResult<Box<[ValueLike]>> {
+    function_parameters(s, values::value_like::<false, true>)
+}
+
 /// Parser recognizing a function signature (parameters + qualifiers)
 pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     use nom::{
@@ -194,16 +199,17 @@ mod tests {
                 vec![force_parse_type("charamel<lol>&"), force_parse_type("T")].into()
             ))
         );
+    }
 
-        let value_parameters =
-            |s| super::function_parameters(s, values::value_like::<false, false>);
-        assert_eq!(value_parameters("()"), Ok(("", vec![].into())));
+    #[test]
+    fn function_call() {
+        assert_eq!(super::function_call("()"), Ok(("", vec![].into())));
         assert_eq!(
-            value_parameters("(123)"),
+            super::function_call("(123)"),
             Ok(("", vec![123u8.into()].into()))
         );
         assert_eq!(
-            value_parameters("(42, 'a')"),
+            super::function_call("(42, 'a')"),
             Ok(("", vec![42u8.into(), 'a'.into()].into()))
         );
     }
