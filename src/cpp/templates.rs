@@ -16,10 +16,11 @@ pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
         sequence::delimited,
     };
     use nom_supreme::tag::complete::tag;
-    let arguments = separated_list0(char(',').and(space0), template_parameter);
-    (delimited(char('<'), arguments, space0.and(char('>'))).map(|v| Some(v.into_boxed_slice())))
-        .or(tag("<, void>").value(None))
-        .parse(s)
+    let arguments = separated_list0(space0.and(char(',')).and(space0), template_parameter);
+    (delimited(char('<').and(space0), arguments, space0.and(char('>')))
+        .map(|v| Some(v.into_boxed_slice())))
+    .or(tag("<, void>").value(None))
+    .parse(s)
 }
 //
 /// Set of template parameters
@@ -29,9 +30,20 @@ pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
 pub type TemplateParameters<'source> = Option<Box<[TemplateParameter<'source>]>>;
 
 /// Parser recognizing a single template parameter/argument
+///
+/// Must parse to the next template parameter separator (, or >) in order to
+/// resolve the type vs value ambiguity properly.
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {
-    let type_like = types::type_like.map(TemplateParameter::TypeLike);
-    let value_like = values::value_like::<false, false>.map(TemplateParameter::ValueLike);
+    use nom::{
+        character::complete::{char, space0},
+        combinator::peek,
+    };
+    let type_like = types::type_like
+        .map(TemplateParameter::TypeLike)
+        .terminated(space0.and(peek(char(',').or(char('>')))));
+    let value_like = values::value_like::<false, false>
+        .map(TemplateParameter::ValueLike)
+        .terminated(space0.and(peek(char(',').or(char('>')))));
     type_like.or(value_like).parse(s)
 }
 //
