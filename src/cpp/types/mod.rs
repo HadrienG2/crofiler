@@ -80,7 +80,7 @@ fn type_like_impl(s: &str, bottom_id: impl Fn(&str) -> IResult<IdExpression>) ->
     let function_signature = preceded(space0, opt(functions::function_signature));
     let array = opt(delimited(
         space0.and(char('[')).and(space0),
-        opt(values::value_like::<false>),
+        opt(values::value_like::<false, true>),
         space0.and(char(']')),
     ));
 
@@ -299,6 +299,19 @@ mod tests {
                     bottom_id: IdExpression::from("char"),
                     pointers_reference: qualifiers::pointers_reference("&").unwrap().1,
                     array: Some(Some(7u8.into())),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Fun template/expression ambiguity found during testing
+        assert_eq!(
+            super::type_like("T<1>(U)"),
+            Ok((
+                "",
+                TypeLike {
+                    bottom_id: names::id_expression("T<1>").unwrap().1,
+                    function_signature: Some(functions::function_signature("(U)").unwrap().1),
                     ..Default::default()
                 }
             ))

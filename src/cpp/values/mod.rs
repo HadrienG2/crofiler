@@ -13,10 +13,15 @@ use nom::Parser;
 
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
-pub fn value_like<const ALLOW_COMMA: bool>(s: &str) -> IResult<ValueLike> {
+pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+    s: &str,
+) -> IResult<ValueLike> {
     use nom::{character::complete::space0, multi::many0, sequence::preceded};
-    value_without_trailer::<ALLOW_COMMA>
-        .and(many0(preceded(space0, after_value::<ALLOW_COMMA>)).map(|v| v.into_boxed_slice()))
+    value_without_trailer::<ALLOW_COMMA, ALLOW_GREATER>
+        .and(
+            many0(preceded(space0, after_value::<ALLOW_COMMA, ALLOW_GREATER>))
+                .map(|v| v.into_boxed_slice()),
+        )
         .map(|(header, trailer)| ValueLike { header, trailer })
         .parse(s)
 }
@@ -44,7 +49,9 @@ impl<'source, T: Into<ValueWithoutTrailer<'source>>> From<T> for ValueLike<'sour
 /// Like value_like but excluding patterns that start with a value_like
 ///
 /// Used by value_like to prevent infinite recursion on the expression head.
-fn value_without_trailer<const ALLOW_COMMA: bool>(s: &str) -> IResult<ValueWithoutTrailer> {
+fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+    s: &str,
+) -> IResult<ValueWithoutTrailer> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, separated_pair},
@@ -54,7 +61,7 @@ fn value_without_trailer<const ALLOW_COMMA: bool>(s: &str) -> IResult<ValueWitho
 
     let parenthesized = delimited(
         char('(').and(space0),
-        value_like::<true>.map(Box::new),
+        value_like::<true, true>.map(Box::new),
         space0.and(char(')')),
     )
     .map(ValueWithoutTrailer::Parenthesized);
@@ -62,7 +69,7 @@ fn value_without_trailer<const ALLOW_COMMA: bool>(s: &str) -> IResult<ValueWitho
     let unary_op = separated_pair(
         operators::unary_expr_prefix,
         space0,
-        value_like::<ALLOW_COMMA>.map(Box::new),
+        value_like::<ALLOW_COMMA, ALLOW_GREATER>.map(Box::new),
     )
     .map(|(op, expr)| ValueWithoutTrailer::UnaryOp(op, expr));
 
@@ -102,37 +109,37 @@ impl<'source, T: Into<Literal<'source>>> From<T> for ValueWithoutTrailer<'source
 }
 
 /// Parse things that can come up after a value to form a more complex value
-fn after_value<const ALLOW_COMMA: bool>(s: &str) -> IResult<AfterValue> {
+fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> IResult<AfterValue> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, preceded, separated_pair},
     };
 
     let binary_op = separated_pair(
-        operators::binary_expr_middle::<ALLOW_COMMA>,
+        operators::binary_expr_middle::<ALLOW_COMMA, ALLOW_GREATER>,
         space0,
-        value_like::<ALLOW_COMMA>,
+        value_like::<ALLOW_COMMA, ALLOW_GREATER>,
     )
     .map(|(op, value)| AfterValue::BinaryOp(op, value));
 
     let ternary_op = preceded(
         char('?').and(space0),
         separated_pair(
-            value_like::<ALLOW_COMMA>,
+            value_like::<ALLOW_COMMA, ALLOW_GREATER>,
             space0.and(char(':')).and(space0),
-            value_like::<ALLOW_COMMA>,
+            value_like::<ALLOW_COMMA, ALLOW_GREATER>,
         ),
     )
     .map(|(value1, value2)| AfterValue::TernaryOp(value1, value2));
 
     let array_index = delimited(
         char('[').and(space0),
-        value_like::<false>,
+        value_like::<false, true>,
         space0.and(char(']')),
     )
     .map(AfterValue::ArrayIndex);
 
-    let function_call = |s| functions::function_parameters(s, value_like::<false>);
+    let function_call = |s| functions::function_parameters(s, value_like::<false, true>);
     let function_call = function_call.map(AfterValue::FunctionCall);
 
     binary_op
@@ -166,7 +173,7 @@ mod tests {
 
     #[test]
     fn value_without_trailer() {
-        let value_without_trailer = super::value_without_trailer::<false>;
+        let value_without_trailer = super::value_without_trailer::<false, false>;
         assert_eq!(value_without_trailer("'@'"), Ok(("", '@'.into())));
         assert_eq!(
             value_without_trailer("(42)"),
@@ -190,7 +197,7 @@ mod tests {
 
     #[test]
     fn after_value() {
-        let after_value = super::after_value::<false>;
+        let after_value = super::after_value::<false, false>;
         assert_eq!(
             after_value("[666]"),
             Ok(("", AfterValue::ArrayIndex(666u16.into()),))
@@ -217,7 +224,7 @@ mod tests {
 
     #[test]
     fn value_like() {
-        let value_like = super::value_like::<false>;
+        let value_like = super::value_like::<false, false>;
         assert_eq!(
             value_like("array[666]"),
             Ok((

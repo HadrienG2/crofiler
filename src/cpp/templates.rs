@@ -31,7 +31,7 @@ pub type TemplateParameters<'source> = Option<Box<[TemplateParameter<'source>]>>
 /// Parser recognizing a single template parameter/argument
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {
     let type_like = types::type_like.map(TemplateParameter::TypeLike);
-    let value_like = values::value_like::<false>.map(TemplateParameter::ValueLike);
+    let value_like = values::value_like::<false, false>.map(TemplateParameter::ValueLike);
     type_like.or(value_like).parse(s)
 }
 //

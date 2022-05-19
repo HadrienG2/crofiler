@@ -81,7 +81,11 @@ fn noexcept(s: &str) -> IResult<Option<ValueLike>> {
     };
     preceded(
         atoms::keyword("noexcept"),
-        opt(delimited(char('('), values::value_like::<false>, char(')'))),
+        opt(delimited(
+            char('('),
+            values::value_like::<false, true>,
+            char(')'),
+        )),
     )
     .parse(s)
 }
@@ -97,7 +101,10 @@ mod tests {
         assert_eq!(super::noexcept("noexcept"), Ok(("", None)));
         assert_eq!(
             super::noexcept("noexcept(123)"),
-            Ok(("", Some(values::value_like::<false>("123").unwrap().1)))
+            Ok((
+                "",
+                Some(values::value_like::<false, false>("123").unwrap().1)
+            ))
         );
     }
 
@@ -165,7 +172,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     reference: Reference::RValue,
-                    noexcept: Some(Some(values::value_like::<false>("456").unwrap().1)),
+                    noexcept: Some(Some(values::value_like::<false, false>("456").unwrap().1)),
                     ..Default::default()
                 }
             ))
@@ -188,7 +195,8 @@ mod tests {
             ))
         );
 
-        let value_parameters = |s| super::function_parameters(s, values::value_like::<false>);
+        let value_parameters =
+            |s| super::function_parameters(s, values::value_like::<false, false>);
         assert_eq!(value_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
             value_parameters("(123)"),

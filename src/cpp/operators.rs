@@ -11,9 +11,13 @@ use nom_supreme::ParserExt;
 
 /// Parse a binary operator that can be put between two expressions
 ///
-/// We may sometimes not want to allow the comma operator in order to avoid
-/// confusing comma-delimited parsers like function calls...
-pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator> {
+/// We may sometimes not want to allow the comma , operator in order to avoid
+/// confusing comma-delimited parsers like function calls, and may sometimes not
+/// want to allow the greater > and shr >> operators in order to avoid confusing
+/// the template parameter parser.
+pub fn binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+    s: &str,
+) -> IResult<Operator> {
     // Most 1-character operators can be used in binary position, except for
     // the negation operators Not and BitNot
     let arith1 = arithmetic_or_comparison::<1>.verify(|op| match op {
@@ -25,16 +29,18 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator>
             use Symbol::*;
             match symbol {
                 BitNot | Not => false,
-                AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less
-                | Greater => true,
+                AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less => {
+                    true
+                }
                 Comma => ALLOW_COMMA,
+                Greater => ALLOW_GREATER,
             }
         }
         _ => unreachable!(),
     });
 
     // Most 2-character operators can be used in binary position, except for
-    // increment and decrement.
+    // increment and decrement, and shr in template contexts.
     let arith2 = arithmetic_or_comparison::<2>.verify(|op| match op {
         Operator::Basic {
             symbol,
@@ -44,7 +50,8 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool>(s: &str) -> IResult<Operator>
             use Symbol::*;
             match symbol {
                 AddPlus | SubNeg => false,
-                AndRef | Or | AssignEq | Less | Greater => true,
+                AndRef | Or | AssignEq | Less => true,
+                Greater => ALLOW_GREATER,
                 Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
             }
         }
@@ -800,7 +807,7 @@ mod tests {
     fn binary_expr_middle() {
         // Lone symbol, other than not
         assert_eq!(
-            super::binary_expr_middle::<false>("="),
+            super::binary_expr_middle::<false, false>("="),
             Ok((
                 "",
                 Operator::Basic {
@@ -813,7 +820,7 @@ mod tests {
 
         // Two-character, other than increment/decrement
         assert_eq!(
-            super::binary_expr_middle::<false>("+="),
+            super::binary_expr_middle::<false, false>("+="),
             Ok((
                 "",
                 Operator::Basic {
@@ -826,19 +833,45 @@ mod tests {
 
         // Three-character
         assert_eq!(
-            super::binary_expr_middle::<false>("<=>"),
+            super::binary_expr_middle::<false, false>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Only accept comma if instructed to do so
-        assert!(super::binary_expr_middle::<false>(",").is_err());
+        assert!(super::binary_expr_middle::<false, false>(",").is_err());
         assert_eq!(
-            super::binary_expr_middle::<true>(","),
+            super::binary_expr_middle::<true, false>(","),
             Ok((
                 "",
                 Operator::Basic {
                     symbol: Symbol::Comma,
                     twice: false,
+                    equal: false,
+                }
+            ))
+        );
+
+        // Only accept greater sign if instructed to do so
+        assert!(super::binary_expr_middle::<false, false>(">").is_err());
+        assert!(super::binary_expr_middle::<false, false>(">>").is_err());
+        assert_eq!(
+            super::binary_expr_middle::<false, true>(">"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Greater,
+                    twice: false,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::binary_expr_middle::<false, true>(">>"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::Greater,
+                    twice: true,
                     equal: false,
                 }
             ))
