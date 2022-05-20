@@ -10,6 +10,7 @@ use crate::cpp::{
     functions::{self, FunctionSignature},
     operators::{self, Operator},
     templates::{self, TemplateParameters},
+    values::{self, ValueLike},
     IResult,
 };
 use nom::Parser;
@@ -61,7 +62,14 @@ pub type NestedNameSpecifier<'source> = Box<[Scope<'source>]>;
 
 /// Parser for unqualified id-expressions
 fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
-    use nom::{character::complete::char, combinator::opt, sequence::tuple};
+    use nom::{
+        character::complete::{char, space0},
+        combinator::opt,
+        sequence::{delimited, tuple},
+    };
+    use nom_supreme::tag::complete::tag;
+
+    // An entity named by a user-specified identifier
     let is_destructor = opt(char('~')).map(|opt| opt.is_some());
     let named = tuple((
         is_destructor,
@@ -75,21 +83,40 @@ fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
             template_parameters,
         },
     );
-    let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
+
+    // An operator overload
     let operator = operators::operator_overload.map(|(operator, template_parameters)| {
         UnqualifiedId::Operator {
             operator,
             template_parameters,
         }
     });
+
+    // A decltype expression
+    let decltype = delimited(
+        tag("decltype(").and(space0),
+        values::value_like::<false, true>,
+        space0.and(char(')')),
+    )
+    .map(Box::new)
+    .map(UnqualifiedId::Decltype);
+
+    // Anonymous entities to which clang gives a name
+    let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
     let anonymous = anonymous::anonymous.map(UnqualifiedId::Anonymous);
-    // Operator must go before names as named matches keywords
-    operator.or(named).or(lambda).or(anonymous).parse(s)
+
+    // Operator and decltype must go before named because named matches keywords
+    operator
+        .or(decltype)
+        .or(named)
+        .or(lambda)
+        .or(anonymous)
+        .parse(s)
 }
 //
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnqualifiedId<'source> {
-    /// An entity named by a standard identifier
+    /// An entity named by a user-specified identifier
     Named {
         /// Truth that this is a destructor (names starts with ~)
         is_destructor: bool,
@@ -101,9 +128,6 @@ pub enum UnqualifiedId<'source> {
         template_parameters: Option<TemplateParameters<'source>>,
     },
 
-    /// A lambda function, with source location information
-    Lambda(Lambda<'source>),
-
     /// An operator overload
     Operator {
         /// Which operator was overloaded
@@ -112,6 +136,12 @@ pub enum UnqualifiedId<'source> {
         /// Optional template parameters
         template_parameters: Option<TemplateParameters<'source>>,
     },
+
+    /// A decltype(<value>) expression
+    Decltype(Box<ValueLike<'source>>),
+
+    /// A lambda function, with source location information
+    Lambda(Lambda<'source>),
 
     /// Another kind of anonymous entity from clang
     Anonymous(AnonymousEntity<'source>),
@@ -230,6 +260,24 @@ pub mod tests {
             ))
         );
 
+        // Operator overload
+        assert_eq!(
+            super::unqualified_id("operator()"),
+            Ok((
+                "",
+                UnqualifiedId::Operator {
+                    operator: Operator::CallIndex { is_index: false },
+                    template_parameters: Default::default(),
+                }
+            ))
+        );
+
+        // Decltype
+        assert_eq!(
+            super::unqualified_id("decltype(42)"),
+            Ok(("", UnqualifiedId::Decltype(Box::new(42u8.into()))))
+        );
+
         // Lambda
         assert_eq!(
             super::unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
@@ -240,18 +288,6 @@ pub mod tests {
                         .unwrap()
                         .1
                 )
-            ))
-        );
-
-        // Operator overload
-        assert_eq!(
-            super::unqualified_id("operator()"),
-            Ok((
-                "",
-                UnqualifiedId::Operator {
-                    operator: Operator::CallIndex { is_index: false },
-                    template_parameters: Default::default(),
-                }
             ))
         );
 

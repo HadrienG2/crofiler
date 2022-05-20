@@ -5,7 +5,6 @@ use super::qualifiers::{self, ConstVolatile};
 use crate::cpp::{
     atoms,
     names::{self, IdExpression},
-    values::{self, ValueLike},
     IResult,
 };
 use nom::Parser;
@@ -15,11 +14,10 @@ use nom_supreme::ParserExt;
 /// https://en.cppreference.com/w/cpp/language/declarations
 pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
     use nom::{
-        character::complete::{char, space0, space1},
+        character::complete::{space0, space1},
         combinator::opt,
-        sequence::{delimited, preceded, tuple},
+        sequence::{preceded, tuple},
     };
-    use nom_supreme::tag::complete::tag;
 
     // The C++ grammar requires that the simple type specifier (along with its cv
     // qualifiers) be preceded with keywords in some circumstances.
@@ -33,36 +31,23 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
     // The inner simple type can be an id-expression...
     let id_expression = names::id_expression.map(SimpleType::IdExpression);
 
-    // ...a legacy C-style primitive type with inner spaces...
+    // ...or a legacy C-style primitive type with inner spaces...
     let legacy_primitive = legacy_primitive.map(SimpleType::LegacyPrimitive);
 
-    // ...or a C++11-style decltype expression...
-    let decltype = delimited(
-        tag("decltype(").and(space0),
-        values::value_like::<false, true>,
-        space0.and(char(')')),
-    )
-    .map(SimpleType::Decltype);
-
     // ...and we'll try all of that
-    //
-    // decltype() must come before id_expression as otherwise the latter will
-    // match the decltype keyword.
-    let simple_type = legacy_primitive.or(decltype).or(id_expression);
+    let simple_type = legacy_primitive.or(id_expression);
 
     // The simple type can be surrounded by cv qualifiers on both sides
-    let type_and_cv = tuple((
+    tuple((
         qualifiers::cv.terminated(space0),
-        simple_type,
+        preceded(header, simple_type),
         preceded(space0, qualifiers::cv),
     ))
     .map(|(cv1, simple_type, cv2)| TypeSpecifier {
         cv: cv1 | cv2,
         simple_type,
-    });
-
-    // Putting it all together...
-    preceded(header, type_and_cv).parse(s)
+    })
+    .parse(s)
 }
 
 /// Type specifier
@@ -83,9 +68,6 @@ pub enum SimpleType<'source> {
 
     /// C-style space-separated types (e.g. unsigned int)
     LegacyPrimitive(&'source str),
-
-    /// Type derived from an expression
-    Decltype(ValueLike<'source>),
 }
 //
 impl Default for SimpleType<'_> {
@@ -156,18 +138,6 @@ mod tests {
             ))
         );
 
-        // Decltype branch
-        assert_eq!(
-            super::type_specifier("decltype(42)"),
-            Ok((
-                "",
-                TypeSpecifier {
-                    simple_type: SimpleType::Decltype(42u8.into()),
-                    ..Default::default()
-                }
-            ))
-        );
-
         // CV qualifiers are accepted before and after
         assert_eq!(
             super::type_specifier("const unsigned long volatile"),
@@ -188,6 +158,18 @@ mod tests {
                 TypeSpecifier {
                     simple_type: SimpleType::LegacyPrimitive("unsigned char"),
                     ..Default::default()
+                }
+            ))
+        );
+
+        // Keyword comes after cv qualifier
+        assert_eq!(
+            super::type_specifier("const class MyClass"),
+            Ok((
+                "",
+                TypeSpecifier {
+                    simple_type: SimpleType::IdExpression("MyClass".into()),
+                    cv: ConstVolatile::CONST,
                 }
             ))
         );
