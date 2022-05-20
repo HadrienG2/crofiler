@@ -82,7 +82,7 @@ fn main() {
     println!("\nExamples of incompletely or wrongly parsed C++ entities:");
     let mut bad_entities = 0;
     let mut num_entities = 0;
-    const MAX_ERROR_DISPLAY: usize = 5;
+    const MAX_ERROR_DISPLAY: usize = 0;
     const MAX_ENTITY_DISPLAY: usize = 30;
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
@@ -102,14 +102,7 @@ fn main() {
             }
         }
     }
-    if bad_entities >= MAX_ENTITY_DISPLAY {
-        println!(
-            "- ... and more, for a total of {}/{} badly parsed entities ({:.2}% to go) ...",
-            bad_entities - MAX_ENTITY_DISPLAY,
-            num_entities,
-            (bad_entities as f32) / (num_entities as f32) * 100.0
-        );
-    }
+    println!("Overall, {bad_entities}/{num_entities} entities were badly parsed");
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)

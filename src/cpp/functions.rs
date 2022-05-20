@@ -24,18 +24,38 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
         combinator::opt,
         sequence::{preceded, tuple},
     };
+    use nom_supreme::tag::complete::tag;
+
     let function_parameters = |s| function_parameters(s, types::type_like);
+
     let cv = preceded(space0, qualifiers::cv);
+
     let reference = preceded(space0, qualifiers::reference);
+
     let noexcept = preceded(space0, opt(noexcept));
-    tuple((function_parameters, cv, reference, noexcept))
-        .map(|(parameters, cv, reference, noexcept)| FunctionSignature {
+
+    let trailing_return = opt(preceded(
+        space0.and(tag("->")).and(space0),
+        types::type_like,
+    ));
+
+    tuple((
+        function_parameters,
+        cv,
+        reference,
+        noexcept,
+        trailing_return,
+    ))
+    .map(
+        |(parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
             parameters,
             cv,
             reference,
             noexcept,
-        })
-        .parse(s)
+            trailing_return,
+        },
+    )
+    .parse(s)
 }
 //
 /// Function signature
@@ -56,6 +76,9 @@ pub struct FunctionSignature<'source> {
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
     noexcept: Option<Option<ValueLike<'source>>>,
+
+    /// Trailing return type
+    trailing_return: Option<TypeLike<'source>>,
 }
 
 /// Parser recognizing a set of function parameters, given a parameter grammar
@@ -178,6 +201,16 @@ mod tests {
                 FunctionSignature {
                     reference: Reference::RValue,
                     noexcept: Some(Some(values::value_like::<false, false>("456").unwrap().1)),
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::function_signature("() -> int"),
+            Ok((
+                "",
+                FunctionSignature {
+                    trailing_return: Some(force_parse_type("int")),
                     ..Default::default()
                 }
             ))
