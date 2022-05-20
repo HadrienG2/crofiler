@@ -19,7 +19,7 @@ pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     s: &str,
 ) -> IResult<ValueLike> {
     use nom::{character::complete::space0, multi::many0, sequence::preceded};
-    value_without_trailer::<ALLOW_COMMA, ALLOW_GREATER>
+    value_header::<ALLOW_COMMA, ALLOW_GREATER>
         .and(
             many0(preceded(space0, after_value::<ALLOW_COMMA, ALLOW_GREATER>))
                 .map(|v| v.into_boxed_slice()),
@@ -32,14 +32,14 @@ pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValueLike<'source> {
     /// Initial value-like entity
-    header: ValueWithoutTrailer<'source>,
+    header: ValueHeader<'source>,
 
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
     trailer: Box<[AfterValue<'source>]>,
 }
 //
-impl<'source, T: Into<ValueWithoutTrailer<'source>>> From<T> for ValueLike<'source> {
+impl<'source, T: Into<ValueHeader<'source>>> From<T> for ValueLike<'source> {
     fn from(literal: T) -> Self {
         Self {
             header: literal.into(),
@@ -51,33 +51,33 @@ impl<'source, T: Into<ValueWithoutTrailer<'source>>> From<T> for ValueLike<'sour
 /// Like value_like but excluding patterns that start with a value_like
 ///
 /// Used by value_like to prevent infinite recursion on the expression head.
-fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     s: &str,
-) -> IResult<ValueWithoutTrailer> {
+) -> IResult<ValueHeader> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, separated_pair},
     };
 
-    let literal = literals::literal.map(ValueWithoutTrailer::Literal);
+    let literal = literals::literal.map(ValueHeader::Literal);
 
     let parenthesized = delimited(
         char('(').and(space0),
         value_like::<true, true>.map(Box::new),
         space0.and(char(')')),
     )
-    .map(ValueWithoutTrailer::Parenthesized);
+    .map(ValueHeader::Parenthesized);
 
     let unary_op = separated_pair(
         operators::unary_expr_prefix,
         space0,
         value_like::<ALLOW_COMMA, ALLOW_GREATER>.map(Box::new),
     )
-    .map(|(op, expr)| ValueWithoutTrailer::UnaryOp(op, expr));
+    .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
-    let new_expression = new_expression.map(|e| ValueWithoutTrailer::NewExpression(Box::new(e)));
+    let new_expression = new_expression.map(|e| ValueHeader::NewExpression(Box::new(e)));
 
-    let id_expression = names::id_expression.map(ValueWithoutTrailer::IdExpression);
+    let id_expression = names::id_expression.map(ValueHeader::IdExpression);
 
     literal
         .or(unary_op)
@@ -93,7 +93,7 @@ fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 //
 /// Values that are not expressions starting with a value
 #[derive(Clone, Debug, PartialEq)]
-pub enum ValueWithoutTrailer<'source> {
+pub enum ValueHeader<'source> {
     /// Literal
     Literal(Literal<'source>),
 
@@ -110,7 +110,7 @@ pub enum ValueWithoutTrailer<'source> {
     IdExpression(IdExpression<'source>),
 }
 //
-impl<'source, T: Into<Literal<'source>>> From<T> for ValueWithoutTrailer<'source> {
+impl<'source, T: Into<Literal<'source>>> From<T> for ValueHeader<'source> {
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
     }
@@ -290,27 +290,27 @@ mod tests {
     }
 
     #[test]
-    fn value_without_trailer() {
-        let value_without_trailer = super::value_without_trailer::<false, false>;
+    fn value_header() {
+        let value_header = super::value_header::<false, false>;
 
         // Literal
-        assert_eq!(value_without_trailer("'@'"), Ok(("", '@'.into())));
+        assert_eq!(value_header("'@'"), Ok(("", '@'.into())));
 
         // Unary operators are supported...
         assert_eq!(
-            value_without_trailer("&123"),
+            value_header("&123"),
             Ok((
                 "",
-                ValueWithoutTrailer::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
+                ValueHeader::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
             ))
         );
 
         // ...including c-style casts, not to be confused with parenthesized values
         assert_eq!(
-            value_without_trailer("(T)666"),
+            value_header("(T)666"),
             Ok((
                 "",
-                ValueWithoutTrailer::UnaryOp(
+                ValueHeader::UnaryOp(
                     Operator::Conversion(Box::new(force_parse_type("T"))),
                     Box::new(666u16.into())
                 )
@@ -319,19 +319,16 @@ mod tests {
 
         // Parenthesized values are supported too
         assert_eq!(
-            value_without_trailer("(42)"),
-            Ok((
-                "",
-                ValueWithoutTrailer::Parenthesized(Box::new(42u8.into()))
-            ))
+            value_header("(42)"),
+            Ok(("", ValueHeader::Parenthesized(Box::new(42u8.into()))))
         );
 
         // New expressions too
         assert_eq!(
-            value_without_trailer("new TROOT"),
+            value_header("new TROOT"),
             Ok((
                 "",
-                ValueWithoutTrailer::NewExpression(Box::new(NewExpression {
+                ValueHeader::NewExpression(Box::new(NewExpression {
                     ty: force_parse_type("TROOT"),
                     ..Default::default()
                 }))
@@ -340,8 +337,8 @@ mod tests {
 
         // Named values as well
         assert_eq!(
-            value_without_trailer("MyValue"),
-            Ok(("", ValueWithoutTrailer::IdExpression("MyValue".into())))
+            value_header("MyValue"),
+            Ok(("", ValueHeader::IdExpression("MyValue".into())))
         );
     }
 
@@ -395,7 +392,7 @@ mod tests {
             Ok((
                 "",
                 ValueLike {
-                    header: ValueWithoutTrailer::IdExpression("array".into()),
+                    header: ValueHeader::IdExpression("array".into()),
                     trailer: vec![AfterValue::ArrayIndex(666u16.into())].into(),
                 }
             ))
@@ -405,7 +402,7 @@ mod tests {
             Ok((
                 "",
                 ValueLike {
-                    header: ValueWithoutTrailer::IdExpression("func".into()),
+                    header: ValueHeader::IdExpression("func".into()),
                     trailer: vec![
                         AfterValue::FunctionCall(vec![(3u8).into(), 'x'.into()].into()),
                         AfterValue::ArrayIndex(666u16.into())

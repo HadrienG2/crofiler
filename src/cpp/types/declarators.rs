@@ -201,5 +201,3 @@ mod tests {
         );
     }
 }
-
-// TODO: Add tests and integrate into type grammar

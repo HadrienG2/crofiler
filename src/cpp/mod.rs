@@ -1,14 +1,13 @@
 //! C++ entity name parsing
 
-// FIXME: Remove pub once done debugging
-pub mod anonymous;
-pub mod atoms;
-pub mod functions;
-pub mod names;
-pub mod operators;
-pub mod templates;
-pub mod types;
-pub mod values;
+mod anonymous;
+mod atoms;
+mod functions;
+mod names;
+mod operators;
+mod templates;
+mod types;
+mod values;
 
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -18,29 +17,29 @@ pub use self::{
     anonymous::{AnonymousEntity, Lambda},
     functions::FunctionSignature,
     names::{IdExpression, NestedNameSpecifier, Scope, UnqualifiedId},
-    templates::TemplateParameter,
+    operators::{Operator, Symbol},
+    templates::{TemplateParameter, TemplateParameters},
     types::{
+        declarators::{DeclOperator, Declarator},
         qualifiers::{ConstVolatile, Reference},
+        specifiers::{SimpleType, TypeSpecifier},
         TypeLike,
     },
     values::{
         literals::{Literal, LiteralValue},
-        ValueLike,
+        AfterValue, NewExpression, ValueHeader, ValueLike,
     },
 };
 
-// FIXME: Remove once done debugging
-//#[cfg(test)]
 pub type Error<I> = nom::error::Error<I>;
-/*#[cfg(not(test))]
-type Error<I> = nom_supreme::error::ErrorTree<I>;*/
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
 /// Parser for C++ entities
 pub fn entity(s: &str) -> IResult<Option<TypeLike>> {
+    use nom::combinator::eof;
     let type_like = types::type_like.map(Some);
     let unknown = anonymous::unknown_entity.value(None);
-    type_like.or(unknown).parse(s)
+    type_like.or(unknown).terminated(eof).parse(s)
 }
 
 #[cfg(test)]

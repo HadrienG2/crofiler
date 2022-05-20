@@ -79,30 +79,19 @@ fn main() {
     }
 
     // Print a list of C++ entities that the parser doesn't handle yet
-    println!("\nExamples of incompletely or wrongly parsed C++ entities:");
-    let mut bad_entities = 0;
-    let mut num_entities = 0;
-    const MAX_ERROR_DISPLAY: usize = 0;
-    const MAX_ENTITY_DISPLAY: usize = 30;
+    println!("\nParsing C++ entities...");
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
-            num_entities += 1;
-            match cpp::entity(&e) {
-                Ok(("", _)) => {}
-                other => {
-                    let activity_name = activity_trace.activity().name();
-                    if bad_entities < MAX_ENTITY_DISPLAY {
-                        println!("- {}(\"{e}\")", activity_name);
-                        if bad_entities < MAX_ERROR_DISPLAY {
-                            println!("  -> {other:#?}");
-                        }
-                    }
-                    bad_entities += 1;
-                }
-            }
+            let parsed_entity = cpp::entity(&e);
+            assert!(
+                parsed_entity.is_ok(),
+                "Tried to parse C++ entity {}({}), but got error {parsed_entity:#?}",
+                activity_trace.activity().name(),
+                e
+            );
         }
     }
-    println!("Overall, {bad_entities}/{num_entities} entities were badly parsed");
+    println!("...all good!");
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)
