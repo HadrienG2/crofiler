@@ -19,5 +19,6 @@ nom-supreme = "0.8"
 [dev-dependencies]
 pretty_assertions = "1.2"
 
+# Easier profiling
 [profile.release]
 debug = 2
