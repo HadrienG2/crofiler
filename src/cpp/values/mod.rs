@@ -76,8 +76,10 @@ fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     let id_expression = names::id_expression.map(ValueWithoutTrailer::IdExpression);
 
     literal
-        .or(parenthesized)
         .or(unary_op)
+        // Must come after unary_op to avoid mismatching the cast operator as a
+        // parenthesized expression
+        .or(parenthesized)
         // TODO: Add new-expression here, see https://en.cppreference.com/w/cpp/language/new
         //
         // Must come late in the trial chain as it can match keywords, including
@@ -167,20 +169,18 @@ pub enum AfterValue<'source> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cpp::tests::force_parse_type;
     use operators::Symbol;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn value_without_trailer() {
         let value_without_trailer = super::value_without_trailer::<false, false>;
+
+        // Literal
         assert_eq!(value_without_trailer("'@'"), Ok(("", '@'.into())));
-        assert_eq!(
-            value_without_trailer("(42)"),
-            Ok((
-                "",
-                ValueWithoutTrailer::Parenthesized(Box::new(42u8.into()))
-            ))
-        );
+
+        // Unary operators are supported...
         assert_eq!(
             value_without_trailer("&123"),
             Ok((
@@ -188,6 +188,29 @@ mod tests {
                 ValueWithoutTrailer::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
             ))
         );
+
+        // ...including c-style casts, not to be confused with parenthesized values
+        assert_eq!(
+            value_without_trailer("(T)666"),
+            Ok((
+                "",
+                ValueWithoutTrailer::UnaryOp(
+                    Operator::Conversion(Box::new(force_parse_type("T"))),
+                    Box::new(666u16.into())
+                )
+            ))
+        );
+
+        // Parenthesized values are supported too
+        assert_eq!(
+            value_without_trailer("(42)"),
+            Ok((
+                "",
+                ValueWithoutTrailer::Parenthesized(Box::new(42u8.into()))
+            ))
+        );
+
+        // Much like named values
         assert_eq!(
             value_without_trailer("MyValue"),
             Ok(("", ValueWithoutTrailer::IdExpression("MyValue".into())))
