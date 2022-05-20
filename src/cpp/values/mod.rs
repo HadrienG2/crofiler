@@ -152,11 +152,14 @@ fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> I
     let member_access =
         preceded(char('.').and(space0), names::unqualified_id).map(AfterValue::MemberAccess);
 
+    let postfix_op = operators::increment_decrement.map(AfterValue::PostfixOp);
+
     binary_op
         .or(ternary_op)
         .or(array_index)
         .or(function_call)
         .or(member_access)
+        .or(postfix_op)
         .parse(s)
 }
 //
@@ -177,6 +180,9 @@ pub enum AfterValue<'source> {
 
     /// Member access (. stuff)
     MemberAccess(UnqualifiedId<'source>),
+
+    /// Postfix operator (++ and -- only in current C++)
+    PostfixOp(Operator<'source>),
 }
 
 /// Parse new expression
@@ -367,6 +373,17 @@ mod tests {
         assert_eq!(
             after_value(".lol"),
             Ok(("", AfterValue::MemberAccess("lol".into())))
+        );
+        assert_eq!(
+            after_value("++"),
+            Ok((
+                "",
+                AfterValue::PostfixOp(Operator::Basic {
+                    symbol: Symbol::AddPlus,
+                    twice: true,
+                    equal: false,
+                })
+            ))
         );
     }
 

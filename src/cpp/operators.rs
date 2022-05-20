@@ -70,26 +70,9 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
     use nom::{
         character::complete::{char, space0, space1},
-        combinator::map_opt,
         sequence::delimited,
     };
     use Symbol::*;
-
-    // Must be run before unary_symbol to prevent under-parsing
-    // TODO: Extract and make public so it can be used to parse post-inc/dec
-    let increment_decrement = map_opt(symbol.and(symbol), |sym_pair| match sym_pair {
-        (AddPlus, AddPlus) => Some(Operator::Basic {
-            symbol: AddPlus,
-            twice: true,
-            equal: false,
-        }),
-        (SubNeg, SubNeg) => Some(Operator::Basic {
-            symbol: SubNeg,
-            twice: true,
-            equal: false,
-        }),
-        _ => None,
-    });
 
     let unary_symbol = symbol
         .verify(|s| [AddPlus, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
@@ -106,10 +89,30 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
         }
     });
 
+    // Must parse inc/dec before unary_symbol to prevent under-parsing
     (increment_decrement.or(unary_symbol).terminated(space0))
         .or((co_await.or(delete)).terminated(space1))
         .or(cast.terminated(space0))
         .parse(s)
+}
+
+/// Parse the increment/decrement operator
+pub fn increment_decrement(s: &str) -> IResult<Operator> {
+    use nom::combinator::map_opt;
+    use Symbol::*;
+    map_opt(symbol.and(symbol), |sym_pair| match sym_pair {
+        (AddPlus, AddPlus) => Some(Operator::Basic {
+            symbol: AddPlus,
+            twice: true,
+            equal: false,
+        }),
+        (SubNeg, SubNeg) => Some(Operator::Basic {
+            symbol: SubNeg,
+            twice: true,
+            equal: false,
+        }),
+        _ => None,
+    })(s)
 }
 
 /// Parse any supported operator overload
@@ -722,6 +725,33 @@ mod tests {
                     },
                     Some(Some(vec![force_parse_type("void").into()].into()))
                 )
+            ))
+        );
+    }
+
+    #[test]
+    fn increment_decrement() {
+        // Increment and decrement
+        assert_eq!(
+            super::increment_decrement("++"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::AddPlus,
+                    twice: true,
+                    equal: false,
+                }
+            ))
+        );
+        assert_eq!(
+            super::increment_decrement("--"),
+            Ok((
+                "",
+                Operator::Basic {
+                    symbol: Symbol::SubNeg,
+                    twice: true,
+                    equal: false,
+                }
             ))
         );
     }
