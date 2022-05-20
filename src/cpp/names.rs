@@ -53,12 +53,25 @@ impl<'source> From<&'source str> for IdExpression<'source> {
 
 /// Parser for nested name-specifiers (= a sequence of scopes)
 pub fn nested_name_specifier(s: &str) -> IResult<NestedNameSpecifier> {
-    use nom::multi::many0;
-    many0(scope).map(Vec::into_boxed_slice).parse(s)
+    use nom::{combinator::opt, multi::many0};
+    use nom_supreme::tag::complete::tag;
+    let rooted = opt(tag("::")).map(|o| o.is_some());
+    let scopes = many0(scope).map(Vec::into_boxed_slice);
+    rooted
+        .and(scopes)
+        .map(|(rooted, scopes)| NestedNameSpecifier { rooted, scopes })
+        .parse(s)
 }
 
 /// A nested name specifier
-pub type NestedNameSpecifier<'source> = Box<[Scope<'source>]>;
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NestedNameSpecifier<'source> {
+    /// Truth that the path starts at the root scope (leading ::)
+    rooted: bool,
+
+    /// Sequence of inner scopes
+    scopes: Box<[Scope<'source>]>,
+}
 
 /// Parser for unqualified id-expressions
 pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
@@ -335,12 +348,44 @@ pub mod tests {
             Ok(("", Default::default()))
         );
         assert_eq!(
+            super::nested_name_specifier("::"),
+            Ok((
+                "",
+                NestedNameSpecifier {
+                    rooted: true,
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
             super::nested_name_specifier("boost::"),
-            Ok(("", vec!["boost".into()].into()))
+            Ok((
+                "",
+                NestedNameSpecifier {
+                    scopes: vec!["boost".into()].into(),
+                    ..Default::default()
+                }
+            ))
+        );
+        assert_eq!(
+            super::nested_name_specifier("::std::"),
+            Ok((
+                "",
+                NestedNameSpecifier {
+                    rooted: true,
+                    scopes: vec!["std".into()].into()
+                }
+            ))
         );
         assert_eq!(
             super::nested_name_specifier("boost::hana::"),
-            Ok(("", vec!["boost".into(), "hana".into()].into()))
+            Ok((
+                "",
+                NestedNameSpecifier {
+                    scopes: vec!["boost".into(), "hana".into()].into(),
+                    ..Default::default()
+                }
+            ))
         );
     }
 
@@ -352,7 +397,7 @@ pub mod tests {
             Ok((
                 "",
                 IdExpression {
-                    path: vec![].into(),
+                    path: Default::default(),
                     id: "something".into(),
                 }
             ))
@@ -364,7 +409,10 @@ pub mod tests {
             Ok((
                 "",
                 IdExpression {
-                    path: vec!["boost".into(), "hana".into()].into(),
+                    path: NestedNameSpecifier {
+                        scopes: vec!["boost".into(), "hana".into()].into(),
+                        ..Default::default()
+                    },
                     id: UnqualifiedId::Named {
                         is_destructor: false,
                         id: "to_t",

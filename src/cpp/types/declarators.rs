@@ -130,7 +130,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: vec!["A".into(), "B".into()].into(),
+                    path: names::nested_name_specifier("A::B::").unwrap().1,
                     cv: ConstVolatile::default(),
                 }
             ))
