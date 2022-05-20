@@ -7,27 +7,20 @@ use std::ops::BitOr;
 
 /// Parser recognizing CV qualifiers
 pub fn cv(s: &str) -> IResult<ConstVolatile> {
-    use nom::{character::complete::space1, combinator::opt, sequence::preceded};
-    let const_ = || {
-        atoms::keyword("const").value(ConstVolatile {
-            is_const: true,
-            is_volatile: false,
-        })
-    };
-    let volatile = || {
-        atoms::keyword("volatile").value(ConstVolatile {
-            is_const: false,
-            is_volatile: true,
-        })
-    };
-    opt((const_().and(opt(preceded(space1, volatile()))))
-        .or(volatile().and(opt(preceded(space1, const_())))))
-    .map(|opt_cv| {
-        let (cv1, opt_cv2) = opt_cv.unwrap_or_default();
-        let cv2 = opt_cv2.unwrap_or_default();
-        cv1 | cv2
-    })
-    .parse(s)
+    use nom::{character::complete::space0, multi::fold_many0};
+    let const_ = atoms::keyword("const").value(ConstVolatile {
+        is_const: true,
+        is_volatile: false,
+    });
+    let volatile = atoms::keyword("volatile").value(ConstVolatile {
+        is_const: false,
+        is_volatile: true,
+    });
+    fold_many0(
+        const_.or(volatile).terminated(space0),
+        || ConstVolatile::default(),
+        |acc, cv| acc | cv,
+    )(s)
 }
 //
 /// CV qualifiers
@@ -108,6 +101,9 @@ mod tests {
         let const_volatile = ConstVolatile::CONST | ConstVolatile::VOLATILE;
         assert_eq!(super::cv("const volatile"), Ok(("", const_volatile)));
         assert_eq!(super::cv("volatile const"), Ok(("", const_volatile)));
+
+        // Seen in clang's output...
+        assert_eq!(super::cv("const const"), Ok(("", ConstVolatile::CONST)));
     }
 
     #[test]
