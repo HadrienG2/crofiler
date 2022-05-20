@@ -61,7 +61,7 @@ pub fn nested_name_specifier(s: &str) -> IResult<NestedNameSpecifier> {
 pub type NestedNameSpecifier<'source> = Box<[Scope<'source>]>;
 
 /// Parser for unqualified id-expressions
-fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
+pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,

@@ -5,7 +5,7 @@ pub mod literals;
 use self::literals::Literal;
 use crate::cpp::{
     functions,
-    names::{self, IdExpression},
+    names::{self, IdExpression, UnqualifiedId},
     operators::{self, Operator},
     IResult,
 };
@@ -143,10 +143,14 @@ fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> I
 
     let function_call = functions::function_call.map(AfterValue::FunctionCall);
 
+    let member_access =
+        preceded(char('.').and(space0), names::unqualified_id).map(AfterValue::MemberAccess);
+
     binary_op
         .or(ternary_op)
         .or(array_index)
         .or(function_call)
+        .or(member_access)
         .parse(s)
 }
 
@@ -164,6 +168,9 @@ pub enum AfterValue<'source> {
 
     /// Ternary operator (? x : y)
     TernaryOp(ValueLike<'source>, ValueLike<'source>),
+
+    /// Member access (. stuff)
+    MemberAccess(UnqualifiedId<'source>),
 }
 
 #[cfg(test)]
@@ -241,6 +248,10 @@ mod tests {
         assert_eq!(
             after_value("? 123 : 456"),
             Ok(("", AfterValue::TernaryOp(123u8.into(), 456u16.into())))
+        );
+        assert_eq!(
+            after_value(".lol"),
+            Ok(("", AfterValue::MemberAccess("lol".into())))
         );
     }
 
