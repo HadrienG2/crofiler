@@ -7,9 +7,11 @@ use crate::cpp::{
     functions,
     names::{self, IdExpression, UnqualifiedId},
     operators::{self, Operator},
+    types::{self, TypeLike},
     IResult,
 };
 use nom::Parser;
+use nom_supreme::ParserExt;
 
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
@@ -73,6 +75,8 @@ fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     )
     .map(|(op, expr)| ValueWithoutTrailer::UnaryOp(op, expr));
 
+    let new_expression = new_expression.map(|e| ValueWithoutTrailer::NewExpression(Box::new(e)));
+
     let id_expression = names::id_expression.map(ValueWithoutTrailer::IdExpression);
 
     literal
@@ -80,8 +84,7 @@ fn value_without_trailer<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
         // Must come after unary_op to avoid mismatching the cast operator as a
         // parenthesized expression
         .or(parenthesized)
-        // TODO: Add new-expression here, see https://en.cppreference.com/w/cpp/language/new
-        //
+        .or(new_expression)
         // Must come late in the trial chain as it can match keywords, including
         // the name of some operators.
         .or(id_expression)
@@ -99,6 +102,9 @@ pub enum ValueWithoutTrailer<'source> {
 
     /// Unary operator applied to a value
     UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
+
+    /// New-expression
+    NewExpression(Box<NewExpression<'source>>),
 
     /// Named value
     IdExpression(IdExpression<'source>),
@@ -153,7 +159,7 @@ fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> I
         .or(member_access)
         .parse(s)
 }
-
+//
 /// Things that can come up after a value to form a more complex value
 #[derive(Clone, Debug, PartialEq)]
 pub enum AfterValue<'source> {
@@ -173,12 +179,109 @@ pub enum AfterValue<'source> {
     MemberAccess(UnqualifiedId<'source>),
 }
 
+/// Parse new expression
+fn new_expression(s: &str) -> IResult<NewExpression> {
+    use nom::{
+        character::complete::space0,
+        combinator::opt,
+        sequence::{preceded, tuple},
+    };
+    use nom_supreme::tag::complete::tag;
+    let rooted = opt(tag("::").and(space0)).map(|o| o.is_some());
+    (rooted.and(preceded(
+        tag("new").and(space0),
+        tuple((
+            opt(functions::function_call).terminated(space0),
+            types::type_like.terminated(space0),
+            opt(functions::function_call),
+        )),
+    )))
+    .map(|(rooted, (placement, ty, constructor))| NewExpression {
+        rooted,
+        placement,
+        ty,
+        constructor,
+    })
+    .parse(s)
+}
+//
+/// New expression, i.e. usage of the new operator
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NewExpression<'source> {
+    /// Whether this new expression is rooted (starts with ::), which means that
+    /// class-specific replacements will be ignored
+    rooted: bool,
+
+    /// Placement parameters
+    placement: Option<Box<[ValueLike<'source>]>>,
+
+    /// Type of values being created
+    ty: TypeLike<'source>,
+
+    /// Parameters to the values' constructor (if any)
+    constructor: Option<Box<[ValueLike<'source>]>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cpp::tests::force_parse_type;
     use operators::Symbol;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn new_expression() {
+        // Basic form
+        assert_eq!(
+            super::new_expression("new int"),
+            Ok((
+                "",
+                NewExpression {
+                    ty: force_parse_type("int"),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Rooted form
+        assert_eq!(
+            super::new_expression("::new double"),
+            Ok((
+                "",
+                NewExpression {
+                    rooted: true,
+                    ty: force_parse_type("double"),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Placement parameters
+        assert_eq!(
+            super::new_expression("new (42) MyClass"),
+            Ok((
+                "",
+                NewExpression {
+                    placement: Some(vec![42u8.into()].into()),
+                    ty: force_parse_type("MyClass"),
+                    ..Default::default()
+                }
+            ))
+        );
+
+        // Constructor parameters
+        assert_eq!(
+            super::new_expression("new MyClass('x')"),
+            Ok((
+                "",
+                NewExpression {
+                    ty: force_parse_type("MyClass"),
+                    constructor: Some(vec!['x'.into()].into()),
+                    ..Default::default()
+                }
+            ))
+        );
+    }
 
     #[test]
     fn value_without_trailer() {
@@ -217,7 +320,19 @@ mod tests {
             ))
         );
 
-        // Much like named values
+        // New expressions too
+        assert_eq!(
+            value_without_trailer("new TROOT"),
+            Ok((
+                "",
+                ValueWithoutTrailer::NewExpression(Box::new(NewExpression {
+                    ty: force_parse_type("TROOT"),
+                    ..Default::default()
+                }))
+            ))
+        );
+
+        // Named values as well
         assert_eq!(
             value_without_trailer("MyValue"),
             Ok(("", ValueWithoutTrailer::IdExpression("MyValue".into())))
