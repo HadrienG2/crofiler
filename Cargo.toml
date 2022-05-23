@@ -3,8 +3,6 @@ name = "crofiler"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 clang-time-trace = { git = "https://github.com/HadrienG2/clang-time-trace.git" }
 cpparser = { git = "https://github.com/HadrienG2/cpparser.git" }
