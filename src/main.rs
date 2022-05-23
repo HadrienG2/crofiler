@@ -2,7 +2,6 @@
 
 #![deny(missing_docs)]
 
-mod cpp;
 mod path;
 
 use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
@@ -82,7 +81,7 @@ fn main() {
     println!("\nParsing C++ entities...");
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
-            let parsed_entity = cpp::entity(&e);
+            let parsed_entity = cpparser::entity(&e);
             assert!(
                 parsed_entity.is_ok(),
                 "Tried to parse C++ entity {}({}), but got error {parsed_entity:#?}",

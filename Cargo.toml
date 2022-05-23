@@ -7,17 +7,11 @@ edition = "2021"
 
 [dependencies]
 clang-time-trace = { git = "https://github.com/HadrienG2/clang-time-trace.git" }
+cpparser = { git = "https://github.com/HadrienG2/cpparser.git" }
 once_cell = "1.10"
 termion = "1.5"
 unicode-segmentation = "1.9"
 unicode-width = "0.1"
-
-# TODO: Remove after integrating c++ entity parting into clang-time-trace
-unicode-xid = "0.2"
-nom = "7.1"
-nom-supreme = "0.8"
-[dev-dependencies]
-pretty_assertions = "1.2"
 
 # Easier profiling
 [profile.release]
