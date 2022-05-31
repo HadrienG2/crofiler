@@ -92,6 +92,16 @@ fn main() {
     }
     println!("...all good!");
 
+    // DEBUG
+    /*println!();
+    println!("Named parsers was called {total_count} times");
+    println!("... with the following recuring input lengths:");
+    let load = |a: &AtomicUsize| a.load(Ordering::Relaxed);
+    let print_branch = |name: &str, ctr: &AtomicUsize| {
+        println!("    -> {name}: {ctr:?}");
+    };
+    println!();*/
+
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)
     println!("\nTree roots:");

@@ -54,7 +54,7 @@ dependencies = [
 [[package]]
 name = "cpparser"
 version = "0.1.0"
-source = "git+https://github.com/HadrienG2/cpparser.git#7a3b53842ee613a6ad6ee5b91bab3243ad4515e3"
+source = "git+https://github.com/HadrienG2/cpparser.git#f82cba351a89aed9cd496de5a5849a2f01f66166"
 dependencies = [
  "nom",
  "nom-supreme",
