@@ -93,6 +93,70 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
+    println!();
+    {
+        use cpparser::templates::*;
+        use std::time::Duration;
+        let toplevel_named_parses = TOPLEVEL_PARSES.lock().unwrap();
+        let mut duration_redundance_input: Vec<(Duration, usize, String)> = toplevel_named_parses
+            .iter()
+            .map(|(input, (duration, redundance))| {
+                (duration.clone(), redundance.clone(), input.clone())
+            })
+            .collect();
+        duration_redundance_input.sort_by_key(|(duration, redundance, _input)| {
+            -(duration.as_secs_f64() * 1.0e9 * *redundance as f64) as isize
+        });
+        const TOP_ENTRIES: usize = 1000;
+        println!("Top {TOP_ENTRIES} TemplateParameter parses:");
+        for (duration, redundance, input) in duration_redundance_input.iter().take(TOP_ENTRIES) {
+            println!("- {input} (took {duration:?}, parsed {redundance} times)");
+        }
+        if duration_redundance_input.len() > TOP_ENTRIES {
+            println!(
+                "- ... and {} more",
+                duration_redundance_input.len() - TOP_ENTRIES
+            );
+        }
+        let total_duration: Duration = duration_redundance_input
+            .iter()
+            .map(|(duration, redundance, _input)| -> Duration {
+                (*duration) * (*redundance as u32)
+            })
+            .fold(Duration::default(), |acc, item| acc + item);
+        let ideal_duration: Duration = duration_redundance_input
+            .iter()
+            .map(|(duration, _redundance, _input)| duration.clone())
+            .fold::<Duration, _>(Duration::default(), |acc: Duration, item: Duration| {
+                acc + item
+            });
+        let realcache_duration = |cache_recall| {
+            duration_redundance_input
+                .iter()
+                .map(|(duration, redundance, _input)| {
+                    if *duration < cache_recall {
+                        (*duration) * (*redundance as u32)
+                    } else {
+                        duration.clone() + cache_recall * (*redundance - 1) as u32
+                    }
+                })
+                .fold::<Duration, _>(Duration::default(), |acc: Duration, item: Duration| {
+                    acc + item
+                })
+        };
+        println!(
+            "With a perfect cache, could take cumulative time down from {:?} to {:?}",
+            total_duration, ideal_duration,
+        );
+        println!(
+            "With a cache that has 1µs recall time, would take it down to {:?}",
+            realcache_duration(Duration::from_micros(1)),
+        );
+        println!(
+            "With a cache that has 10µs recall time, would take it down to {:?}",
+            realcache_duration(Duration::from_micros(10)),
+        );
+    }
     /*println!();
     println!("Named parsers was called {total_count} times");
     println!("... with the following recuring input lengths:");
