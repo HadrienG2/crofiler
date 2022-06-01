@@ -54,11 +54,10 @@ dependencies = [
 [[package]]
 name = "cpparser"
 version = "0.1.0"
-source = "git+https://github.com/HadrienG2/cpparser.git#37f9d04589d72e6a56ed1e37d924c5b59c874483"
+source = "git+https://github.com/HadrienG2/cpparser.git#50e0d25afe47649485dbb52c97a83ce1ba4f61ba"
 dependencies = [
  "nom",
  "nom-supreme",
- "once_cell",
 ]
 
 [[package]]
