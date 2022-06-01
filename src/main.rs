@@ -93,14 +93,54 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
-    /*println!();
-    println!("Named parsers was called {total_count} times");
+    println!();
+    {
+        use cpparser::names::unqualified::*;
+        use std::time::Duration;
+        let toplevel_named_parses = TOPLEVEL_NAMED_PARSES.lock().unwrap();
+        let mut duration_redundance_input: Vec<(Duration, usize, String)> = toplevel_named_parses
+            .iter()
+            .map(|(input, (duration, redundance))| {
+                (duration.clone(), redundance.clone(), input.clone())
+            })
+            .collect();
+        duration_redundance_input.sort_by_key(|(duration, redundance, _input)| {
+            -(duration.as_secs_f64() * 1.0e9 * *redundance as f64) as isize
+        });
+        const TOP_ENTRIES: usize = 100;
+        println!("Top {TOP_ENTRIES} UnqualifiedId::Named parses:");
+        for (duration, redundance, input) in duration_redundance_input.iter().take(TOP_ENTRIES) {
+            println!("- {input} (took {duration:?}, parsed {redundance} times)");
+        }
+        if duration_redundance_input.len() > TOP_ENTRIES {
+            println!(
+                "- ... and {} more",
+                duration_redundance_input.len() - TOP_ENTRIES
+            );
+        }
+        let total_duration: Duration = duration_redundance_input
+            .iter()
+            .map(|(duration, redundance, _input)| -> Duration {
+                (*duration) * (*redundance as u32)
+            })
+            .fold(Duration::default(), |acc, item| acc + item);
+        let ideal_duration: Duration = duration_redundance_input
+            .iter()
+            .map(|(duration, _redundance, _input)| duration.clone())
+            .fold::<Duration, _>(Duration::default(), |acc: Duration, item: Duration| {
+                acc + item
+            });
+        println!(
+            "With a perfect cache, could take cumulative time down from {:?} to {:?}",
+            total_duration, ideal_duration,
+        );
+    }
+    /*println!("Named parsers was called {total_count} times");
     println!("... with the following recuring input lengths:");
     let load = |a: &AtomicUsize| a.load(Ordering::Relaxed);
     let print_branch = |name: &str, ctr: &AtomicUsize| {
         println!("    -> {name}: {ctr:?}");
-    };
-    println!();*/
+    };*/
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)
