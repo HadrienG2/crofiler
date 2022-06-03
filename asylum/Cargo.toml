@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 lasso = { version = "0.6", features = ["ahasher"] }
+thiserror = "1.0"
 
 [dev-dependencies]
 maplit = "1.0"

@@ -2,10 +2,8 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
-use crate::{
-    ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent},
-    path::{PathError, PathInterner, PathKey},
-};
+use crate::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
+use asylum::path::{PathError, PathInterner, PathKey};
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;

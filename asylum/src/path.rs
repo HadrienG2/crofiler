@@ -6,6 +6,7 @@ use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 /// Space- and allocation-efficient collection of file paths
 #[derive(Debug, PartialEq)]
@@ -19,9 +20,9 @@ pub struct InternedPaths {
 //
 impl InternedPaths {
     /// Retrieve a path, panics if the key is invalid
-    pub fn get(&self, key: &PathKey) -> InternedPath {
-        let base = (*key & (2u32.pow(24) - 1)) as usize;
-        let len = (*key >> 24) as usize;
+    pub fn get(&self, key: PathKey) -> InternedPath {
+        let base = (key & (2u32.pow(24) - 1)) as usize;
+        let len = (key >> 24) as usize;
         InternedPath {
             components: &self.components,
             sequence: self.sequences.get(base..base + len),
@@ -156,9 +157,16 @@ impl PathInterner {
     }
 
     /// Record a new file path, return None if the path is not Unicode
-    pub fn intern(&mut self, path: &Path) -> Option<PathKey> {
+    pub fn intern(&mut self, path: &str) -> Result<PathKey, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);
+
+        // Make sure the path is absolute
+        if path.is_relative() {
+            return Err(PathError::RelativePath(
+                path.to_path_buf().into_boxed_path(),
+            ));
+        }
 
         // Turn the path into a form that is as normalized as possible without
         // having access to the filesystem on which the clang trace was taken:
@@ -168,7 +176,10 @@ impl PathInterner {
             use std::path::Component::*;
             match component {
                 Normal(_) | RootDir | Prefix(_) => {
-                    let component_str = component.as_os_str().to_str()?;
+                    let component_str = component
+                        .as_os_str()
+                        .to_str()
+                        .expect("Since this path comes from an &str, it must be valid Unicode");
                     self.current_sequence
                         .push(self.components.get_or_intern(component_str))
                 }
@@ -192,7 +203,17 @@ impl PathInterner {
         let path_len = sequence_key.end - sequence_key.start;
         assert!(path_len < 2usize.pow(8), "Unexpected path length");
         let key = sequence_key.start as u32 | ((path_len as u32) << 24);
-        Some(key)
+        Ok(key)
+    }
+
+    /// Query number of interned paths
+    pub fn len(&self) -> usize {
+        self.sequences.len()
+    }
+
+    /// Query total number of interned components across all interned paths
+    pub fn num_components(&self) -> usize {
+        self.sequences.num_items()
     }
 
     /// Finalize the collection of paths, keeping all keys valid
@@ -202,6 +223,17 @@ impl PathInterner {
             sequences: self.sequences.finalize(),
         }
     }
+}
+
+/// What can go wrong when processing a file path
+#[derive(Debug, Error, PartialEq)]
+pub enum PathError {
+    /// Expected absolute file paths, but clang provided a relative one
+    ///
+    /// This is bad because we do not know the working directory of the clang
+    /// process that took the time trace...
+    #[error("Expected an absolute file path, got {0:?}")]
+    RelativePath(Box<Path>),
 }
 
 #[cfg(test)]
@@ -235,7 +267,7 @@ mod tests {
         // Check path access
         for (expected_components, key) in inputs {
             // Check accessor value
-            let interned_path = interned_paths.get(&key);
+            let interned_path = interned_paths.get(*key);
             assert_eq!(
                 interned_path.components as *const _,
                 &interned_paths.components as *const _
@@ -277,7 +309,7 @@ mod tests {
 
         // Intern the path
         let mut interner = PathInterner::new();
-        let key = interner.intern(Path::new(path)).unwrap();
+        let key = interner.intern(path).unwrap();
 
         // Check basic interner state
         if path == normalized {
@@ -314,14 +346,14 @@ mod tests {
 
         // Intern the first path
         let mut interner = PathInterner::new();
-        let key1 = interner.intern(Path::new(path1)).unwrap();
+        let key1 = interner.intern(path1).unwrap();
 
         // Back up the interner state
         let old_components = extract_components(&interner);
         let old_sequences = interner.sequences.clone();
 
         // Intern the second path
-        let key2 = interner.intern(Path::new(path2)).unwrap();
+        let key2 = interner.intern(path2).unwrap();
 
         // Were they identical ?
         if path1 == path2 {

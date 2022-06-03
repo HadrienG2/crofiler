@@ -1,6 +1,6 @@
 //! Caller<->callee tree of activities which clang engaged in
 
-use super::{
+use crate::{
     ctf::{Duration, Timestamp},
     stats::activity::{Activity, ActivityStat},
 };

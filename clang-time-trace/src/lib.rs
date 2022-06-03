@@ -5,16 +5,15 @@
 
 mod ctf;
 mod metadata;
-mod path;
 mod stats;
 mod tree;
 
 use self::{
     ctf::{events::duration::DurationEvent, TraceDataObject, TraceEvent},
-    path::{InternedPaths, PathInterner},
     stats::activity::ActivityStat,
     tree::{ActivityTree, ActivityTreeBuilder},
 };
+use asylum::path::{InternedPaths, PathInterner};
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -29,7 +28,6 @@ use thiserror::Error;
 pub use self::{
     ctf::{Duration, Timestamp},
     metadata::ProcessNameParseError,
-    path::{ComponentKey, InternedComponent, InternedPath, PathError, PathKey},
     stats::{
         activity::{Activity, ActivityArgument, ActivityParseError, ActivityStatParseError},
         global::{GlobalStat, GlobalStatParseError},
@@ -37,6 +35,7 @@ pub use self::{
     },
     tree::{ActivityTrace, ActivityTreeError},
 };
+pub use asylum::path::{ComponentKey, InternedComponent, InternedPath, PathError, PathKey};
 pub use json::Error as CtfParseError;
 
 /// Simplified -ftime-trace profile from a clang execution
@@ -104,7 +103,7 @@ impl ClangTrace {
     }
 
     /// Access a file path using a PathKey
-    pub fn file_path(&self, key: &PathKey) -> InternedPath {
+    pub fn file_path(&self, key: PathKey) -> InternedPath {
         self.paths.get(key)
     }
 }

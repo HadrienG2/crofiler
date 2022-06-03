@@ -5,5 +5,5 @@
 pub mod path;
 pub mod sequence;
 
-/// Re-export of the lasso version that we use to avoid duplication
+/// Re-export used crates to avoid duplicate dependencies
 pub use lasso;

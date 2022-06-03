@@ -42,6 +42,7 @@ dependencies = [
  "maplit",
  "more-asserts",
  "pretty_assertions",
+ "thiserror",
 ]
 
 [[package]]
@@ -114,7 +115,7 @@ name = "clang-time-trace"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
- "lasso",
+ "asylum",
  "maplit",
  "more-asserts",
  "pretty_assertions",
