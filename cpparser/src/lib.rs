@@ -93,6 +93,12 @@ impl EntityParser {
     }
 }
 //
+impl Default for EntityParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+//
 /// Set of previously parsed C++ entities
 #[derive(Debug, PartialEq)]
 pub struct Entities {

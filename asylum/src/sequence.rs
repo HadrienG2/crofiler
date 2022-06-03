@@ -68,6 +68,11 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
         }
     }
 
+    /// Truth that no sequence has been interned yet
+    pub fn is_empty(&self) -> bool {
+        self.sequences.is_empty()
+    }
+
     /// Query number of interned sequences
     pub fn len(&self) -> usize {
         self.sequences.len()

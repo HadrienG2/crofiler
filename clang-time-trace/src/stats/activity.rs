@@ -211,7 +211,7 @@ impl Activity {
             | Backend
             | ExecuteCompiler => Nothing,
             RunPass(s) | RunLoopPass(s) => String(s.clone()),
-            Source(p) | OptModule(p) => FilePath(p.clone()),
+            Source(p) | OptModule(p) => FilePath(*p),
             ParseClass(i)
             | InstantiateClass(i)
             | ParseTemplate(i)

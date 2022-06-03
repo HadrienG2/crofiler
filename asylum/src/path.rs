@@ -206,6 +206,11 @@ impl PathInterner {
         Ok(key)
     }
 
+    /// Truth that no path has been interned yet
+    pub fn is_empty(&self) -> bool {
+        self.sequences.is_empty()
+    }
+
     /// Query number of interned paths
     pub fn len(&self) -> usize {
         self.sequences.len()
