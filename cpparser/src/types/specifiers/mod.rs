@@ -5,7 +5,7 @@
 pub mod legacy;
 
 use self::legacy::LegacyName;
-use super::qualifiers::{self, ConstVolatile};
+use super::qualifiers::ConstVolatile;
 use crate::{
     names::scopes::{self, IdExpression},
     EntityParser, IResult,
@@ -42,9 +42,9 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
 
     // The simple type can be surrounded by cv qualifiers on both sides
     tuple((
-        qualifiers::cv.terminated(space0),
+        EntityParser::parse_cv.terminated(space0),
         simple_type,
-        preceded(space0, qualifiers::cv),
+        preceded(space0, EntityParser::parse_cv),
     ))
     .map(|(cv1, simple_type, cv2)| TypeSpecifier {
         cv: cv1 | cv2,

@@ -3,7 +3,7 @@
 use crate::{
     types::{
         self,
-        qualifiers::{self, ConstVolatile, Reference},
+        qualifiers::{ConstVolatile, Reference},
         TypeLike,
     },
     values::{self, ValueLike},
@@ -27,9 +27,9 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
 
     let function_parameters = |s| function_parameters(s, types::type_like);
 
-    let cv = preceded(space0, qualifiers::cv);
+    let cv = preceded(space0, EntityParser::parse_cv);
 
-    let reference = preceded(space0, qualifiers::reference);
+    let reference = preceded(space0, EntityParser::parse_reference);
 
     let noexcept = preceded(space0, opt(noexcept));
 

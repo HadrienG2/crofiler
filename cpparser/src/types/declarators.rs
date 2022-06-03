@@ -2,12 +2,12 @@
 //!
 //! See <https://en.cppreference.com/w/cpp/language/declarations> for context.
 
-use super::qualifiers::{self, ConstVolatile, Reference};
+use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
     functions::{self, FunctionSignature},
     names::scopes::{self, NestedNameSpecifier},
     values::{self, ValueLike},
-    IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -33,11 +33,11 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
 
     // Pointer declarator
     let nested_star = scopes::nested_name_specifier.terminated(char('*'));
-    let pointer = separated_pair(nested_star, space0, qualifiers::cv)
+    let pointer = separated_pair(nested_star, space0, EntityParser::parse_cv)
         .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
     // Reference declarator
-    let reference = qualifiers::reference
+    let reference = EntityParser::parse_reference
         .verify(|r| r != &Reference::None)
         .map(DeclOperator::Reference);
 
