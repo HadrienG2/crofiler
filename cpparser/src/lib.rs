@@ -26,7 +26,7 @@ pub type Error<I> = nom::error::Error<I>;
 pub fn entity(s: &str) -> IResult<Option<types::TypeLike>> {
     use nom::combinator::eof;
     let type_like = types::type_like.map(Some);
-    let unknown = anonymous::unknown_entity.value(None);
+    let unknown = EntityParser::parse_unknown_entity.value(None);
     type_like.or(unknown).terminated(eof).parse(s)
 }
 

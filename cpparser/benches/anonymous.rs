@@ -1,3 +1,4 @@
+use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn anonymous(c: &mut Criterion) {
@@ -7,7 +8,7 @@ fn anonymous(c: &mut Criterion) {
     // Failure performance is not a concern here as this token is super rare and
     // only tried when the input doesn't match the type grammar
     c.bench_function(&name("unknown_entity"), |b| {
-        b.iter(|| anonymous::unknown_entity(black_box("<unknown>")))
+        b.iter(|| EntityParser::parse_unknown_entity(black_box("<unknown>")))
     });
 
     c.bench_function(&name("lambda/pass"), |b| {

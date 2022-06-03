@@ -1,15 +1,17 @@
 //! Clang-provided names to C++ entities that don't have a language-defined name
 //! including lambdas, anonymous classes, anonymous namespaces...
 
-use crate::{names::atoms, IResult};
+use crate::{names::atoms, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::path::Path;
 
-/// Parser for clang's <unknown> C++ entity, sometimes seen in ParseTemplate
-pub fn unknown_entity(s: &str) -> IResult<()> {
-    use nom_supreme::tag::complete::tag;
-    tag("<unknown>").value(()).parse(s)
+impl EntityParser {
+    /// Parser for clang's <unknown> C++ entity, sometimes seen in ParseTemplate
+    pub fn parse_unknown_entity(s: &str) -> IResult<()> {
+        use nom_supreme::tag::complete::tag;
+        tag("<unknown>").value(()).parse(s)
+    }
 }
 
 /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
@@ -81,7 +83,10 @@ mod tests {
 
     #[test]
     fn unknown_entity() {
-        assert_eq!(super::unknown_entity("<unknown>"), Ok(("", ())));
+        assert_eq!(
+            EntityParser::parse_unknown_entity("<unknown>"),
+            Ok(("", ()))
+        );
     }
 
     #[test]

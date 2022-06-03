@@ -5,26 +5,27 @@ fn names_atoms(c: &mut Criterion) {
     use cpparser::names::atoms;
     let name = |s| format!("names::atoms::{s}");
 
-    // Identifier parsing: without caching...
-    c.bench_function(&name("identifier/cold/small"), |b| {
+    // Identifier parsing: old-style, without interning...
+    c.bench_function(&name("identifier/old/small"), |b| {
         b.iter(|| atoms::identifier(black_box("a")))
     });
-    c.bench_function(&name("identifier/cold/large"), |b| {
+    c.bench_function(&name("identifier/old/large"), |b| {
         b.iter(|| atoms::identifier(black_box("ItShouldntGetLongerThanThis")))
     });
-    c.bench_function(&name("identifier/cold/fail"), |b| {
+    c.bench_function(&name("identifier/old/fail"), |b| {
         b.iter(|| atoms::identifier(black_box("6")))
     });
 
-    // ...and with caching (TODO: Also measure cold cache perf & retrieval perf)
+    // ...and new-style with interning
+    // TODO: Also measure cold cache perf & retrieval perf
     let parser = EntityParser::new();
-    c.bench_function(&name("identifier/hot/small"), |b| {
+    c.bench_function(&name("identifier/new/small"), |b| {
         b.iter(|| parser.parse_identifier(black_box("a")))
     });
-    c.bench_function(&name("identifier/hot/large"), |b| {
+    c.bench_function(&name("identifier/new/large"), |b| {
         b.iter(|| parser.parse_identifier(black_box("ItShouldntGetLongerThanThis")))
     });
-    c.bench_function(&name("identifier/hot/fail"), |b| {
+    c.bench_function(&name("identifier/new/fail"), |b| {
         b.iter(|| parser.parse_identifier(black_box("6")))
     });
 
