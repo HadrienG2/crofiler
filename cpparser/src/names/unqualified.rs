@@ -1,8 +1,8 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
-use super::atoms;
 use crate::{
     anonymous::{self, AnonymousEntity, Lambda},
+    names::atoms,
     operators::Operator,
     templates::{self, TemplateParameters},
     values::{self, ValueLike},
@@ -50,7 +50,7 @@ pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
 
     // Anonymous entities to which clang gives a name
     let lambda = (|s| anonymous::lambda(s, Path::new)).map(UnqualifiedId::Lambda);
-    let anonymous = anonymous::anonymous.map(UnqualifiedId::Anonymous);
+    let anonymous = (|s| anonymous::anonymous(s, atoms::identifier)).map(UnqualifiedId::Anonymous);
 
     // Operator and decltype must go before named because named matches keywords
     //
@@ -104,7 +104,7 @@ pub enum UnqualifiedId<'source> {
     Lambda(Lambda<&'source Path>),
 
     /// Another kind of anonymous entity from clang
-    Anonymous(AnonymousEntity<'source>),
+    Anonymous(AnonymousEntity<&'source str>),
 }
 //
 impl Default for UnqualifiedId<'_> {
@@ -214,7 +214,10 @@ pub mod tests {
             super::unqualified_id("(anonymous class)"),
             Ok((
                 "",
-                UnqualifiedId::Anonymous(force_parse(anonymous::anonymous, "(anonymous class)"))
+                UnqualifiedId::Anonymous(force_parse(
+                    |s| anonymous::anonymous(s, atoms::identifier),
+                    "(anonymous class)"
+                ))
             ))
         );
     }

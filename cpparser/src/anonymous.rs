@@ -28,6 +28,14 @@ impl EntityParser {
                 .expect("Failed to parse lambda function path")
         })
     }
+
+    /// Parser for other anonymous clang entities called "(anonymous <stuff>)"
+    pub fn parse_anonymous<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, AnonymousEntity<atoms::IdentifierKey>> {
+        anonymous(s, |s| self.parse_identifier(s))
+    }
 }
 
 /// Parser for clang lambda types
@@ -35,7 +43,7 @@ impl EntityParser {
 /// See EntityParser::parse_lambda for general parsing semantics. `path_to_key`
 /// is a function that takes a path string as input and returns a path key
 /// (which may be the path itself or an interned version of it).
-///
+//
 // TODO: Make private once users are migrated
 pub fn lambda<'source, PathKey: 'source>(
     s: &'source str,
@@ -75,8 +83,13 @@ pub type Line = u32;
 /// Column number within a file
 pub type Column = u32;
 
-/// Parser for other anonymous clang entities following the
-pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
+/// Parser for other anonymous clang entities called "(anonymous <stuff>)"
+//
+// TODO: Make private once users are migrated
+pub fn anonymous<'source, IdentifierKey: 'source>(
+    s: &'source str,
+    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
+) -> IResult<AnonymousEntity<IdentifierKey>> {
     use nom::{
         character::complete::char,
         combinator::opt,
@@ -85,7 +98,7 @@ pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
     use nom_supreme::tag::complete::tag;
     delimited(
         tag("(anonymous"),
-        opt(preceded(char(' '), atoms::identifier)),
+        opt(preceded(char(' '), parse_identifier)),
         char(')'),
     )(s)
 }
@@ -95,7 +108,7 @@ pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
 /// So far, only anonymous classes and namespaces were seen, but for all I know
 /// there might be others... In any case, if the <something> is specified, it is
 /// reported back as the string argument to this option.
-pub type AnonymousEntity<'source> = Option<&'source str>;
+pub type AnonymousEntity<IdentifierKey> = Option<IdentifierKey>;
 
 #[cfg(test)]
 mod tests {
@@ -113,8 +126,9 @@ mod tests {
 
     #[test]
     fn lambda() {
+        let parse_lambda = |s| super::lambda(s, Path::new);
         assert_eq!(
-            super::lambda("(lambda at /path/to/source.cpp:123:45)", Path::new),
+            parse_lambda("(lambda at /path/to/source.cpp:123:45)"),
             Ok((
                 "",
                 Lambda {
@@ -124,7 +138,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::lambda("(lambda at c:/source.cpp:123:45)", Path::new),
+            parse_lambda("(lambda at c:/source.cpp:123:45)"),
             Ok((
                 "",
                 Lambda {
@@ -137,13 +151,14 @@ mod tests {
 
     #[test]
     fn anonymous() {
-        assert_eq!(super::anonymous("(anonymous)"), Ok(("", None)));
+        let parse_anonymous = |s| super::anonymous(s, atoms::identifier);
+        assert_eq!(parse_anonymous("(anonymous)"), Ok(("", None)));
         assert_eq!(
-            super::anonymous("(anonymous class)"),
+            parse_anonymous("(anonymous class)"),
             Ok(("", Some("class")))
         );
         assert_eq!(
-            super::anonymous("(anonymous namespace)"),
+            parse_anonymous("(anonymous namespace)"),
             Ok(("", Some("namespace")))
         );
     }
