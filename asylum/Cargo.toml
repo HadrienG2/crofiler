@@ -1,0 +1,12 @@
+[package]
+name = "asylum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lasso = { version = "0.6", features = ["ahasher"] }
+
+[dev-dependencies]
+maplit = "1.0"
+more-asserts = "0.2"
+pretty_assertions = "1.2"

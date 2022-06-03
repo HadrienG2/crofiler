@@ -1,0 +1,43 @@
+[package]
+name = "cpparser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lasso = "0.6"
+nom = "7.1"
+nom-supreme = "0.8"
+unicode-xid = { version = "0.2", optional = true }
+
+[dev-dependencies]
+criterion = "0.3"
+pretty_assertions = "1.2"
+
+# Benchmarking configuration
+[lib]
+bench = false
+#
+[[bench]]
+name = "anonymous"
+harness = false
+[[bench]]
+name = "names_atoms"
+harness = false
+[[bench]]
+name = "names_scopes"
+harness = false
+[[bench]]
+name = "names_unqualified"
+harness = false
+[[bench]]
+name = "operators_overloads"
+harness = false
+[[bench]]
+name = "types_qualifiers"
+harness = false
+[[bench]]
+name = "types_specifiers_legacy"
+harness = false
+[[bench]]
+name = "values_literals"
+harness = false

@@ -1,11 +1,13 @@
+[workspace]
+
 [package]
 name = "crofiler"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clang-time-trace = { git = "https://github.com/HadrienG2/clang-time-trace.git" }
-cpparser = { git = "https://github.com/HadrienG2/cpparser.git" }
+clang-time-trace = { path = "clang-time-trace" }
+cpparser = { path = "cpparser" }
 once_cell = "1.10"
 termion = "1.5"
 unicode-segmentation = "1.9"
@@ -13,4 +15,8 @@ unicode-width = "0.1"
 
 # Easier profiling
 [profile.release]
-debug = 2
+debug = 1
+
+[profile.bench]
+debug = 1  # Needed for profiling
+codegen-units = 1  # Needed for inlining decision determinism
