@@ -24,7 +24,7 @@ impl InternedPaths {
         let len = (*key >> 24) as usize;
         InternedPath {
             components: &self.components,
-            path: self.sequences.get(base..base + len),
+            sequence: self.sequences.get(base..base + len),
         }
     }
 }
@@ -65,7 +65,7 @@ pub struct InternedPath<'parent> {
     components: &'parent RodeoResolver<ComponentKey>,
 
     /// Sequence of path components
-    path: &'parent [ComponentKey],
+    sequence: &'parent [ComponentKey],
 }
 //
 impl<'parent> InternedPath<'parent> {
@@ -73,7 +73,7 @@ impl<'parent> InternedPath<'parent> {
     pub fn components(
         &self,
     ) -> impl Iterator<Item = InternedComponent<'parent>> + DoubleEndedIterator + Clone {
-        self.path.iter().map(|&key| InternedComponent {
+        self.sequence.iter().map(|&key| InternedComponent {
             key,
             value: self.components.resolve(&key),
         })
@@ -81,7 +81,7 @@ impl<'parent> InternedPath<'parent> {
 
     /// Turn the path into a regular Rust filesystem path for convenience
     pub fn to_boxed_path(&self) -> Box<Path> {
-        let mut path_buf = PathBuf::with_capacity(self.path.len());
+        let mut path_buf = PathBuf::with_capacity(self.sequence.len());
         for component in self.components() {
             path_buf.push(component);
         }
@@ -221,15 +221,9 @@ mod tests {
 
     // Assuming an interner has a good starting state, check that finalization
     // and access to the interned paths works well.
-    fn finalize_and_check(interner: PathInterner) {
+    fn finalize_and_check(interner: PathInterner, inputs: &[(Vec<&OsStr>, PathKey)]) {
         // Save interner contents, then finalize interned paths
         let expected_components = extract_components(&interner);
-        let expected_paths = interner.paths.clone().into_boxed_slice();
-        let path_keys = interner
-            .seen_paths
-            .values()
-            .map(|k| k.clone())
-            .collect::<Vec<_>>();
         let interned_paths = interner.finalize();
 
         // Check components
@@ -238,35 +232,23 @@ mod tests {
             assert_eq!(interned_paths.components.resolve(&k), v);
         }
 
-        // Check path storage
-        assert_eq!(interned_paths.paths, expected_paths);
-
         // Check path access
-        for key in path_keys {
+        for (expected_components, key) in inputs {
             // Check accessor value
             let interned_path = interned_paths.get(&key);
             assert_eq!(
                 interned_path.components as *const _,
                 &interned_paths.components as *const _
             );
-            let expected_path = &interned_paths.paths[key];
-            assert_eq!(interned_path.path, expected_path);
+            assert_eq!(interned_path.sequence.len(), expected_components.len());
 
             // Check component access
-            let mut expected_path_buf = PathBuf::with_capacity(expected_path.len());
-            for (component, expected_key) in interned_path
-                .components()
-                .zip(expected_path.iter().cloned())
+            let mut expected_path_buf = PathBuf::with_capacity(expected_components.len());
+            for (component, expected_component) in
+                interned_path.components().zip(expected_components)
             {
-                assert_eq!(
-                    component,
-                    InternedComponent {
-                        key: expected_key,
-                        value: interned_paths.components.resolve(&expected_key)
-                    }
-                );
-                assert_eq!(component.key(), component.key);
-                assert_eq!(component.value(), component.value);
+                let value: &OsStr = component.value().as_ref();
+                assert_eq!(&value, expected_component);
                 expected_path_buf.push(component.value());
             }
 
@@ -283,7 +265,7 @@ mod tests {
         let interner = PathInterner::new();
         assert!(interner.components.is_empty());
         assert_eq!(interner.sequences, SequenceInterner::new());
-        finalize_and_check(interner);
+        finalize_and_check(interner, &[]);
     }
 
     fn test_single_path(path: &str, normalized: &str) {
@@ -295,30 +277,19 @@ mod tests {
 
         // Intern the path
         let mut interner = PathInterner::new();
-        let key = interner.intern(path).unwrap();
+        let key = interner.intern(Path::new(path)).unwrap();
 
-        // Check output key
-        let expected_key = 0..components.len();
-        assert_eq!(key, expected_key);
-
-        // Check path components
+        // Check basic interner state
         if path == normalized {
             assert_eq!(interner.components.len(), components.len());
         } else {
             assert_ge!(interner.components.len(), components.len());
         }
-        assert_eq!(interner.paths.len(), components.len());
-        for (key, expected_component) in interner.paths.iter().cloned().zip(components.iter()) {
-            let actual_component: &OsStr = interner.components.resolve(&key).as_ref();
-            assert_eq!(actual_component, *expected_component);
-        }
+        assert_eq!(interner.sequences.num_items(), components.len());
+        assert_eq!(interner.sequences.len(), 1);
 
-        // Check seen paths
-        assert_eq!(interner.seen_paths.len(), 1);
-        assert_eq!(interner.seen_paths[&interner.paths[..]], expected_key);
-
-        // Check interner finalization
-        finalize_and_check(interner);
+        // Check final sequence
+        finalize_and_check(interner, &[(components, key)]);
     }
 
     #[test]
@@ -343,23 +314,21 @@ mod tests {
 
         // Intern the first path
         let mut interner = PathInterner::new();
-        let key1 = interner.intern(path1).unwrap();
+        let key1 = interner.intern(Path::new(path1)).unwrap();
 
         // Back up the interner state
         let old_components = extract_components(&interner);
-        let old_paths = interner.paths.clone();
-        let old_seen_paths = interner.seen_paths.clone();
+        let old_sequences = interner.sequences.clone();
 
         // Intern the second path
-        let key2 = interner.intern(path2).unwrap();
+        let key2 = interner.intern(Path::new(path2)).unwrap();
 
         // Were they identical ?
         if path1 == path2 {
             // If so, the interner should stay the same and return the same key
             assert_eq!(key2, key1);
             assert_eq!(extract_components(&interner), old_components);
-            assert_eq!(interner.paths, old_paths);
-            assert_eq!(interner.seen_paths, old_seen_paths);
+            assert_eq!(interner.sequences, old_sequences);
         } else {
             // Otherwise, different keys are returned and the state changes
             assert_ne!(key2, key1);
@@ -381,23 +350,15 @@ mod tests {
             }
 
             // Old path is unchanged, new path is added using new components
-            assert_eq!(interner.paths.len(), old_paths.len() + components2.len());
-            let old_path = &interner.paths[..old_paths.len()];
-            assert_eq!(old_path, old_paths);
-            let new_path = &interner.paths[old_paths.len()..];
-            for (key, &expected_component) in new_path.iter().zip(components2.iter()) {
-                let actual_component: &OsStr = interner.components.resolve(key).as_ref();
-                assert_eq!(actual_component, expected_component);
-            }
-
-            // The new path is added to the deduplication record
-            assert_eq!(interner.seen_paths.len(), 2);
-            assert_eq!(interner.seen_paths[old_path], key1);
-            assert_eq!(interner.seen_paths[new_path], key2);
+            assert_eq!(interner.sequences.len(), 2);
+            assert_eq!(
+                interner.sequences.num_items(),
+                old_sequences.num_items() + components2.len()
+            );
         }
 
         // Check interner finalization
-        finalize_and_check(interner);
+        finalize_and_check(interner, &[(components1, key1), (components2, key2)]);
     }
 
     #[test]

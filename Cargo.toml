@@ -1,4 +1,6 @@
 [workspace]
+# TODO: Remove once it becomes a dependency
+members = ["asylum"]
 
 [package]
 name = "crofiler"

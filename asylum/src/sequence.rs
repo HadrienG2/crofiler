@@ -68,11 +68,21 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
         }
     }
 
+    /// Query number of interned sequences
+    pub fn len(&self) -> usize {
+        self.sequences.len()
+    }
+
+    /// Query total number of interned items across all interned sequences
+    pub fn num_items(&self) -> usize {
+        self.num_items
+    }
+
     /// Finalize the collection of sequences, keeping all keys valid
     pub fn finalize(self) -> InternedSequences<Item> {
         // Retrieve interned sequences, put them in interning order
         let mut sequences_and_starts = self.sequences.into_iter().collect::<Vec<_>>();
-        sequences_and_starts.sort_unstable_by_key(|(seq, start)| start);
+        sequences_and_starts.sort_unstable_by_key(|(_seq, start)| *start);
 
         // Concatenate them
         let mut concatenated = Vec::with_capacity(self.num_items);
@@ -106,7 +116,10 @@ pub(crate) mod tests {
         );
         let mut seen_so_far = 0;
         for input in inputs {
-            assert_eq!(sequences.get(seen_so_far..input.len()), *input);
+            assert_eq!(
+                sequences.get(seen_so_far..seen_so_far + input.len()),
+                *input
+            );
             seen_so_far += input.len();
         }
     }
