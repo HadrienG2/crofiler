@@ -6,10 +6,20 @@ use crate::{EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
-/// Generate a parser for legacy C-style type names that have spaces in them
+impl EntityParser {
+    /// Parser for legacy C-style type specifiers that can have spaces in them
+    ///
+    /// This only parses C primitive type names that do have a space in their
+    /// name, others can be handled just fine by the regular IdExpression logic.
+    ///
+    pub fn parse_legacy_name<'source>(&self, s: &'source str) -> IResult<'source, LegacyName> {
+        (self.legacy_name_parser)(s)
+    }
+}
+
+/// Generate a parser for legacy C-style type specifiers that can have spaces
 ///
-/// This only parses C primitive type names that do have a space in their name,
-/// others can be handled just fine by the regular IdExpression logic.
+/// See EntityParser::parse_legacy_name for semantics.
 ///
 #[inline(always)]
 pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
@@ -117,6 +127,7 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
 }
 
 /// Convenience shorthand for generating legacy_name_parser and using it
+// TODO: Make private once users are migrated
 pub fn legacy_name(s: &str) -> IResult<LegacyName> {
     legacy_name_parser()(s)
 }

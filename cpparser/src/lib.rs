@@ -48,7 +48,7 @@ pub struct EntityParser {
     identifiers: RefCell<Rodeo>,
 
     /// Legacy name parser
-    parse_legacy_name: Box<dyn Fn(&str) -> IResult<LegacyName>>,
+    legacy_name_parser: Box<dyn Fn(&str) -> IResult<LegacyName>>,
 
     /// Interned file paths
     paths: RefCell<PathInterner>,
@@ -60,7 +60,7 @@ impl EntityParser {
         Self {
             identifiers: Default::default(),
             paths: Default::default(),
-            parse_legacy_name: Box::new(legacy::legacy_name_parser()),
+            legacy_name_parser: Box::new(legacy::legacy_name_parser()),
         }
     }
 
