@@ -72,7 +72,7 @@ fn main() {
         if let ActivityArgument::FilePath(p) = activity_trace.activity().argument() {
             println!(
                 "- {}",
-                path::truncate_path(&trace.file_path(&p), width.min(80))
+                path::truncate_path(&trace.file_path(p), width.min(80))
             )
         }
     }

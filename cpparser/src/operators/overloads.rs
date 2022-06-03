@@ -5,7 +5,7 @@ use crate::{
     names::atoms,
     templates::{self, TemplateParameters},
     types::{self},
-    IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -36,7 +36,7 @@ pub fn operator_overload(s: &str) -> IResult<(Operator, Option<TemplateParameter
 
     // And for an operator overload, we need the operator keyword...
     preceded(
-        atoms::keyword("operator"),
+        EntityParser::keyword_parser("operator"),
         arith_and_templates.or(template_oblivious),
     )
     .parse(s)
@@ -92,7 +92,7 @@ fn custom_literal(s: &str) -> IResult<Operator> {
 fn new(s: &str) -> IResult<Operator> {
     use nom::{combinator::opt, sequence::preceded};
     use nom_supreme::tag::complete::tag;
-    preceded(atoms::keyword("new"), opt(tag("[]")))
+    preceded(EntityParser::keyword_parser("new"), opt(tag("[]")))
         .map(|array| Operator::NewDelete {
             is_delete: false,
             array: array.is_some(),

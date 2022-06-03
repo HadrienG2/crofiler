@@ -1,14 +1,13 @@
 //! Function-related parsing
 
 use crate::{
-    names::atoms,
     types::{
         self,
         qualifiers::{self, ConstVolatile, Reference},
         TypeLike,
     },
     values::{self, ValueLike},
-    IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 
@@ -108,7 +107,7 @@ fn noexcept(s: &str) -> IResult<Option<ValueLike>> {
         sequence::{delimited, preceded},
     };
     preceded(
-        atoms::keyword("noexcept"),
+        EntityParser::keyword_parser("noexcept"),
         opt(delimited(
             char('('),
             values::value_like::<false, true>,

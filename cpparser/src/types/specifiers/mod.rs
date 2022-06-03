@@ -7,11 +7,8 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::{self, ConstVolatile};
 use crate::{
-    names::{
-        atoms,
-        scopes::{self, IdExpression},
-    },
-    IResult,
+    names::scopes::{self, IdExpression},
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -28,7 +25,10 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
     // The inner simple type can be an id-expression (which must be preceded
     // keywords in obscure circumstances...)
     let id_header =
-        opt(atoms::keywords(["typename", "class", "struct", "enum", "union"]).and(space1));
+        opt(
+            EntityParser::keywords_parser(["typename", "class", "struct", "enum", "union"])
+                .and(space1),
+        );
     let id_expression = preceded(
         id_header,
         scopes::id_expression.map(SimpleType::IdExpression),

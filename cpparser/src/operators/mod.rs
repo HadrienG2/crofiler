@@ -3,7 +3,7 @@
 pub mod overloads;
 pub mod usage;
 
-use crate::{names::atoms, types::TypeLike, IResult};
+use crate::{types::TypeLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -134,7 +134,7 @@ fn arithmetic_or_comparison<const LEN: usize>(s: &str) -> IResult<Operator> {
 fn delete(s: &str) -> IResult<Operator> {
     use nom::{combinator::opt, sequence::preceded};
     use nom_supreme::tag::complete::tag;
-    preceded(atoms::keyword("delete"), opt(tag("[]")))
+    preceded(EntityParser::keyword_parser("delete"), opt(tag("[]")))
         .map(|array| Operator::NewDelete {
             is_delete: true,
             array: array.is_some(),
@@ -144,7 +144,9 @@ fn delete(s: &str) -> IResult<Operator> {
 
 /// Parse co_await
 fn co_await(s: &str) -> IResult<Operator> {
-    atoms::keyword("co_await").value(Operator::CoAwait).parse(s)
+    EntityParser::keyword_parser("co_await")
+        .value(Operator::CoAwait)
+        .parse(s)
 }
 
 /// Parser for symbols most commonly found in C++ operator names

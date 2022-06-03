@@ -2,16 +2,21 @@
 //!
 //! See <https://en.cppreference.com/w/cpp/language/types> for context.
 
-use crate::{names::atoms, IResult};
+use crate::{EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
-/// Convenience shorthand for generating legacy_name_parser and using it
-pub fn legacy_name(s: &str) -> IResult<LegacyName> {
+/// Generate a parser for legacy C-style type names that have spaces in them
+///
+/// This only parses C primitive type names that do have a space in their name,
+/// others can be handled just fine by the regular IdExpression logic.
+///
+#[inline(always)]
+pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     use nom::{character::complete::space0, multi::fold_many1};
 
     // Parser for keywords that can appear in legacy names
-    let keyword = atoms::keywords([
+    let keyword = EntityParser::keywords_parser([
         (
             "double",
             LegacyNameBuilder {
@@ -71,42 +76,49 @@ pub fn legacy_name(s: &str) -> IResult<LegacyName> {
     ]);
 
     // Parser for legacy names based on those keywords
-    fold_many1(
-        keyword.terminated(space0),
-        LegacyNameBuilder::default,
-        |mut acc, item| {
-            assert!(
-                acc.base.is_none() || item.base.is_none(),
-                "Incompatible base qualifiers {:?} and {:?}",
-                acc.base,
-                item.base
-            );
-            acc.base = acc.base.or(item.base);
-
-            assert!(
-                acc.signedness.is_none() || item.signedness.is_none(),
-                "Incompatible signedness qualifiers {:?} and {:?}",
-                acc.signedness,
-                item.signedness
-            );
-            acc.signedness = acc.signedness.or(item.signedness);
-
-            if let (Some(Size::Long), Some(Size::Long)) = (acc.size, item.size) {
-                acc.size = Some(Size::LongLong);
-            } else {
+    move |s| {
+        fold_many1(
+            (&keyword).terminated(space0),
+            LegacyNameBuilder::default,
+            |mut acc, item| {
                 assert!(
-                    acc.size.is_none() || item.size.is_none(),
-                    "Incompatible size qualifiers {:?} and {:?}",
-                    acc.size,
-                    item.size
+                    acc.base.is_none() || item.base.is_none(),
+                    "Incompatible base qualifiers {:?} and {:?}",
+                    acc.base,
+                    item.base
                 );
-                acc.size = acc.size.or(item.size);
-            }
-            acc
-        },
-    )
-    .map(LegacyNameBuilder::build)
-    .parse(s)
+                acc.base = acc.base.or(item.base);
+
+                assert!(
+                    acc.signedness.is_none() || item.signedness.is_none(),
+                    "Incompatible signedness qualifiers {:?} and {:?}",
+                    acc.signedness,
+                    item.signedness
+                );
+                acc.signedness = acc.signedness.or(item.signedness);
+
+                if let (Some(Size::Long), Some(Size::Long)) = (acc.size, item.size) {
+                    acc.size = Some(Size::LongLong);
+                } else {
+                    assert!(
+                        acc.size.is_none() || item.size.is_none(),
+                        "Incompatible size qualifiers {:?} and {:?}",
+                        acc.size,
+                        item.size
+                    );
+                    acc.size = acc.size.or(item.size);
+                }
+                acc
+            },
+        )
+        .map(LegacyNameBuilder::build)
+        .parse(s)
+    }
+}
+
+/// Convenience shorthand for generating legacy_name_parser and using it
+pub fn legacy_name(s: &str) -> IResult<LegacyName> {
+    legacy_name_parser()(s)
 }
 //
 /// C-style type

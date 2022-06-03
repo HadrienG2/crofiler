@@ -1,13 +1,13 @@
 //! Qualifiers that can appear in the type syntax
 
-use crate::{names::atoms, IResult};
+use crate::{EntityParser, IResult};
 use nom_supreme::ParserExt;
 use std::ops::BitOr;
 
 /// Parser recognizing CV qualifiers
 pub fn cv(s: &str) -> IResult<ConstVolatile> {
     use nom::{character::complete::space0, multi::fold_many0};
-    let keyword = atoms::keywords([
+    let keyword = EntityParser::keywords_parser([
         ("const", ConstVolatile::CONST),
         ("volatile", ConstVolatile::VOLATILE),
     ]);

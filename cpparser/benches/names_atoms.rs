@@ -29,7 +29,7 @@ fn names_atoms(c: &mut Criterion) {
     });
 
     // Shortest keyword we parse
-    let new = atoms::keyword("new");
+    let new = EntityParser::keyword_parser("new");
     c.bench_function(&name("keyword/new/pass"), |b| {
         b.iter(|| new(black_box("new")))
     });
@@ -41,7 +41,7 @@ fn names_atoms(c: &mut Criterion) {
     });
 
     // Longest keyword we parse
-    let typename = atoms::keyword("typename");
+    let typename = EntityParser::keyword_parser("typename");
     c.bench_function(&name("keyword/typename/pass"), |b| {
         b.iter(|| typename(black_box("typename")))
     });
@@ -53,7 +53,7 @@ fn names_atoms(c: &mut Criterion) {
     });
 
     // Keyword set
-    let keywords = atoms::keywords([
+    let keywords = EntityParser::keywords_parser([
         "int", "char", "double", "unsigned", "short", "long", "signed",
     ]);
     c.bench_function(&name("keywords/pass/first"), |b| {

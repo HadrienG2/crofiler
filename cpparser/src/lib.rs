@@ -10,7 +10,8 @@ pub mod templates;
 pub mod types;
 pub mod values;
 
-use lasso::{Rodeo, RodeoResolver};
+use crate::types::specifiers::legacy::{self, LegacyName};
+use asylum::lasso::{Rodeo, RodeoResolver};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::cell::RefCell;
@@ -39,16 +40,21 @@ pub fn entity(s: &str) -> IResult<Option<types::TypeLike>> {
 // - Interning methods
 // - Retrieval methods and unique entry count (for Entities)
 //
-#[derive(Debug, Default, PartialEq)]
 pub struct EntityParser {
     /// Identifiers
     identifiers: RefCell<Rodeo>,
+
+    /// Legacy name parser
+    parse_legacy_name: Box<dyn Fn(&str) -> IResult<LegacyName>>,
 }
 //
 impl EntityParser {
     /// Set up the parser
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            identifiers: Default::default(),
+            parse_legacy_name: Box::new(legacy::legacy_name_parser()),
+        }
     }
 
     /// Done parsing entities, just keep access to them

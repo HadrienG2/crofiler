@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lasso = "0.6"
+asylum = { path = "../asylum" }
 nom = "7.1"
 nom-supreme = "0.8"
 unicode-xid = { version = "0.2", optional = true }
