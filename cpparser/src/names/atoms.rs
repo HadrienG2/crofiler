@@ -62,17 +62,17 @@ impl EntityParser {
         let id_key = self.identifiers.borrow_mut().get_or_intern(id);
         Ok((rest, id_key))
     }
+
+    /// Tell how many unique identifiers have been parsed so far
+    pub fn num_identifiers(&self) -> usize {
+        self.identifiers.borrow().len()
+    }
 }
 //
 impl Entities {
     /// Retrieve an identifier previously parsed by parse_identifier
     pub fn identifier(&self, key: IdentifierKey) -> &str {
         self.identifiers.resolve(&key)
-    }
-
-    /// Tell how many unique identifiers have been previously parsed
-    pub fn num_identifiers(&self) -> usize {
-        self.identifiers.len()
     }
 }
 

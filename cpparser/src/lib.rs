@@ -11,10 +11,13 @@ pub mod types;
 pub mod values;
 
 use crate::types::specifiers::legacy::{self, LegacyName};
-use asylum::lasso::{Rodeo, RodeoResolver};
+use asylum::{
+    lasso::{Rodeo, RodeoResolver},
+    path::{InternedPath, InternedPaths, PathInterner, PathKey},
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
@@ -41,11 +44,14 @@ pub fn entity(s: &str) -> IResult<Option<types::TypeLike>> {
 // - Retrieval methods and unique entry count (for Entities)
 //
 pub struct EntityParser {
-    /// Identifiers
+    /// Interned identifiers
     identifiers: RefCell<Rodeo>,
 
     /// Legacy name parser
     parse_legacy_name: Box<dyn Fn(&str) -> IResult<LegacyName>>,
+
+    /// Interned file paths
+    paths: RefCell<PathInterner>,
 }
 //
 impl EntityParser {
@@ -53,14 +59,36 @@ impl EntityParser {
     pub fn new() -> Self {
         Self {
             identifiers: Default::default(),
+            paths: Default::default(),
             parse_legacy_name: Box::new(legacy::legacy_name_parser()),
         }
+    }
+
+    /// Get access the file path interner
+    ///
+    /// This is needed when you have more file paths to intern which do not
+    /// appear in C++ entity names, but may be related to the file paths
+    /// appearing in C++ entity names.
+    ///
+    pub fn path_interner(&self) -> RefMut<PathInterner> {
+        self.paths.borrow_mut()
+    }
+
+    /// Number of unique paths that have been interned so far
+    pub fn num_paths(&self) -> usize {
+        self.paths.borrow().len()
+    }
+
+    /// Total number of interned components across all interned paths so far
+    pub fn num_path_components(&self) -> usize {
+        self.paths.borrow().num_components()
     }
 
     /// Done parsing entities, just keep access to them
     pub fn finish(self) -> Entities {
         Entities {
             identifiers: self.identifiers.into_inner().into_resolver(),
+            paths: self.paths.into_inner().finalize(),
         }
     }
 }
@@ -70,6 +98,16 @@ impl EntityParser {
 pub struct Entities {
     /// Identifiers
     identifiers: RodeoResolver,
+
+    /// Paths
+    paths: InternedPaths,
+}
+//
+impl Entities {
+    /// Retrieve a previously interned path
+    pub fn path(&self, key: PathKey) -> InternedPath {
+        self.paths.get(key)
+    }
 }
 //
 // TODO: Implement IntoIterator over all parsed entities

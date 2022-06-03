@@ -9,6 +9,7 @@ use crate::{
     IResult,
 };
 use nom::Parser;
+use std::path::Path;
 
 /// Parser for unqualified id-expressions
 pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
@@ -48,7 +49,7 @@ pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
     .map(UnqualifiedId::Decltype);
 
     // Anonymous entities to which clang gives a name
-    let lambda = anonymous::lambda.map(UnqualifiedId::Lambda);
+    let lambda = (|s| anonymous::lambda(s, Path::new)).map(UnqualifiedId::Lambda);
     let anonymous = anonymous::anonymous.map(UnqualifiedId::Anonymous);
 
     // Operator and decltype must go before named because named matches keywords
@@ -100,7 +101,7 @@ pub enum UnqualifiedId<'source> {
     Decltype(Box<ValueLike<'source>>),
 
     /// A lambda function, with source location information
-    Lambda(Lambda<'source>),
+    Lambda(Lambda<&'source Path>),
 
     /// Another kind of anonymous entity from clang
     Anonymous(AnonymousEntity<'source>),
@@ -202,7 +203,7 @@ pub mod tests {
             Ok((
                 "",
                 UnqualifiedId::Lambda(force_parse(
-                    anonymous::lambda,
+                    |s| anonymous::lambda(s, Path::new),
                     "(lambda at /path/to/stuff.h:9876:54)"
                 ))
             ))

@@ -11,11 +11,22 @@ fn anonymous(c: &mut Criterion) {
         b.iter(|| EntityParser::parse_unknown_entity(black_box("<unknown>")))
     });
 
-    c.bench_function(&name("lambda/pass"), |b| {
-        b.iter(|| anonymous::lambda(black_box("(lambda at x.cpp:1:2)")))
+    // Lambda parsing: old-style, without interning...
+    c.bench_function(&name("lambda/old/pass"), |b| {
+        b.iter(|| anonymous::lambda(black_box("(lambda at /x.cpp:1:2)"), std::convert::identity))
     });
-    c.bench_function(&name("lambda/fail"), |b| {
-        b.iter(|| anonymous::lambda(black_box("NotALambda")))
+    c.bench_function(&name("lambda/old/fail"), |b| {
+        b.iter(|| anonymous::lambda(black_box("NotALambda"), std::convert::identity))
+    });
+
+    // ...and new-style with interning
+    // TODO: Also measure cold cache perf & retrieval perf
+    let parser = EntityParser::new();
+    c.bench_function(&name("lambda/new/pass"), |b| {
+        b.iter(|| parser.parse_lambda(black_box("(lambda at /x.cpp:1:2)")))
+    });
+    c.bench_function(&name("lambda/new/fail"), |b| {
+        b.iter(|| parser.parse_lambda(black_box("NotALambda")))
     });
 
     c.bench_function(&name("anonymous/empty"), |b| {

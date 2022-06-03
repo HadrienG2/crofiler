@@ -4,7 +4,6 @@
 use crate::{names::atoms, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::path::Path;
 
 impl EntityParser {
     /// Parser for clang's <unknown> C++ entity, sometimes seen in ParseTemplate
@@ -12,14 +11,36 @@ impl EntityParser {
         use nom_supreme::tag::complete::tag;
         tag("<unknown>").value(()).parse(s)
     }
+
+    /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
+    ///
+    /// This will fail if the file path contains a ':' sign other than a
+    /// Windows-style disk designator at the start, because I have no idea how
+    /// to handle this inherent grammar ambiguity better...
+    ///
+    pub fn parse_lambda<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Lambda<crate::PathKey>> {
+        lambda(s, |path| {
+            self.path_interner()
+                .intern(path)
+                .expect("Failed to parse lambda function path")
+        })
+    }
 }
 
-/// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
+/// Parser for clang lambda types
 ///
-/// This will fail if the file path contains a ':' sign other than a
-/// Windows-style disk designator at the start, because I have no idea how to
-/// handle this inherent grammar ambiguity better...
-pub fn lambda(s: &str) -> IResult<Lambda> {
+/// See EntityParser::parse_lambda for general parsing semantics. `path_to_key`
+/// is a function that takes a path string as input and returns a path key
+/// (which may be the path itself or an interned version of it).
+///
+// TODO: Make private once users are migrated
+pub fn lambda<'source, PathKey: 'source>(
+    s: &'source str,
+    path_to_key: impl Fn(&'source str) -> PathKey,
+) -> IResult<Lambda<PathKey>> {
     use nom::{
         bytes::complete::{tag, take_till1},
         character::complete::{anychar, char, u32},
@@ -31,7 +52,7 @@ pub fn lambda(s: &str) -> IResult<Lambda> {
 
     let disk_designator = anychar.and(char(':'));
     let path_str = recognize(opt(disk_designator).and(take_till1(|c| c == ':')));
-    let path = path_str.map(Path::new);
+    let path = path_str.map(path_to_key);
 
     let file_location = separated_pair(path, char(':'), location);
     let lambda = file_location.map(|(file, location)| Lambda { file, location });
@@ -40,19 +61,19 @@ pub fn lambda(s: &str) -> IResult<Lambda> {
 //
 /// Lambda location description
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Lambda<'source> {
+pub struct Lambda<PathKey> {
     /// In which file the lambda is declared
-    file: &'source Path,
+    file: PathKey,
 
     /// Where exactly in the file
-    location: (Line, Col),
+    location: (Line, Column),
 }
 //
 /// Line number within a file
 pub type Line = u32;
 //
 /// Column number within a file
-pub type Col = u32;
+pub type Column = u32;
 
 /// Parser for other anonymous clang entities following the
 pub fn anonymous(s: &str) -> IResult<AnonymousEntity> {
@@ -80,6 +101,7 @@ pub type AnonymousEntity<'source> = Option<&'source str>;
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn unknown_entity() {
@@ -92,7 +114,7 @@ mod tests {
     #[test]
     fn lambda() {
         assert_eq!(
-            super::lambda("(lambda at /path/to/source.cpp:123:45)"),
+            super::lambda("(lambda at /path/to/source.cpp:123:45)", Path::new),
             Ok((
                 "",
                 Lambda {
@@ -102,7 +124,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::lambda("(lambda at c:/source.cpp:123:45)"),
+            super::lambda("(lambda at c:/source.cpp:123:45)", Path::new),
             Ok((
                 "",
                 Lambda {
