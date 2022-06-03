@@ -6,6 +6,7 @@ use self::literals::Literal;
 use crate::{
     functions,
     names::{
+        atoms,
         scopes::{self, IdExpression},
         unqualified::{self, UnqualifiedId},
     },
@@ -60,7 +61,7 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
         sequence::{delimited, separated_pair},
     };
 
-    let literal = literals::literal.map(ValueHeader::Literal);
+    let literal = (|s| literals::literal(s, atoms::identifier)).map(ValueHeader::Literal);
 
     let parenthesized = delimited(
         char('(').and(space0),
@@ -97,7 +98,7 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueHeader<'source> {
     /// Literal
-    Literal(Literal<'source>),
+    Literal(Literal<&'source str>),
 
     /// Value with parentheses around it
     Parenthesized(Box<ValueLike<'source>>),
@@ -112,7 +113,7 @@ pub enum ValueHeader<'source> {
     IdExpression(IdExpression<'source>),
 }
 //
-impl<'source, T: Into<Literal<'source>>> From<T> for ValueHeader<'source> {
+impl<'source, T: Into<Literal<&'source str>>> From<T> for ValueHeader<'source> {
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
     }

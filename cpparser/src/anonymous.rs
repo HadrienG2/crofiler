@@ -43,7 +43,7 @@ impl EntityParser {
 /// See EntityParser::parse_lambda for general parsing semantics. `path_to_key`
 /// is a function that takes a path string as input and returns a path key
 /// (which may be the path itself or an interned version of it).
-//
+///
 // TODO: Make private once users are migrated
 pub fn lambda<'source, PathKey: 'source>(
     s: &'source str,

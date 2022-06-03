@@ -34,6 +34,7 @@ impl EntityParser {
     ///
     /// For optimal performance, keywords should be sorted in order of decreasing
     /// occurence frequency (most common keywords go first).
+    ///
     pub fn keywords_parser<Output: Clone, const LEN: usize>(
         keyword_to_output: impl KeywordMappings<Output, LEN>,
     ) -> impl Fn(&str) -> IResult<Output> {

@@ -1,13 +1,28 @@
 //! Literals (and things that should be literals like negative numbers)
 
-use crate::{names::atoms, IResult};
+use crate::{names::atoms, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
+impl EntityParser {
+    /// Parser for literals
+    pub fn parse_literal<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Literal<atoms::IdentifierKey>> {
+        literal(s, |s| self.parse_identifier(s))
+    }
+}
+
 /// Parser for literals
-pub fn literal(s: &str) -> IResult<Literal> {
+//
+// TODO: Make private once users are migrated
+pub fn literal<'source, IdentifierKey: 'source>(
+    s: &'source str,
+    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
+) -> IResult<Literal<IdentifierKey>> {
     use nom::combinator::opt;
-    (literal_value.and(opt(atoms::identifier)))
+    (literal_value.and(opt(parse_identifier)))
         .map(|(value, custom_suffix)| Literal {
             value,
             custom_suffix,
@@ -17,15 +32,15 @@ pub fn literal(s: &str) -> IResult<Literal> {
 
 /// A modern C++ literal, accounting for custom literals
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Literal<'source> {
+pub struct Literal<IdentifierKey> {
     /// Inner value
     value: LiteralValue,
 
     /// Custom literal suffix, if any
-    custom_suffix: Option<&'source str>,
+    custom_suffix: Option<IdentifierKey>,
 }
 //
-impl<T: Into<LiteralValue>> From<T> for Literal<'_> {
+impl<T: Into<LiteralValue>, U> From<T> for Literal<U> {
     fn from(value: T) -> Self {
         Self {
             value: value.into(),
@@ -193,9 +208,10 @@ mod tests {
 
     #[test]
     fn literal() {
-        assert_eq!(super::literal("'x'"), Ok(("", 'x'.into())));
+        let parse_literal = |s| super::literal(s, atoms::identifier);
+        assert_eq!(parse_literal("'x'"), Ok(("", 'x'.into())));
         assert_eq!(
-            super::literal("42_m"),
+            parse_literal("42_m"),
             Ok((
                 "",
                 Literal {
