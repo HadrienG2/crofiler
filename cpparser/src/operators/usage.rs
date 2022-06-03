@@ -9,6 +9,7 @@ use crate::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::Debug;
 
 /// Parse a binary operator that can be put between two expressions
 ///
@@ -16,12 +17,16 @@ use nom_supreme::ParserExt;
 /// confusing comma-delimited parsers like function calls, and may sometimes not
 /// want to allow the greater > and shr >> operators in order to avoid confusing
 /// the template parameter parser.
-pub fn binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+pub fn binary_expr_middle<
+    const ALLOW_COMMA: bool,
+    const ALLOW_GREATER: bool,
+    IdentifierKey: Clone + Debug + PartialEq + Eq,
+>(
     s: &str,
-) -> IResult<Operator> {
+) -> IResult<Operator<IdentifierKey>> {
     // Most 1-character operators can be used in binary position, except for
     // the negation operators Not and BitNot
-    let arith1 = super::arithmetic_or_comparison::<1>.verify(|op| match op {
+    let arith1 = super::arithmetic_or_comparison::<1, IdentifierKey>.verify(|op| match op {
         Operator::Basic {
             symbol,
             twice: false,
@@ -42,7 +47,7 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 
     // Most 2-character operators can be used in binary position, except for
     // increment and decrement, and shr in template contexts.
-    let arith2 = super::arithmetic_or_comparison::<2>.verify(|op| match op {
+    let arith2 = super::arithmetic_or_comparison::<2, IdentifierKey>.verify(|op| match op {
         Operator::Basic {
             symbol,
             twice: true,
@@ -61,14 +66,16 @@ pub fn binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     });
 
     // All 3-character operators can be used in binary position
-    let arith3 = super::arithmetic_or_comparison::<3>;
+    let arith3 = super::arithmetic_or_comparison::<3, IdentifierKey>;
 
     // No other operator can be used in binary position
     arith3.or(arith2).or(arith1).parse(s)
 }
 
 /// Parse an unary operator that can be applied to an expression in prefix position
-pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
+pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+    s: &str,
+) -> IResult<Operator<IdentifierKey>> {
     use nom::{
         character::complete::{char, space0, space1},
         sequence::delimited,
@@ -90,7 +97,9 @@ pub fn unary_expr_prefix(s: &str) -> IResult<Operator> {
 }
 
 /// Parse the increment/decrement operator
-pub fn increment_decrement(s: &str) -> IResult<Operator> {
+pub fn increment_decrement<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+    s: &str,
+) -> IResult<Operator<IdentifierKey>> {
     use nom::combinator::map_opt;
     use Symbol::*;
     map_opt(
@@ -162,9 +171,9 @@ mod tests {
 
     #[test]
     fn increment_decrement() {
-        // Increment and decrement
+        let parse_increment_decrement = super::increment_decrement::<&str>;
         assert_eq!(
-            super::increment_decrement("++"),
+            parse_increment_decrement("++"),
             Ok((
                 "",
                 Operator::Basic {
@@ -175,7 +184,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::increment_decrement("--"),
+            parse_increment_decrement("--"),
             Ok((
                 "",
                 Operator::Basic {
@@ -189,32 +198,34 @@ mod tests {
 
     #[test]
     fn unary_expr_prefix() {
+        let parse_unary_expr_prefix = super::unary_expr_prefix::<&str>;
+
         // Lone symbol
         assert_eq!(
-            super::unary_expr_prefix("+"),
+            parse_unary_expr_prefix("+"),
             Ok(("", Symbol::AddPlus.into()))
         );
         assert_eq!(
-            super::unary_expr_prefix("- "),
+            parse_unary_expr_prefix("- "),
             Ok(("", Symbol::SubNeg.into()))
         );
         assert_eq!(
-            super::unary_expr_prefix("*"),
+            parse_unary_expr_prefix("*"),
             Ok(("", Symbol::MulDeref.into()))
         );
         assert_eq!(
-            super::unary_expr_prefix("& "),
+            parse_unary_expr_prefix("& "),
             Ok(("", Symbol::AndRef.into()))
         );
         assert_eq!(
-            super::unary_expr_prefix("~"),
+            parse_unary_expr_prefix("~"),
             Ok(("", Symbol::BitNot.into()))
         );
-        assert_eq!(super::unary_expr_prefix("!"), Ok(("", Symbol::Not.into())));
+        assert_eq!(parse_unary_expr_prefix("!"), Ok(("", Symbol::Not.into())));
 
         // Increment and decrement
         assert_eq!(
-            super::unary_expr_prefix("++"),
+            parse_unary_expr_prefix("++"),
             Ok((
                 "",
                 Operator::Basic {
@@ -225,7 +236,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::unary_expr_prefix("--"),
+            parse_unary_expr_prefix("--"),
             Ok((
                 "",
                 Operator::Basic {
@@ -238,7 +249,7 @@ mod tests {
 
         // Casts
         assert_eq!(
-            super::unary_expr_prefix("(float)"),
+            parse_unary_expr_prefix("(float)"),
             Ok((
                 "",
                 Operator::Conversion(Box::new(force_parse(types::type_like, "float")))
@@ -247,13 +258,13 @@ mod tests {
 
         // co_await
         assert_eq!(
-            super::unary_expr_prefix("co_await  "),
+            parse_unary_expr_prefix("co_await  "),
             Ok(("", Operator::CoAwait))
         );
 
         // delete
         assert_eq!(
-            super::unary_expr_prefix("delete[] "),
+            parse_unary_expr_prefix("delete[] "),
             Ok((
                 "",
                 Operator::NewDelete {
@@ -268,13 +279,13 @@ mod tests {
     fn binary_expr_middle() {
         // Lone symbol, other than not
         assert_eq!(
-            super::binary_expr_middle::<false, false>("="),
+            super::binary_expr_middle::<false, false, &str>("="),
             Ok(("", Symbol::AssignEq.into()))
         );
 
         // Two-character, other than increment/decrement
         assert_eq!(
-            super::binary_expr_middle::<false, false>("+="),
+            super::binary_expr_middle::<false, false, &str>("+="),
             Ok((
                 "",
                 Operator::Basic {
@@ -287,26 +298,26 @@ mod tests {
 
         // Three-character
         assert_eq!(
-            super::binary_expr_middle::<false, false>("<=>"),
+            super::binary_expr_middle::<false, false, &str>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Only accept comma if instructed to do so
-        assert!(super::binary_expr_middle::<false, false>(",").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str>(",").is_err());
         assert_eq!(
-            super::binary_expr_middle::<true, false>(","),
+            super::binary_expr_middle::<true, false, &str>(","),
             Ok(("", Symbol::Comma.into()))
         );
 
         // Only accept greater sign if instructed to do so
-        assert!(super::binary_expr_middle::<false, false>(">").is_err());
-        assert!(super::binary_expr_middle::<false, false>(">>").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str>(">").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str>(">>").is_err());
         assert_eq!(
-            super::binary_expr_middle::<false, true>(">"),
+            super::binary_expr_middle::<false, true, &str>(">"),
             Ok(("", Symbol::Greater.into()))
         );
         assert_eq!(
-            super::binary_expr_middle::<false, true>(">>"),
+            super::binary_expr_middle::<false, true, &str>(">>"),
             Ok((
                 "",
                 Operator::Basic {

@@ -104,7 +104,7 @@ pub enum ValueHeader<'source> {
     Parenthesized(Box<ValueLike<'source>>),
 
     /// Unary operator applied to a value
-    UnaryOp(Operator<'source>, Box<ValueLike<'source>>),
+    UnaryOp(Operator<'source, &'source str>, Box<ValueLike<'source>>),
 
     /// New-expression
     NewExpression(Box<NewExpression<'source>>),
@@ -120,14 +120,16 @@ impl<'source, T: Into<Literal<&'source str>>> From<T> for ValueHeader<'source> {
 }
 
 /// Parse things that can come up after a value to form a more complex value
-fn after_value<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(s: &str) -> IResult<AfterValue> {
+fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+    s: &'source str,
+) -> IResult<AfterValue> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, preceded, separated_pair},
     };
 
     let binary_op = separated_pair(
-        operators::usage::binary_expr_middle::<ALLOW_COMMA, ALLOW_GREATER>,
+        operators::usage::binary_expr_middle::<ALLOW_COMMA, ALLOW_GREATER, &'source str>,
         space0,
         value_like::<ALLOW_COMMA, ALLOW_GREATER>,
     )
@@ -176,7 +178,7 @@ pub enum AfterValue<'source> {
     FunctionCall(Box<[ValueLike<'source>]>),
 
     /// Binary operator (OP x)
-    BinaryOp(Operator<'source>, ValueLike<'source>),
+    BinaryOp(Operator<'source, &'source str>, ValueLike<'source>),
 
     /// Ternary operator (? x : y)
     TernaryOp(ValueLike<'source>, ValueLike<'source>),
@@ -185,7 +187,7 @@ pub enum AfterValue<'source> {
     MemberAccess(UnqualifiedId<'source>),
 
     /// Postfix operator (++ and -- only in current C++)
-    PostfixOp(Operator<'source>),
+    PostfixOp(Operator<'source, &'source str>),
 }
 
 #[cfg(test)]

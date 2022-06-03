@@ -6,10 +6,11 @@ pub mod usage;
 use crate::{types::TypeLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::Debug;
 
 /// C++ operators that can be overloaded
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Operator<'source> {
+pub enum Operator<'source, IdentifierKey: Clone + Debug + PartialEq + Eq> {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
     Basic {
@@ -39,7 +40,7 @@ pub enum Operator<'source> {
     },
 
     /// Custom literal operator (operator "" <suffix-identifier>)
-    CustomLiteral(&'source str),
+    CustomLiteral(IdentifierKey),
 
     /// Allocation/deallocation functions
     NewDelete {
@@ -57,7 +58,7 @@ pub enum Operator<'source> {
     Conversion(Box<TypeLike<'source>>),
 }
 //
-impl From<Symbol> for Operator<'_> {
+impl<IdentifierKey: Clone + Debug + PartialEq + Eq> From<Symbol> for Operator<'_, IdentifierKey> {
     fn from(symbol: Symbol) -> Self {
         Self::Basic {
             symbol,
@@ -74,7 +75,10 @@ impl From<Symbol> for Operator<'_> {
 /// operator (as in "operator<<void>"), you will need to call this parser with
 /// LEN varying from 1 to 3 in a context where the validity of the overall parse
 /// can be assessed.
-fn arithmetic_or_comparison<const LEN: usize>(s: &str) -> IResult<Operator> {
+///
+fn arithmetic_or_comparison<const LEN: usize, IdentifierKey: Clone + Debug + PartialEq + Eq>(
+    s: &str,
+) -> IResult<Operator<IdentifierKey>> {
     use nom::{combinator::map_opt, sequence::tuple};
     match LEN {
         // Single-character operator
@@ -131,7 +135,9 @@ fn arithmetic_or_comparison<const LEN: usize>(s: &str) -> IResult<Operator> {
 }
 
 /// Parse deallocation function
-fn delete(s: &str) -> IResult<Operator> {
+fn delete<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+    s: &str,
+) -> IResult<Operator<IdentifierKey>> {
     use nom::{combinator::opt, sequence::preceded};
     use nom_supreme::tag::complete::tag;
     preceded(EntityParser::keyword_parser("delete"), opt(tag("[]")))
@@ -143,7 +149,9 @@ fn delete(s: &str) -> IResult<Operator> {
 }
 
 /// Parse co_await
-fn co_await(s: &str) -> IResult<Operator> {
+fn co_await<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+    s: &str,
+) -> IResult<Operator<IdentifierKey>> {
     EntityParser::keyword_parser("co_await")
         .value(Operator::CoAwait)
         .parse(s)
@@ -246,17 +254,17 @@ mod tests {
     fn arithmetic_or_comparison() {
         // Lone symbol
         assert_eq!(
-            super::arithmetic_or_comparison::<1>("+"),
+            super::arithmetic_or_comparison::<1, &str>("+"),
             Ok(("", Symbol::AddPlus.into()))
         );
 
         // Symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison::<1>("-="),
+            super::arithmetic_or_comparison::<1, &str>("-="),
             Ok(("=", Symbol::SubNeg.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2>("-="),
+            super::arithmetic_or_comparison::<2, &str>("-="),
             Ok((
                 "",
                 Operator::Basic {
@@ -269,11 +277,11 @@ mod tests {
 
         // Duplicated symbol
         assert_eq!(
-            super::arithmetic_or_comparison::<1>("<<"),
+            super::arithmetic_or_comparison::<1, &str>("<<"),
             Ok(("<", Symbol::Less.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2>("<<"),
+            super::arithmetic_or_comparison::<2, &str>("<<"),
             Ok((
                 "",
                 Operator::Basic {
@@ -286,11 +294,11 @@ mod tests {
 
         // Duplicated symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison::<1>(">>="),
+            super::arithmetic_or_comparison::<1, &str>(">>="),
             Ok((">=", Symbol::Greater.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2>(">>="),
+            super::arithmetic_or_comparison::<2, &str>(">>="),
             Ok((
                 "=",
                 Operator::Basic {
@@ -301,7 +309,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<3>(">>="),
+            super::arithmetic_or_comparison::<3, &str>(">>="),
             Ok((
                 "",
                 Operator::Basic {
@@ -316,7 +324,7 @@ mod tests {
         // or as a symbol with an equal sign. We go for consistency with other
         // comparison operators, which will be parsed as the latter.
         assert_eq!(
-            super::arithmetic_or_comparison::<2>("=="),
+            super::arithmetic_or_comparison::<2, &str>("=="),
             Ok((
                 "",
                 Operator::Basic {
@@ -329,29 +337,30 @@ mod tests {
 
         // Spaceship operator gets its own variant because it's too weird
         assert_eq!(
-            super::arithmetic_or_comparison::<3>("<=>"),
+            super::arithmetic_or_comparison::<3, &str>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Same for dereference operator
         assert_eq!(
-            super::arithmetic_or_comparison::<1>("->"),
+            super::arithmetic_or_comparison::<1, &str>("->"),
             Ok((">", Symbol::SubNeg.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2>("->"),
+            super::arithmetic_or_comparison::<2, &str>("->"),
             Ok(("", Operator::Deref { star: false }))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<3>("->*"),
+            super::arithmetic_or_comparison::<3, &str>("->*"),
             Ok(("", Operator::Deref { star: true }))
         );
     }
 
     #[test]
     fn delete() {
+        let parse_delete = super::delete::<&str>;
         assert_eq!(
-            super::delete("delete"),
+            parse_delete("delete"),
             Ok((
                 "",
                 Operator::NewDelete {
@@ -361,7 +370,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::delete("delete[]"),
+            parse_delete("delete[]"),
             Ok((
                 "",
                 Operator::NewDelete {

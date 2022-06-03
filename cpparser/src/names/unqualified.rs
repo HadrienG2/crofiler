@@ -34,9 +34,11 @@ pub fn unqualified_id(s: &str) -> IResult<UnqualifiedId> {
 
     // An operator overload
     let operator =
-        operator_overload.map(|(operator, template_parameters)| UnqualifiedId::Operator {
-            operator,
-            template_parameters,
+        (|s| operator_overload(s, atoms::identifier)).map(|(operator, template_parameters)| {
+            UnqualifiedId::Operator {
+                operator,
+                template_parameters,
+            }
         });
 
     // A decltype expression
@@ -91,7 +93,7 @@ pub enum UnqualifiedId<'source> {
     /// An operator overload
     Operator {
         /// Which operator was overloaded
-        operator: Operator<'source>,
+        operator: Operator<'source, &'source str>,
 
         /// Optional template parameters
         template_parameters: Option<TemplateParameters<'source>>,
