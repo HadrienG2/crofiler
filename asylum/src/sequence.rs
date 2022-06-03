@@ -34,7 +34,7 @@ impl<Item> InternedSequences<Item> {
 pub type SequenceKey = Range<usize>;
 
 /// Interner for sequence of things
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SequenceInterner<Item: Clone + Eq + Hash> {
     /// Number of items that was interned so far
     num_items: usize,

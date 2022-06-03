@@ -224,6 +224,12 @@ impl PathInterner {
         }
     }
 }
+//
+impl Default for PathInterner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// What can go wrong when processing a file path
 #[derive(Debug, Error, PartialEq)]
