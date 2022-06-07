@@ -33,6 +33,7 @@ pub type TemplateParameters<'source> = Option<Box<[TemplateParameter<'source>]>>
 ///
 /// Must look ahead to the next template parameter separator (, or >) in order
 /// to resolve the type vs value ambiguity properly.
+///
 fn template_parameter(s: &str) -> IResult<TemplateParameter> {
     use nom::{
         character::complete::{char, space0},

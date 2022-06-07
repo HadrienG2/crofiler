@@ -28,6 +28,7 @@ pub fn declarator(s: &str) -> IResult<Declarator> {
 pub type Declarator<'source> = Box<[DeclOperator<'source>]>;
 
 /// In a type name, a declarator is composed of one or more operators
+// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 fn decl_operator(s: &str) -> IResult<DeclOperator> {
     use nom::{
         character::complete::{char, space0},

@@ -55,6 +55,8 @@ impl<'source, T: Into<ValueHeader<'source>>> From<T> for ValueLike<'source> {
 /// Like value_like but excluding patterns that start with a value_like
 ///
 /// Used by value_like to prevent infinite recursion on the expression head.
+///
+// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     s: &str,
 ) -> IResult<ValueHeader> {
@@ -123,6 +125,7 @@ impl<'source, T: Into<Literal<&'source str>>> From<T> for ValueHeader<'source> {
 }
 
 /// Parse things that can come up after a value to form a more complex value
+// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     s: &'source str,
 ) -> IResult<AfterValue> {

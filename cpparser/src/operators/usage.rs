@@ -17,6 +17,7 @@ use std::fmt::Debug;
 /// confusing comma-delimited parsers like function calls, and may sometimes not
 /// want to allow the greater > and shr >> operators in order to avoid confusing
 /// the template parameter parser.
+// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 pub fn binary_expr_middle<
     const ALLOW_COMMA: bool,
     const ALLOW_GREATER: bool,
@@ -73,6 +74,7 @@ pub fn binary_expr_middle<
 }
 
 /// Parse an unary operator that can be applied to an expression in prefix position
+// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
     s: &str,
 ) -> IResult<Operator<IdentifierKey>> {
@@ -100,24 +102,18 @@ pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
 pub fn increment_decrement<IdentifierKey: Clone + Debug + PartialEq + Eq>(
     s: &str,
 ) -> IResult<Operator<IdentifierKey>> {
-    use nom::combinator::map_opt;
-    use Symbol::*;
-    map_opt(
-        super::symbol.and(super::symbol),
-        |sym_pair| match sym_pair {
-            (AddPlus, AddPlus) => Some(Operator::Basic {
-                symbol: AddPlus,
-                twice: true,
-                equal: false,
-            }),
-            (SubNeg, SubNeg) => Some(Operator::Basic {
-                symbol: SubNeg,
-                twice: true,
-                equal: false,
-            }),
-            _ => None,
-        },
-    )(s)
+    use nom_supreme::tag::complete::tag;
+    (tag("++").value(Operator::Basic {
+        symbol: Symbol::AddPlus,
+        twice: true,
+        equal: false,
+    }))
+    .or(tag("--").value(Operator::Basic {
+        symbol: Symbol::SubNeg,
+        twice: true,
+        equal: false,
+    }))
+    .parse(s)
 }
 
 /// Parse new expression, i.e. usage of the new operator
@@ -128,7 +124,7 @@ pub fn new_expression(s: &str) -> IResult<NewExpression> {
         sequence::{preceded, tuple},
     };
     use nom_supreme::tag::complete::tag;
-    let rooted = opt(tag("::").and(space0)).map(|o| o.is_some());
+    let rooted = opt(tag("::")).map(|o| o.is_some());
     (rooted.and(preceded(
         tag("new").and(space0),
         tuple((

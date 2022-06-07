@@ -17,6 +17,7 @@ pub fn function_call(s: &str) -> IResult<Box<[ValueLike]>> {
 }
 
 /// Parser recognizing a function signature (parameters + qualifiers)
+// FIXME: Investigate need to optimize, if so do things like deduplicating space0 parsing
 pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     use nom::{
         character::complete::space0,
