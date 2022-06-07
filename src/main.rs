@@ -93,13 +93,21 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
-    /*println!();
-    println!("Named parsers was called {total_count} times");
-    println!("... with the following recuring input lengths:");
-    let load = |a: &AtomicUsize| a.load(Ordering::Relaxed);
+    /*use cpparser::types::declarators::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    println!();
+    let total_count = CALLS.load(Ordering::Relaxed);
+    println!("decl_operator parser was called {total_count} times");
+    println!("... with the following outcomes:");
     let print_branch = |name: &str, ctr: &AtomicUsize| {
         println!("    -> {name}: {ctr:?}");
     };
+    print_branch("Member pointer", &MEMBER_POINTER);
+    print_branch("Normal pointer", &NORMAL_POINTER);
+    print_branch("Reference", &REFERENCE);
+    print_branch("Array", &ARRAY);
+    print_branch("Function", &FUNCTION);
+    print_branch("Parenthesized (overlaps others)", &PARENTHESIZED);
     println!();*/
 
     // Hierarchical profile prototype
