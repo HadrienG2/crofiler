@@ -28,27 +28,32 @@ pub fn declarator(s: &str) -> IResult<Declarator> {
 pub type Declarator<'source> = Box<[DeclOperator<'source>]>;
 
 /// In a type name, a declarator is composed of one or more operators
-// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
 fn decl_operator(s: &str) -> IResult<DeclOperator> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,
-        sequence::{delimited, separated_pair},
+        sequence::{delimited, preceded, separated_pair},
     };
 
-    // Pointer declarator
+    // Reference declarator (/!\ Only works if we know >1 ref-sign is coming)
+    let mut reference = EntityParser::parse_reference.map(DeclOperator::Reference);
+
+    // Basic pointer declarator
+    let mut basic_pointer =
+        preceded(char('*').and(space0), EntityParser::parse_cv).map(|cv| DeclOperator::Pointer {
+            path: Default::default(),
+            cv,
+        });
+
+    // The member pointer declarator is very exotic (2/1M parses) and harder to
+    // parse so we don't unify it with basic_pointer.
     let nested_star =
         (|s| scopes::nested_name_specifier(s, atoms::identifier, Path::new)).terminated(char('*'));
-    let pointer = separated_pair(nested_star, space0, EntityParser::parse_cv)
+    let mut member_pointer = separated_pair(nested_star, space0, EntityParser::parse_cv)
         .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
-    // Reference declarator
-    let reference = EntityParser::parse_reference
-        .verify(|r| r != &Reference::None)
-        .map(DeclOperator::Reference);
-
     // Array declarator
-    let array = delimited(
+    let mut array = delimited(
         char('[').and(space0),
         opt(values::value_like::<false, true>),
         space0.and(char(']')),
@@ -58,7 +63,7 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
     // Function declarator
     let function = functions::function_signature.map(DeclOperator::Function);
 
-    // Parenthesized declarator (to override operator priorities
+    // Parenthesized declarator (to override operator priorities)
     let parenthesized = delimited(
         char('(').and(space0),
         declarator.verify(|d| d != &Declarator::default()),
@@ -67,12 +72,20 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
     .map(DeclOperator::Parenthesized);
 
     // Putting it all together...
-    pointer
-        .or(reference)
-        .or(array)
-        .or(function)
-        .or(parenthesized)
-        .parse(s)
+    //
+    // Since this parser is **very** hot (10M calls on a test workload), even
+    // failed sub-parser trials taking tens of nanoseconds start contributing to
+    // its performance, so we dispatch to a reduced set of sub-parsers by
+    // eagerly checking the first character of input. Branches are ordered by
+    // decreasing frequency of occurence.
+    //
+    match s.as_bytes().first() {
+        Some(b'&') => reference.parse(s),
+        Some(b'*') => basic_pointer.parse(s),
+        Some(b'(') => function.or(parenthesized).or(member_pointer).parse(s),
+        Some(b'[') => array.parse(s),
+        _ => member_pointer.parse(s),
+    }
 }
 
 /// Operators that can appear within a declarator
