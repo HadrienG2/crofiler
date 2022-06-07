@@ -5,12 +5,16 @@
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
     functions::{self, FunctionSignature},
-    names::scopes::{self, NestedNameSpecifier},
+    names::{
+        atoms,
+        scopes::{self, NestedNameSpecifier},
+    },
     values::{self, ValueLike},
     EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::path::Path;
 
 /// Parser for declarators
 pub fn declarator(s: &str) -> IResult<Box<[DeclOperator]>> {
@@ -32,7 +36,8 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
     };
 
     // Pointer declarator
-    let nested_star = scopes::nested_name_specifier.terminated(char('*'));
+    let nested_star =
+        (|s| scopes::nested_name_specifier(s, atoms::identifier, Path::new)).terminated(char('*'));
     let pointer = separated_pair(nested_star, space0, EntityParser::parse_cv)
         .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
@@ -75,7 +80,7 @@ pub enum DeclOperator<'source> {
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
-        path: NestedNameSpecifier<'source>,
+        path: NestedNameSpecifier<'source, &'source str, &'source Path>,
 
         /// Const and volatile qualifiers,
         cv: ConstVolatile,
@@ -127,12 +132,14 @@ mod tests {
         );
 
         // Pointer to member
+        let parse_nested_name_specifier =
+            |s| scopes::nested_name_specifier(s, atoms::identifier, Path::new);
         assert_eq!(
             super::decl_operator("A::B::*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: force_parse(scopes::nested_name_specifier, "A::B::"),
+                    path: force_parse(parse_nested_name_specifier, "A::B::"),
                     cv: ConstVolatile::default(),
                 }
             ))

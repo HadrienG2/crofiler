@@ -7,11 +7,15 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
-    names::scopes::{self, IdExpression},
+    names::{
+        atoms,
+        scopes::{self, IdExpression},
+    },
     EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::path::Path;
 
 /// Parser recognizing type specifiers, as defined by
 /// <https://en.cppreference.com/w/cpp/language/declarations>
@@ -31,7 +35,7 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
         );
     let id_expression = preceded(
         id_header,
-        scopes::id_expression.map(SimpleType::IdExpression),
+        (|s| scopes::id_expression(s, atoms::identifier, Path::new)).map(SimpleType::IdExpression),
     );
 
     // ...or a legacy C-style primitive type with inner spaces...
@@ -76,7 +80,7 @@ impl<'source, T: Into<SimpleType<'source>>> From<T> for TypeSpecifier<'source> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SimpleType<'source> {
     /// Id-expressions
-    IdExpression(IdExpression<'source>),
+    IdExpression(IdExpression<'source, &'source str, &'source Path>),
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
@@ -88,8 +92,8 @@ impl Default for SimpleType<'_> {
     }
 }
 //
-impl<'source> From<IdExpression<'source>> for SimpleType<'source> {
-    fn from(i: IdExpression<'source>) -> Self {
+impl<'source> From<IdExpression<'source, &'source str, &'source Path>> for SimpleType<'source> {
+    fn from(i: IdExpression<'source, &'source str, &'source Path>) -> Self {
         Self::IdExpression(i)
     }
 }

@@ -81,7 +81,8 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     let new_expression =
         operators::usage::new_expression.map(|e| ValueHeader::NewExpression(Box::new(e)));
 
-    let id_expression = scopes::id_expression.map(ValueHeader::IdExpression);
+    let id_expression =
+        (|s| scopes::id_expression(s, atoms::identifier, Path::new)).map(ValueHeader::IdExpression);
 
     literal
         .or(unary_op)
@@ -111,7 +112,7 @@ pub enum ValueHeader<'source> {
     NewExpression(Box<NewExpression<'source>>),
 
     /// Named value
-    IdExpression(IdExpression<'source>),
+    IdExpression(IdExpression<'source, &'source str, &'source Path>),
 }
 //
 impl<'source, T: Into<Literal<&'source str>>> From<T> for ValueHeader<'source> {
