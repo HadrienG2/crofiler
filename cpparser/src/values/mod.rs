@@ -32,6 +32,7 @@ pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 }
 //
 /// A value, or something that looks close enough to it
+// FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueLike<'source> {
     /// Initial value-like entity
@@ -173,6 +174,7 @@ fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 }
 //
 /// Things that can come up after a value to form a more complex value
+// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AfterValue<'source> {
     /// Array indexing

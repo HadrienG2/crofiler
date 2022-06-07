@@ -43,6 +43,7 @@ pub fn type_like(s: &str) -> IResult<TypeLike> {
 }
 
 /// A type name, or something looking close enough to it
+// FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct TypeLike<'source> {
     /// GNU-style attributes __attribute__((...))

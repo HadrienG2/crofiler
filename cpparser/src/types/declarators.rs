@@ -17,7 +17,7 @@ use nom_supreme::ParserExt;
 use std::path::Path;
 
 /// Parser for declarators
-pub fn declarator(s: &str) -> IResult<Box<[DeclOperator]>> {
+pub fn declarator(s: &str) -> IResult<Declarator> {
     use nom::{character::complete::space0, multi::many0};
     many0(decl_operator.terminated(space0))
         .map(Vec::into_boxed_slice)
@@ -75,6 +75,7 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
 }
 
 /// Operators that can appear within a declarator
+// FIXME: This type appears in Box<[T]>, intern it once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DeclOperator<'source> {
     /// Pointer declarator

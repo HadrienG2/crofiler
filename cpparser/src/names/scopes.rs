@@ -257,6 +257,7 @@ enum ScopeOrUnqualifiedId<
 //
 /// Scope (namespaces, classes, and anything else to which inner identifiers
 /// could possibly belong) without recursion (that's NestedNameSpecifier).
+// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scope<
     'source,

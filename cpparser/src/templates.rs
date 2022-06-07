@@ -48,6 +48,7 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
 }
 //
 /// Template parameter
+// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TemplateParameter<'source> {
     /// Type or value looking close enough to a type

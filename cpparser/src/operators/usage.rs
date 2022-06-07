@@ -147,6 +147,7 @@ pub fn new_expression(s: &str) -> IResult<NewExpression> {
 }
 //
 /// New expression, i.e. usage of the new operator
+// FIXME: This type appears in Box<T>, intern that once data is owned
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NewExpression<'source> {
     /// Whether this new expression is rooted (starts with ::), which means that
