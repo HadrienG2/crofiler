@@ -14,6 +14,7 @@ use crate::{
     IResult,
 };
 use nom::Parser;
+use std::path::Path;
 
 /// Parser recognizing values (and some values that are indistinguishable from
 /// values without extra context)
@@ -154,8 +155,10 @@ fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 
     let function_call = functions::function_call.map(AfterValue::FunctionCall);
 
-    let member_access =
-        preceded(char('.').and(space0), unqualified::unqualified_id).map(AfterValue::MemberAccess);
+    let member_access = preceded(char('.').and(space0), |s| {
+        unqualified::unqualified_id(s, atoms::identifier, Path::new)
+    })
+    .map(AfterValue::MemberAccess);
 
     let postfix_op = operators::usage::increment_decrement.map(AfterValue::PostfixOp);
 
@@ -184,7 +187,7 @@ pub enum AfterValue<'source> {
     TernaryOp(ValueLike<'source>, ValueLike<'source>),
 
     /// Member access (. stuff)
-    MemberAccess(UnqualifiedId<'source>),
+    MemberAccess(UnqualifiedId<'source, &'source str, &'source Path>),
 
     /// Postfix operator (++ and -- only in current C++)
     PostfixOp(Operator<'source, &'source str>),

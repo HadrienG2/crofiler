@@ -22,11 +22,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Lambda<crate::PathKey>> {
-        lambda(s, |path| {
-            self.path_interner()
-                .intern(path)
-                .expect("Failed to parse lambda function path")
-        })
+        lambda(s, |path| self.path_to_key(path))
     }
 
     /// Parser for other anonymous clang entities called "(anonymous <stuff>)"

@@ -243,6 +243,7 @@ pub enum PathError {
     ///
     /// This is bad because we do not know the working directory of the clang
     /// process that took the time trace...
+    ///
     #[error("Expected an absolute file path, got {0:?}")]
     RelativePath(Box<Path>),
 }

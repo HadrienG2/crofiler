@@ -1,12 +1,16 @@
 //! Handling of hierarchical scopes
 
-use super::unqualified::{self, UnqualifiedId};
+use super::{
+    atoms,
+    unqualified::{self, UnqualifiedId},
+};
 use crate::{
     functions::{self, FunctionSignature},
     IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::{fmt::Debug, path::Path};
 
 /// Parser for id-expressions (= nested name-specifier + UnqualifiedId)
 pub fn id_expression(s: &str) -> IResult<IdExpression> {
@@ -23,10 +27,12 @@ pub struct IdExpression<'source> {
     path: NestedNameSpecifier<'source>,
 
     /// Unqualified id-expression
-    id: UnqualifiedId<'source>,
+    id: UnqualifiedId<'source, &'source str, &'source Path>,
 }
 //
-impl<'source, T: Into<UnqualifiedId<'source>>> From<T> for IdExpression<'source> {
+impl<'source, T: Into<UnqualifiedId<'source, &'source str, &'source Path>>> From<T>
+    for IdExpression<'source>
+{
     fn from(id: T) -> Self {
         Self {
             id: id.into(),
@@ -56,7 +62,10 @@ pub fn nested_name_specifier(s: &str) -> IResult<NestedNameSpecifier> {
 #[inline(always)]
 fn proto_id_expression<'source>(
     mut input: &'source str,
-) -> IResult<(NestedNameSpecifier, Option<(&str, UnqualifiedId)>)> {
+) -> IResult<(
+    NestedNameSpecifier,
+    Option<(&str, UnqualifiedId<'source, &'source str, &'source Path>)>,
+)> {
     // Truth that the path starts at root scope (with a leading ::)
     let rooted = if let Some(rest) = input.strip_prefix("::") {
         input = rest;
@@ -114,7 +123,7 @@ fn scope_or_unqualified_id(s: &str) -> IResult<ScopeOrUnqualifiedId> {
     use nom::combinator::opt;
     use nom_supreme::tag::complete::tag;
     // Parse the initial UnqualifiedId
-    match unqualified::unqualified_id(s) {
+    match unqualified::unqualified_id(s, atoms::identifier, Path::new) {
         // An UnqualifiedId was found, but is this actually a Scope?
         Ok((after_id, id)) => match opt(functions::function_signature)
             .terminated(tag("::"))
@@ -142,7 +151,7 @@ fn scope_or_unqualified_id(s: &str) -> IResult<ScopeOrUnqualifiedId> {
 #[allow(clippy::large_enum_variant)]
 enum ScopeOrUnqualifiedId<'source> {
     Scope(Scope<'source>),
-    UnqualifiedId(UnqualifiedId<'source>),
+    UnqualifiedId(UnqualifiedId<'source, &'source str, &'source Path>),
 }
 //
 /// Scope (namespaces, classes, and anything else to which inner identifiers
@@ -150,14 +159,16 @@ enum ScopeOrUnqualifiedId<'source> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scope<'source> {
     /// What identifies the scope
-    id: UnqualifiedId<'source>,
+    id: UnqualifiedId<'source, &'source str, &'source Path>,
 
     /// When functions are scopes containing other entities (which can happen
     /// because lambdas), the function signature will be specified.
     function_signature: Option<FunctionSignature<'source>>,
 }
 //
-impl<'source, T: Into<UnqualifiedId<'source>>> From<T> for Scope<'source> {
+impl<'source, T: Into<UnqualifiedId<'source, &'source str, &'source Path>>> From<T>
+    for Scope<'source>
+{
     fn from(id: T) -> Self {
         Self {
             id: id.into(),

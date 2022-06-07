@@ -17,7 +17,7 @@ use asylum::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
@@ -64,14 +64,12 @@ impl EntityParser {
         }
     }
 
-    /// Get access the file path interner
-    ///
-    /// This is needed when you have more file paths to intern which do not
-    /// appear in C++ entity names, but may be related to the file paths
-    /// appearing in C++ entity names.
-    ///
-    pub fn path_interner(&self) -> RefMut<PathInterner> {
-        self.paths.borrow_mut()
+    /// Intern a file path, returning the corresponding key
+    pub fn path_to_key(&self, path: &str) -> PathKey {
+        self.paths
+            .borrow_mut()
+            .intern(path)
+            .expect("Encountered relative (and thus non-interpretable) file path")
     }
 
     /// Number of unique paths that have been interned so far
