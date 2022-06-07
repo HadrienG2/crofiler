@@ -156,7 +156,7 @@ impl PathInterner {
         }
     }
 
-    /// Record a new file path, return None if the path is not Unicode
+    /// Record a new file path, return an error if the path is relative
     pub fn intern(&mut self, path: &str) -> Result<PathKey, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);
