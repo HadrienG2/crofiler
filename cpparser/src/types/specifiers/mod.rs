@@ -15,11 +15,35 @@ use crate::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::path::Path;
+use std::fmt::Debug;
+
+impl EntityParser {
+    /// Parser recognizing type specifiers, as defined by
+    /// <https://en.cppreference.com/w/cpp/language/declarations>
+    pub fn parse_type_specifier<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, TypeSpecifier<'source, atoms::IdentifierKey, crate::PathKey>> {
+        type_specifier(
+            s,
+            |s| self.parse_identifier(s),
+            |path| self.path_to_key(path),
+        )
+    }
+}
 
 /// Parser recognizing type specifiers, as defined by
 /// <https://en.cppreference.com/w/cpp/language/declarations>
-pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
+// TODO: Make private once users are migrated
+pub fn type_specifier<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: impl Fn(&'source str) -> PathKey,
+) -> IResult<TypeSpecifier<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{space0, space1},
         combinator::opt,
@@ -35,7 +59,8 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
         );
     let id_expression = preceded(
         id_header,
-        (|s| scopes::id_expression(s, atoms::identifier, Path::new)).map(SimpleType::IdExpression),
+        (|s| scopes::id_expression(s, &parse_identifier, &path_to_key))
+            .map(SimpleType::IdExpression),
     );
 
     // ...or a legacy C-style primitive type with inner spaces...
@@ -58,16 +83,26 @@ pub fn type_specifier(s: &str) -> IResult<TypeSpecifier> {
 }
 //
 /// Type specifier
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct TypeSpecifier<'source> {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TypeSpecifier<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// CV qualifiers applying to the simple type
     cv: ConstVolatile,
 
     /// Simple type
-    simple_type: SimpleType<'source>,
+    simple_type: SimpleType<'source, IdentifierKey, PathKey>,
 }
 //
-impl<'source, T: Into<SimpleType<'source>>> From<T> for TypeSpecifier<'source> {
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+        T: Into<SimpleType<'source, IdentifierKey, PathKey>>,
+    > From<T> for TypeSpecifier<'source, IdentifierKey, PathKey>
+{
     fn from(simple_type: T) -> Self {
         Self {
             cv: ConstVolatile::default(),
@@ -75,30 +110,61 @@ impl<'source, T: Into<SimpleType<'source>>> From<T> for TypeSpecifier<'source> {
         }
     }
 }
+//
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > Default for TypeSpecifier<'_, IdentifierKey, PathKey>
+{
+    fn default() -> Self {
+        Self {
+            cv: Default::default(),
+            simple_type: Default::default(),
+        }
+    }
+}
 
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum SimpleType<'source> {
+pub enum SimpleType<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Id-expressions
-    IdExpression(IdExpression<'source, &'source str, &'source Path>),
+    IdExpression(IdExpression<'source, IdentifierKey, PathKey>),
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
 }
 //
-impl Default for SimpleType<'_> {
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > Default for SimpleType<'_, IdentifierKey, PathKey>
+{
     fn default() -> Self {
         Self::IdExpression(IdExpression::default())
     }
 }
 //
-impl<'source> From<IdExpression<'source, &'source str, &'source Path>> for SimpleType<'source> {
-    fn from(i: IdExpression<'source, &'source str, &'source Path>) -> Self {
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > From<IdExpression<'source, IdentifierKey, PathKey>>
+    for SimpleType<'source, IdentifierKey, PathKey>
+{
+    fn from(i: IdExpression<'source, IdentifierKey, PathKey>) -> Self {
         Self::IdExpression(i)
     }
 }
 //
-impl From<LegacyName> for SimpleType<'_> {
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > From<LegacyName> for SimpleType<'_, IdentifierKey, PathKey>
+{
     fn from(n: LegacyName) -> Self {
         Self::LegacyName(n)
     }
@@ -108,12 +174,15 @@ impl From<LegacyName> for SimpleType<'_> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn type_specifier() {
+        let parse_type_specifier = |s| super::type_specifier(s, atoms::identifier, Path::new);
+
         // Normal branch
         assert_eq!(
-            super::type_specifier("whatever"),
+            parse_type_specifier("whatever"),
             Ok((
                 "",
                 TypeSpecifier {
@@ -125,7 +194,7 @@ mod tests {
 
         // Legacy primitive branch
         assert_eq!(
-            super::type_specifier("unsigned int"),
+            parse_type_specifier("unsigned int"),
             Ok((
                 "",
                 TypeSpecifier {
@@ -137,7 +206,7 @@ mod tests {
 
         // CV qualifiers are accepted before and after
         assert_eq!(
-            super::type_specifier("const unsigned long volatile"),
+            parse_type_specifier("const unsigned long volatile"),
             Ok((
                 "",
                 TypeSpecifier {
@@ -149,7 +218,7 @@ mod tests {
 
         // And we can live with the occasional keyword
         assert_eq!(
-            super::type_specifier("const class MyClass"),
+            parse_type_specifier("const class MyClass"),
             Ok((
                 "",
                 TypeSpecifier {

@@ -36,6 +36,9 @@ harness = false
 name = "types_qualifiers"
 harness = false
 [[bench]]
+name = "types_specifiers"
+harness = false
+[[bench]]
 name = "types_specifiers_legacy"
 harness = false
 [[bench]]

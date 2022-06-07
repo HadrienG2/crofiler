@@ -99,6 +99,7 @@ pub fn unqualified_id<
 /// This is the next level of complexity in C++ entity naming after raw
 /// identifiers, it allows for things like templating and operator overloading
 /// but not for scoping.
+///
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnqualifiedId<
     'source,

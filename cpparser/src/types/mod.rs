@@ -5,9 +5,10 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{functions, values::ValueLike, IResult};
+use crate::{functions, names::atoms, values::ValueLike, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::path::Path;
 
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context).
@@ -30,7 +31,7 @@ pub fn type_like(s: &str) -> IResult<TypeLike> {
     // Then come the type specifier and declarator
     tuple((
         attributes.terminated(space0),
-        specifiers::type_specifier.terminated(space0),
+        (|s| specifiers::type_specifier(s, atoms::identifier, Path::new)).terminated(space0),
         declarators::declarator,
     ))
     .map(|(attributes, type_specifier, declarator)| TypeLike {
@@ -48,13 +49,15 @@ pub struct TypeLike<'source> {
     attributes: Box<[ValueLike<'source>]>,
 
     /// Type specifier
-    type_specifier: TypeSpecifier<'source>,
+    type_specifier: TypeSpecifier<'source, &'source str, &'source Path>,
 
     /// Declarator
     declarator: Declarator<'source>,
 }
 //
-impl<'source, T: Into<TypeSpecifier<'source>>> From<T> for TypeLike<'source> {
+impl<'source, T: Into<TypeSpecifier<'source, &'source str, &'source Path>>> From<T>
+    for TypeLike<'source>
+{
     fn from(type_specifier: T) -> Self {
         Self {
             type_specifier: type_specifier.into(),
@@ -72,13 +75,15 @@ mod tests {
 
     #[test]
     fn type_like() {
+        let parse_type_specifier = |s| specifiers::type_specifier(s, atoms::identifier, Path::new);
+
         // Basic type specifier
         assert_eq!(
             super::type_like("signed char"),
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(specifiers::type_specifier, "signed char"),
+                    type_specifier: force_parse(parse_type_specifier, "signed char"),
                     ..Default::default()
                 }
             ))
@@ -92,7 +97,7 @@ mod tests {
                 TypeLike {
                     attributes: vec![force_parse(values::value_like::<false, false>, "unused")]
                         .into(),
-                    type_specifier: force_parse(specifiers::type_specifier, "long long"),
+                    type_specifier: force_parse(parse_type_specifier, "long long"),
                     ..Default::default()
                 }
             ))
@@ -104,7 +109,7 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(specifiers::type_specifier, "something"),
+                    type_specifier: force_parse(parse_type_specifier, "something"),
                     declarator: vec![DeclOperator::Function(FunctionSignature::default())].into(),
                     ..Default::default()
                 }
@@ -117,7 +122,7 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(specifiers::type_specifier, "T<1>"),
+                    type_specifier: force_parse(parse_type_specifier, "T<1>"),
                     declarator: vec![DeclOperator::Function(force_parse(
                         functions::function_signature,
                         "(U)"
