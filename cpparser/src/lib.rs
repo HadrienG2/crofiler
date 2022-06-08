@@ -116,8 +116,6 @@ impl Entities {
         self.paths.get(key)
     }
 }
-//
-// TODO: Implement IntoIterator over all parsed entities
 
 #[cfg(test)]
 pub(crate) mod tests {
