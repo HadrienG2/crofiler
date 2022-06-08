@@ -20,7 +20,7 @@ use asylum::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{cell::RefCell, path::Path};
+use std::{cell::RefCell, fmt::Debug};
 
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
@@ -29,9 +29,18 @@ pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 pub type Error<I> = nom::error::Error<I>;
 
 /// Parser for C++ entities
-pub fn entity(s: &str) -> IResult<Option<types::TypeLike<&str, &Path>>> {
+// TODO: Make private once clients have been migrated
+pub fn entity<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, Option<types::TypeLike<IdentifierKey, PathKey>>> {
     use nom::combinator::eof;
-    let type_like = (|s| types::type_like(s, &atoms::identifier, &Path::new)).map(Some);
+    let type_like = (|s| types::type_like(s, parse_identifier, path_to_key)).map(Some);
     let unknown = EntityParser::parse_unknown_entity.value(None);
     type_like.or(unknown).terminated(eof).parse(s)
 }
@@ -68,6 +77,11 @@ impl EntityParser {
     }
 
     /// Intern a file path, returning the corresponding key
+    ///
+    /// This is exposed so that other file paths which are related to those
+    /// appearing in C++ entity names, but appear in other context, can be
+    /// interned using the same infrastructure for key comparability.
+    ///
     pub fn path_to_key(&self, path: &str) -> PathKey {
         self.paths
             .borrow_mut()
@@ -83,6 +97,16 @@ impl EntityParser {
     /// Total number of interned components across all interned paths so far
     pub fn num_path_components(&self) -> usize {
         self.paths.borrow().num_components()
+    }
+
+    /// Parse a C++ entity
+    pub fn parse_entity<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Option<types::TypeLike<atoms::IdentifierKey, PathKey>>> {
+        entity(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
     }
 
     /// Done parsing entities, just keep access to them
@@ -121,6 +145,7 @@ impl Entities {
 pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     pub fn force_parse<'source, Output>(
         mut parser: impl Parser<&'source str, Output, Error<&'source str>>,
@@ -134,14 +159,15 @@ pub(crate) mod tests {
     #[test]
     fn entity() {
         let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+        let parse_entity = |s| super::entity(s, &atoms::identifier, &Path::new);
 
         // Something that looks like a type name
         assert_eq!(
-            super::entity("type_name"),
+            parse_entity("type_name"),
             Ok(("", Some(force_parse(parse_type_like, "type_name"))))
         );
 
         // The infamous unknown clang entity
-        assert_eq!(super::entity("<unknown>"), Ok(("", None)));
+        assert_eq!(parse_entity("<unknown>"), Ok(("", None)));
     }
 }
