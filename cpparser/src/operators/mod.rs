@@ -11,9 +11,8 @@ use std::fmt::Debug;
 /// C++ operators that can be overloaded
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Operator<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
@@ -59,7 +58,7 @@ pub enum Operator<
     CoAwait,
 
     /// Type conversion operator ("operator <type>")
-    Conversion(Box<TypeLike<'source, IdentifierKey, PathKey>>),
+    Conversion(Box<TypeLike<IdentifierKey, PathKey>>),
 }
 //
 impl<

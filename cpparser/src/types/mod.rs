@@ -16,7 +16,7 @@ impl EntityParser {
     pub fn parse_type_like<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, TypeLike<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, TypeLike<atoms::IdentifierKey, crate::PathKey>> {
         type_like(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -34,7 +34,7 @@ pub fn type_like<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, TypeLike<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, TypeLike<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,
@@ -68,26 +68,24 @@ pub fn type_like<
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TypeLike<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// GNU-style attributes __attribute__((...))
-    attributes: Box<[ValueLike<'source, IdentifierKey, PathKey>]>,
+    attributes: Box<[ValueLike<IdentifierKey, PathKey>]>,
 
     /// Type specifier
-    type_specifier: TypeSpecifier<'source, IdentifierKey, PathKey>,
+    type_specifier: TypeSpecifier<IdentifierKey, PathKey>,
 
     /// Declarator
-    declarator: Declarator<'source, IdentifierKey, PathKey>,
+    declarator: Declarator<IdentifierKey, PathKey>,
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<TypeSpecifier<'source, IdentifierKey, PathKey>>,
-    > From<T> for TypeLike<'source, IdentifierKey, PathKey>
+        T: Into<TypeSpecifier<IdentifierKey, PathKey>>,
+    > From<T> for TypeLike<IdentifierKey, PathKey>
 {
     fn from(type_specifier: T) -> Self {
         Self {
@@ -100,7 +98,7 @@ impl<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for TypeLike<'_, IdentifierKey, PathKey>
+    > Default for TypeLike<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {

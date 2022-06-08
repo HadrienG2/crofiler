@@ -23,8 +23,8 @@ impl EntityParser {
     ) -> IResult<
         'source,
         (
-            Operator<'source, atoms::IdentifierKey, crate::PathKey>,
-            Option<TemplateParameters<'source>>,
+            Operator<atoms::IdentifierKey, crate::PathKey>,
+            Option<TemplateParameters<atoms::IdentifierKey, crate::PathKey>>,
         ),
     > {
         operator_overload(s, &|s| self.parse_identifier(s), &|path| {
@@ -49,8 +49,8 @@ pub fn operator_overload<
 ) -> IResult<
     'source,
     (
-        Operator<'source, IdentifierKey, PathKey>,
-        Option<TemplateParameters<'source>>,
+        Operator<IdentifierKey, PathKey>,
+        Option<TemplateParameters<IdentifierKey, PathKey>>,
     ),
 > {
     use nom::{character::complete::char, combinator::opt, sequence::preceded};
@@ -136,7 +136,7 @@ fn custom_literal<
 >(
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-) -> IResult<'source, Operator<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, Operator<IdentifierKey, PathKey>> {
     use nom::{character::complete::space0, sequence::preceded};
     use nom_supreme::tag::complete::tag;
     preceded(tag("\"\"").and(space0), parse_identifier)

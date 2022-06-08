@@ -8,7 +8,7 @@ use crate::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::path::Path;
+use std::fmt::Debug;
 
 /// Parser recognizing a set of template parameters
 pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
@@ -29,7 +29,8 @@ pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
 ///
 /// None means that a known invalid template parameter set printout from clang,
 /// such as "<, void>", was encountered.
-pub type TemplateParameters<'source> = Option<Box<[TemplateParameter<'source>]>>;
+pub type TemplateParameters<IdentifierKey, PathKey> =
+    Option<Box<[TemplateParameter<IdentifierKey, PathKey>]>>;
 
 /// Parser recognizing a single template parameter/argument
 ///
@@ -53,22 +54,33 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
 /// Template parameter
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum TemplateParameter<'source> {
+pub enum TemplateParameter<
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Type or value looking close enough to a type
-    TypeLike(TypeLike<'source, &'source str, &'source Path>),
+    TypeLike(TypeLike<IdentifierKey, PathKey>),
 
     /// Value
-    ValueLike(ValueLike<'source, &'source str, &'source Path>),
+    ValueLike(ValueLike<IdentifierKey, PathKey>),
 }
 //
-impl<'source> From<ValueLike<'source, &'source str, &'source Path>> for TemplateParameter<'source> {
-    fn from(v: ValueLike<'source, &'source str, &'source Path>) -> Self {
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > From<ValueLike<IdentifierKey, PathKey>> for TemplateParameter<IdentifierKey, PathKey>
+{
+    fn from(v: ValueLike<IdentifierKey, PathKey>) -> Self {
         Self::ValueLike(v)
     }
 }
 //
-impl<'source> From<TypeLike<'source, &'source str, &'source Path>> for TemplateParameter<'source> {
-    fn from(t: TypeLike<'source, &'source str, &'source Path>) -> Self {
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > From<TypeLike<IdentifierKey, PathKey>> for TemplateParameter<IdentifierKey, PathKey>
+{
+    fn from(t: TypeLike<IdentifierKey, PathKey>) -> Self {
         Self::TypeLike(t)
     }
 }
@@ -78,6 +90,7 @@ mod tests {
     use super::*;
     use crate::tests::force_parse;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn template_parameter() {

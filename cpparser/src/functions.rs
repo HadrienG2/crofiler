@@ -19,7 +19,7 @@ impl EntityParser {
     pub fn parse_function_call<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Box<[ValueLike<'source, atoms::IdentifierKey, crate::PathKey>]>> {
+    ) -> IResult<'source, Box<[ValueLike<atoms::IdentifierKey, crate::PathKey>]>> {
         function_call(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -29,7 +29,7 @@ impl EntityParser {
     pub fn parse_function_signature<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, FunctionSignature<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, FunctionSignature<atoms::IdentifierKey, crate::PathKey>> {
         function_signature(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -46,7 +46,7 @@ pub fn function_call<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Box<[ValueLike<'source, IdentifierKey, PathKey>]>> {
+) -> IResult<'source, Box<[ValueLike<IdentifierKey, PathKey>]>> {
     function_parameters(s, |s| {
         values::value_like(s, parse_identifier, path_to_key, false, true)
     })
@@ -62,7 +62,7 @@ pub fn function_signature<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, FunctionSignature<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, FunctionSignature<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::space0,
         combinator::opt,
@@ -101,12 +101,11 @@ pub fn function_signature<
 /// Function signature
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Parameter types
-    parameters: Box<[TypeLike<'source, IdentifierKey, PathKey>]>,
+    parameters: Box<[TypeLike<IdentifierKey, PathKey>]>,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -119,16 +118,16 @@ pub struct FunctionSignature<
     /// The first layer of Option represents presence or absence of the
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
-    noexcept: Option<Option<ValueLike<'source, IdentifierKey, PathKey>>>,
+    noexcept: Option<Option<ValueLike<IdentifierKey, PathKey>>>,
 
     /// Trailing return type
-    trailing_return: Option<TypeLike<'source, IdentifierKey, PathKey>>,
+    trailing_return: Option<TypeLike<IdentifierKey, PathKey>>,
 }
 //
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for FunctionSignature<'_, IdentifierKey, PathKey>
+    > Default for FunctionSignature<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {
@@ -169,7 +168,7 @@ fn noexcept<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Option<ValueLike<'source, IdentifierKey, PathKey>>> {
+) -> IResult<'source, Option<ValueLike<IdentifierKey, PathKey>>> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,

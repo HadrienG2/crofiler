@@ -21,7 +21,7 @@ impl EntityParser {
     pub fn parse_declarator<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Declarator<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, Declarator<atoms::IdentifierKey, crate::PathKey>> {
         declarator(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -31,7 +31,7 @@ impl EntityParser {
     pub fn parse_decl_operator<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, DeclOperator<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, DeclOperator<atoms::IdentifierKey, crate::PathKey>> {
         decl_operator(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -48,7 +48,7 @@ pub fn declarator<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Declarator<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, Declarator<IdentifierKey, PathKey>> {
     use nom::{character::complete::space0, multi::many0};
     many0((|s| decl_operator(s, parse_identifier, path_to_key)).terminated(space0))
         .map(Vec::into_boxed_slice)
@@ -56,8 +56,7 @@ pub fn declarator<
 }
 
 /// Declarator
-pub type Declarator<'source, IdentifierKey, PathKey> =
-    Box<[DeclOperator<'source, IdentifierKey, PathKey>]>;
+pub type Declarator<IdentifierKey, PathKey> = Box<[DeclOperator<IdentifierKey, PathKey>]>;
 
 /// Parser for a declarator component
 // TODO: Make private once users are migrated
@@ -69,7 +68,7 @@ fn decl_operator<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, DeclOperator<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, DeclOperator<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,
@@ -134,14 +133,13 @@ fn decl_operator<
 // FIXME: This type appears in Box<[T]>, intern it once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DeclOperator<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
-        path: NestedNameSpecifier<'source, IdentifierKey, PathKey>,
+        path: NestedNameSpecifier<IdentifierKey, PathKey>,
 
         /// Const and volatile qualifiers,
         cv: ConstVolatile,
@@ -151,13 +149,13 @@ pub enum DeclOperator<
     Reference(Reference),
 
     /// Array declarator, with optional size
-    Array(Option<ValueLike<'source, IdentifierKey, PathKey>>),
+    Array(Option<ValueLike<IdentifierKey, PathKey>>),
 
     /// Function declarator
-    Function(FunctionSignature<'source, IdentifierKey, PathKey>),
+    Function(FunctionSignature<IdentifierKey, PathKey>),
 
     /// Parentheses, used to override operator priorities
-    Parenthesized(Declarator<'source, IdentifierKey, PathKey>),
+    Parenthesized(Declarator<IdentifierKey, PathKey>),
 }
 
 #[cfg(test)]

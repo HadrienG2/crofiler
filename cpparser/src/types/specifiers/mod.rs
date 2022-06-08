@@ -23,7 +23,7 @@ impl EntityParser {
     pub fn parse_type_specifier<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, TypeSpecifier<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, TypeSpecifier<atoms::IdentifierKey, crate::PathKey>> {
         type_specifier(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -41,7 +41,7 @@ pub fn type_specifier<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, TypeSpecifier<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, TypeSpecifier<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{space0, space1},
         combinator::opt,
@@ -82,7 +82,6 @@ pub fn type_specifier<
 /// Type specifier
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TypeSpecifier<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
@@ -90,15 +89,14 @@ pub struct TypeSpecifier<
     cv: ConstVolatile,
 
     /// Simple type
-    simple_type: SimpleType<'source, IdentifierKey, PathKey>,
+    simple_type: SimpleType<IdentifierKey, PathKey>,
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<SimpleType<'source, IdentifierKey, PathKey>>,
-    > From<T> for TypeSpecifier<'source, IdentifierKey, PathKey>
+        T: Into<SimpleType<IdentifierKey, PathKey>>,
+    > From<T> for TypeSpecifier<IdentifierKey, PathKey>
 {
     fn from(simple_type: T) -> Self {
         Self {
@@ -111,7 +109,7 @@ impl<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for TypeSpecifier<'_, IdentifierKey, PathKey>
+    > Default for TypeSpecifier<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {
@@ -124,12 +122,11 @@ impl<
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SimpleType<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Id-expressions
-    IdExpression(IdExpression<'source, IdentifierKey, PathKey>),
+    IdExpression(IdExpression<IdentifierKey, PathKey>),
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
@@ -138,7 +135,7 @@ pub enum SimpleType<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for SimpleType<'_, IdentifierKey, PathKey>
+    > Default for SimpleType<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self::IdExpression(IdExpression::default())
@@ -146,13 +143,11 @@ impl<
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > From<IdExpression<'source, IdentifierKey, PathKey>>
-    for SimpleType<'source, IdentifierKey, PathKey>
+    > From<IdExpression<IdentifierKey, PathKey>> for SimpleType<IdentifierKey, PathKey>
 {
-    fn from(i: IdExpression<'source, IdentifierKey, PathKey>) -> Self {
+    fn from(i: IdExpression<IdentifierKey, PathKey>) -> Self {
         Self::IdExpression(i)
     }
 }
@@ -160,7 +155,7 @@ impl<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > From<LegacyName> for SimpleType<'_, IdentifierKey, PathKey>
+    > From<LegacyName> for SimpleType<IdentifierKey, PathKey>
 {
     fn from(n: LegacyName) -> Self {
         Self::LegacyName(n)

@@ -31,7 +31,7 @@ impl EntityParser {
         s: &'source str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<'source, ValueLike<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, ValueLike<atoms::IdentifierKey, crate::PathKey>> {
         value_like(
             s,
             &|s| self.parse_identifier(s),
@@ -58,7 +58,7 @@ pub fn value_like<
     path_to_key: &impl Fn(&'source str) -> PathKey,
     allow_comma: bool,
     allow_greater: bool,
-) -> IResult<'source, ValueLike<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, ValueLike<IdentifierKey, PathKey>> {
     use nom::{character::complete::space0, multi::many0, sequence::preceded};
     (|s| value_header(s, parse_identifier, path_to_key, allow_comma, allow_greater))
         .and(
@@ -75,24 +75,22 @@ pub fn value_like<
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueLike<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Initial value-like entity
-    header: ValueHeader<'source, IdentifierKey, PathKey>,
+    header: ValueHeader<IdentifierKey, PathKey>,
 
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
-    trailer: Box<[AfterValue<'source, IdentifierKey, PathKey>]>,
+    trailer: Box<[AfterValue<IdentifierKey, PathKey>]>,
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<ValueHeader<'source, IdentifierKey, PathKey>>,
-    > From<T> for ValueLike<'source, IdentifierKey, PathKey>
+        T: Into<ValueHeader<IdentifierKey, PathKey>>,
+    > From<T> for ValueLike<IdentifierKey, PathKey>
 {
     fn from(literal: T) -> Self {
         Self {
@@ -116,7 +114,7 @@ fn value_header<
     path_to_key: &impl Fn(&'source str) -> PathKey,
     allow_comma: bool,
     allow_greater: bool,
-) -> IResult<'source, ValueHeader<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, ValueHeader<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, separated_pair},
@@ -160,7 +158,6 @@ fn value_header<
 /// Values that are not expressions starting with a value
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueHeader<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
@@ -168,27 +165,26 @@ pub enum ValueHeader<
     Literal(Literal<IdentifierKey>),
 
     /// Value with parentheses around it
-    Parenthesized(Box<ValueLike<'source, IdentifierKey, PathKey>>),
+    Parenthesized(Box<ValueLike<IdentifierKey, PathKey>>),
 
     /// Unary operator applied to a value
     UnaryOp(
-        Operator<'source, IdentifierKey, PathKey>,
-        Box<ValueLike<'source, IdentifierKey, PathKey>>,
+        Operator<IdentifierKey, PathKey>,
+        Box<ValueLike<IdentifierKey, PathKey>>,
     ),
 
     /// New-expression
-    NewExpression(Box<NewExpression<'source, IdentifierKey, PathKey>>),
+    NewExpression(Box<NewExpression<IdentifierKey, PathKey>>),
 
     /// Named value
-    IdExpression(IdExpression<'source, IdentifierKey, PathKey>),
+    IdExpression(IdExpression<IdentifierKey, PathKey>),
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
         T: Into<Literal<IdentifierKey>>,
-    > From<T> for ValueHeader<'source, IdentifierKey, PathKey>
+    > From<T> for ValueHeader<IdentifierKey, PathKey>
 {
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
@@ -206,7 +202,7 @@ fn after_value<
     path_to_key: &impl Fn(&'source str) -> PathKey,
     allow_comma: bool,
     allow_greater: bool,
-) -> IResult<'source, AfterValue<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, AfterValue<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, preceded, separated_pair},
@@ -267,33 +263,32 @@ fn after_value<
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AfterValue<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Array indexing
-    ArrayIndex(ValueLike<'source, IdentifierKey, PathKey>),
+    ArrayIndex(ValueLike<IdentifierKey, PathKey>),
 
     /// Function call
-    FunctionCall(Box<[ValueLike<'source, IdentifierKey, PathKey>]>),
+    FunctionCall(Box<[ValueLike<IdentifierKey, PathKey>]>),
 
     /// Binary operator (OP x)
     BinaryOp(
-        Operator<'source, IdentifierKey, PathKey>,
-        ValueLike<'source, IdentifierKey, PathKey>,
+        Operator<IdentifierKey, PathKey>,
+        ValueLike<IdentifierKey, PathKey>,
     ),
 
     /// Ternary operator (? x : y)
     TernaryOp(
-        ValueLike<'source, IdentifierKey, PathKey>,
-        ValueLike<'source, IdentifierKey, PathKey>,
+        ValueLike<IdentifierKey, PathKey>,
+        ValueLike<IdentifierKey, PathKey>,
     ),
 
     /// Member access (. stuff)
-    MemberAccess(UnqualifiedId<'source, IdentifierKey, PathKey>),
+    MemberAccess(UnqualifiedId<IdentifierKey, PathKey>),
 
     /// Postfix operator (++ and -- only in current C++)
-    PostfixOp(Operator<'source, IdentifierKey, PathKey>),
+    PostfixOp(Operator<IdentifierKey, PathKey>),
 }
 
 #[cfg(test)]

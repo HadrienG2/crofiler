@@ -24,7 +24,7 @@ impl EntityParser {
     pub fn parse_unary_expr_prefix<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Operator<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, Operator<atoms::IdentifierKey, crate::PathKey>> {
         unary_expr_prefix(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -49,7 +49,7 @@ impl EntityParser {
     pub fn parse_new_expression<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, NewExpression<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, NewExpression<atoms::IdentifierKey, crate::PathKey>> {
         new_expression(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -88,7 +88,7 @@ pub fn unary_expr_prefix<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Operator<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, Operator<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0, space1},
         sequence::delimited,
@@ -184,7 +184,7 @@ pub fn new_expression<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, NewExpression<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, NewExpression<IdentifierKey, PathKey>> {
     use nom::{
         character::complete::space0,
         combinator::opt,
@@ -214,7 +214,6 @@ pub fn new_expression<
 // FIXME: This type appears in Box<T>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NewExpression<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
@@ -223,13 +222,13 @@ pub struct NewExpression<
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<Box<[ValueLike<'source, IdentifierKey, PathKey>]>>,
+    placement: Option<Box<[ValueLike<IdentifierKey, PathKey>]>>,
 
     /// Type of values being created
-    ty: TypeLike<'source, IdentifierKey, PathKey>,
+    ty: TypeLike<IdentifierKey, PathKey>,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<Box<[ValueLike<'source, IdentifierKey, PathKey>]>>,
+    constructor: Option<Box<[ValueLike<IdentifierKey, PathKey>]>>,
 }
 //
 impl<

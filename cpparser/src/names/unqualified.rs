@@ -16,7 +16,7 @@ impl EntityParser {
     pub fn parse_unqualified_id<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, UnqualifiedId<'source, atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, UnqualifiedId<atoms::IdentifierKey, crate::PathKey>> {
         unqualified_id(s, &|s| self.parse_identifier(s), &|path| {
             self.path_to_key(path)
         })
@@ -33,7 +33,7 @@ pub fn unqualified_id<
     s: &'source str,
     parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
     path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, UnqualifiedId<'source, IdentifierKey, PathKey>> {
+) -> IResult<'source, UnqualifiedId<IdentifierKey, PathKey>> {
     use crate::operators::overloads::operator_overload;
     use nom::{
         character::complete::{char, space0},
@@ -99,7 +99,6 @@ pub fn unqualified_id<
 ///
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnqualifiedId<
-    'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
@@ -112,20 +111,20 @@ pub enum UnqualifiedId<
         id: IdentifierKey,
 
         /// Optional template parameters
-        template_parameters: Option<TemplateParameters<'source>>,
+        template_parameters: Option<TemplateParameters<IdentifierKey, PathKey>>,
     },
 
     /// An operator overload
     Operator {
         /// Which operator was overloaded
-        operator: Operator<'source, IdentifierKey, PathKey>,
+        operator: Operator<IdentifierKey, PathKey>,
 
         /// Optional template parameters
-        template_parameters: Option<TemplateParameters<'source>>,
+        template_parameters: Option<TemplateParameters<IdentifierKey, PathKey>>,
     },
 
     /// A decltype(<value>) expression
-    Decltype(Box<ValueLike<'source, IdentifierKey, PathKey>>),
+    Decltype(Box<ValueLike<IdentifierKey, PathKey>>),
 
     /// A lambda function, with source location information
     Lambda(Lambda<PathKey>),
@@ -145,7 +144,7 @@ impl<
 }
 //
 impl<'source, PathKey: Clone + Debug + PartialEq + Eq> From<&'source str>
-    for UnqualifiedId<'source, &'source str, PathKey>
+    for UnqualifiedId<&'source str, PathKey>
 {
     fn from(id: &'source str) -> Self {
         Self::Named {
