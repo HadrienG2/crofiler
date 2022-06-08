@@ -5,14 +5,35 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{functions, names::atoms, values::ValueLike, IResult};
+use crate::{functions, names::atoms, values::ValueLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::path::Path;
+use std::fmt::Debug;
+
+impl EntityParser {
+    /// Parser recognizing types (and some values that are indistinguishable from
+    /// types without extra context).
+    pub fn parse_type_like<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, TypeLike<'source, atoms::IdentifierKey, crate::PathKey>> {
+        type_like(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
+    }
+}
 
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context).
-pub fn type_like(s: &str) -> IResult<TypeLike> {
+pub fn type_like<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, TypeLike<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,
@@ -31,8 +52,8 @@ pub fn type_like(s: &str) -> IResult<TypeLike> {
     // Then come the type specifier and declarator
     tuple((
         attributes.terminated(space0),
-        (|s| specifiers::type_specifier(s, atoms::identifier, Path::new)).terminated(space0),
-        |s| declarators::declarator(s, &atoms::identifier, &Path::new),
+        (|s| specifiers::type_specifier(s, parse_identifier, path_to_key)).terminated(space0),
+        |s| declarators::declarator(s, parse_identifier, path_to_key),
     ))
     .map(|(attributes, type_specifier, declarator)| TypeLike {
         attributes,
@@ -44,25 +65,48 @@ pub fn type_like(s: &str) -> IResult<TypeLike> {
 
 /// A type name, or something looking close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct TypeLike<'source> {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TypeLike<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// GNU-style attributes __attribute__((...))
     attributes: Box<[ValueLike<'source>]>,
 
     /// Type specifier
-    type_specifier: TypeSpecifier<'source, &'source str, &'source Path>,
+    type_specifier: TypeSpecifier<'source, IdentifierKey, PathKey>,
 
     /// Declarator
-    declarator: Declarator<'source, &'source str, &'source Path>,
+    declarator: Declarator<'source, IdentifierKey, PathKey>,
 }
 //
-impl<'source, T: Into<TypeSpecifier<'source, &'source str, &'source Path>>> From<T>
-    for TypeLike<'source>
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+        T: Into<TypeSpecifier<'source, IdentifierKey, PathKey>>,
+    > From<T> for TypeLike<'source, IdentifierKey, PathKey>
 {
     fn from(type_specifier: T) -> Self {
         Self {
             type_specifier: type_specifier.into(),
             ..Default::default()
+        }
+    }
+}
+//
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > Default for TypeLike<'source, IdentifierKey, PathKey>
+{
+    fn default() -> Self {
+        Self {
+            attributes: Default::default(),
+            type_specifier: Default::default(),
+            declarator: Default::default(),
         }
     }
 }
@@ -73,14 +117,17 @@ mod tests {
     use super::*;
     use crate::{functions::FunctionSignature, tests::force_parse, values};
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn type_like() {
-        let parse_type_specifier = |s| specifiers::type_specifier(s, atoms::identifier, Path::new);
+        let parse_type_like = |s| super::type_like(s, &atoms::identifier, &Path::new);
+        let parse_type_specifier =
+            |s| specifiers::type_specifier(s, &atoms::identifier, &Path::new);
 
         // Basic type specifier
         assert_eq!(
-            super::type_like("signed char"),
+            parse_type_like("signed char"),
             Ok((
                 "",
                 TypeLike {
@@ -92,7 +139,7 @@ mod tests {
 
         // GNU-style attributes before
         assert_eq!(
-            super::type_like("__attribute__((unused)) long long"),
+            parse_type_like("__attribute__((unused)) long long"),
             Ok((
                 "",
                 TypeLike {
@@ -106,7 +153,7 @@ mod tests {
 
         // Basic function pointer
         assert_eq!(
-            super::type_like("something()"),
+            parse_type_like("something()"),
             Ok((
                 "",
                 TypeLike {
@@ -119,7 +166,7 @@ mod tests {
 
         // Fun template/expression ambiguity found during testing
         assert_eq!(
-            super::type_like("T<1>(U)"),
+            parse_type_like("T<1>(U)"),
             Ok((
                 "",
                 TypeLike {

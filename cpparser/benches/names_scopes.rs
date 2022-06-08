@@ -9,7 +9,7 @@ fn names_scopes(c: &mut Criterion) {
     let parser = EntityParser::new();
 
     let parse_nested_name_specifier =
-        |s| scopes::nested_name_specifier(s, atoms::identifier, Path::new);
+        |s| scopes::nested_name_specifier(s, &atoms::identifier, &Path::new);
     c.bench_function(&name("nested_name_specifier/old/empty"), |b| {
         b.iter(|| parse_nested_name_specifier(black_box("")))
     });
@@ -41,7 +41,7 @@ fn names_scopes(c: &mut Criterion) {
         b.iter(|| parser.parse_nested_name_specifier(black_box("x")))
     });
 
-    let parse_id_expression = |s| scopes::id_expression(s, atoms::identifier, Path::new);
+    let parse_id_expression = |s| scopes::id_expression(s, &atoms::identifier, &Path::new);
     c.bench_function(&name("id_expression/old/single"), |b| {
         b.iter(|| parse_id_expression(black_box("a")))
     });

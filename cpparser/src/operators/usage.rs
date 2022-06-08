@@ -3,13 +3,14 @@
 use super::{Operator, Symbol};
 use crate::{
     functions,
+    names::atoms,
     types::{self, TypeLike},
     values::ValueLike,
     IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Path};
 
 /// Parse a binary operator that can be put between two expressions
 ///
@@ -21,53 +22,55 @@ use std::fmt::Debug;
 pub fn binary_expr_middle<
     const ALLOW_COMMA: bool,
     const ALLOW_GREATER: bool,
-    IdentifierKey: Clone + Debug + PartialEq + Eq,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
 >(
     s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+) -> IResult<Operator<IdentifierKey, PathKey>> {
     // Most 1-character operators can be used in binary position, except for
     // the negation operators Not and BitNot
-    let arith1 = super::arithmetic_or_comparison::<1, IdentifierKey>.verify(|op| match op {
-        Operator::Basic {
-            symbol,
-            twice: false,
-            equal: false,
-        } => {
-            use Symbol::*;
-            match symbol {
-                BitNot | Not => false,
-                AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq | Less => {
-                    true
+    let arith1 =
+        super::arithmetic_or_comparison::<1, IdentifierKey, PathKey>.verify(|op| match op {
+            Operator::Basic {
+                symbol,
+                twice: false,
+                equal: false,
+            } => {
+                use Symbol::*;
+                match symbol {
+                    BitNot | Not => false,
+                    AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq
+                    | Less => true,
+                    Comma => ALLOW_COMMA,
+                    Greater => ALLOW_GREATER,
                 }
-                Comma => ALLOW_COMMA,
-                Greater => ALLOW_GREATER,
             }
-        }
-        _ => unreachable!(),
-    });
+            _ => unreachable!(),
+        });
 
     // Most 2-character operators can be used in binary position, except for
     // increment and decrement, and shr in template contexts.
-    let arith2 = super::arithmetic_or_comparison::<2, IdentifierKey>.verify(|op| match op {
-        Operator::Basic {
-            symbol,
-            twice: true,
-            equal: false,
-        } => {
-            use Symbol::*;
-            match symbol {
-                AddPlus | SubNeg => false,
-                AndRef | Or | AssignEq | Less => true,
-                Greater => ALLOW_GREATER,
-                Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
+    let arith2 =
+        super::arithmetic_or_comparison::<2, IdentifierKey, PathKey>.verify(|op| match op {
+            Operator::Basic {
+                symbol,
+                twice: true,
+                equal: false,
+            } => {
+                use Symbol::*;
+                match symbol {
+                    AddPlus | SubNeg => false,
+                    AndRef | Or | AssignEq | Less => true,
+                    Greater => ALLOW_GREATER,
+                    Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
+                }
             }
-        }
-        // This may need to be revised as C++ evolves
-        _ => true,
-    });
+            // This may need to be revised as C++ evolves
+            _ => true,
+        });
 
     // All 3-character operators can be used in binary position
-    let arith3 = super::arithmetic_or_comparison::<3, IdentifierKey>;
+    let arith3 = super::arithmetic_or_comparison::<3, IdentifierKey, PathKey>;
 
     // No other operator can be used in binary position
     arith3.or(arith2).or(arith1).parse(s)
@@ -75,9 +78,15 @@ pub fn binary_expr_middle<
 
 /// Parse an unary operator that can be applied to an expression in prefix position
 // FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
-pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
-    s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+pub fn unary_expr_prefix<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, Operator<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0, space1},
         sequence::delimited,
@@ -88,8 +97,12 @@ pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
         .verify(|s| [AddPlus, SubNeg, MulDeref, AndRef, BitNot, Not].contains(s))
         .map(Operator::from);
 
-    let cast = delimited(char('('), types::type_like, char(')'))
-        .map(|ty| Operator::Conversion(Box::new(ty)));
+    let cast = delimited(
+        char('('),
+        |s| types::type_like(s, parse_identifier, path_to_key),
+        char(')'),
+    )
+    .map(|ty| Operator::Conversion(Box::new(ty)));
 
     // Must parse inc/dec before unary_symbol to prevent under-parsing
     (increment_decrement.or(unary_symbol).terminated(space0))
@@ -99,9 +112,12 @@ pub fn unary_expr_prefix<IdentifierKey: Clone + Debug + PartialEq + Eq>(
 }
 
 /// Parse the increment/decrement operator
-pub fn increment_decrement<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+pub fn increment_decrement<
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+>(
     s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+) -> IResult<Operator<IdentifierKey, PathKey>> {
     use nom_supreme::tag::complete::tag;
     (tag("++").value(Operator::Basic {
         symbol: Symbol::AddPlus,
@@ -129,7 +145,7 @@ pub fn new_expression(s: &str) -> IResult<NewExpression> {
         tag("new").and(space0),
         tuple((
             opt(functions::function_call).terminated(space0),
-            types::type_like.terminated(space0),
+            (|s| types::type_like(s, &atoms::identifier, &Path::new)).terminated(space0),
             opt(functions::function_call),
         )),
     )))
@@ -154,7 +170,7 @@ pub struct NewExpression<'source> {
     placement: Option<Box<[ValueLike<'source>]>>,
 
     /// Type of values being created
-    ty: TypeLike<'source>,
+    ty: TypeLike<'source, &'source str, &'source Path>,
 
     /// Parameters to the values' constructor (if any)
     constructor: Option<Box<[ValueLike<'source>]>>,
@@ -166,9 +182,13 @@ mod tests {
     use crate::tests::force_parse;
     use pretty_assertions::assert_eq;
 
+    fn parse_type_like(s: &str) -> IResult<TypeLike<&str, &Path>> {
+        types::type_like(s, &atoms::identifier, &Path::new)
+    }
+
     #[test]
     fn increment_decrement() {
-        let parse_increment_decrement = super::increment_decrement::<&str>;
+        let parse_increment_decrement = super::increment_decrement::<&str, &Path>;
         assert_eq!(
             parse_increment_decrement("++"),
             Ok((
@@ -193,10 +213,12 @@ mod tests {
         );
     }
 
+    fn parse_unary_expr_prefix(s: &str) -> IResult<Operator<&str, &Path>> {
+        super::unary_expr_prefix(s, &atoms::identifier, &Path::new)
+    }
+
     #[test]
     fn unary_expr_prefix() {
-        let parse_unary_expr_prefix = super::unary_expr_prefix::<&str>;
-
         // Lone symbol
         assert_eq!(
             parse_unary_expr_prefix("+"),
@@ -249,7 +271,7 @@ mod tests {
             parse_unary_expr_prefix("(float)"),
             Ok((
                 "",
-                Operator::Conversion(Box::new(force_parse(types::type_like, "float")))
+                Operator::Conversion(Box::new(force_parse(parse_type_like, "float")))
             ))
         );
 
@@ -276,13 +298,13 @@ mod tests {
     fn binary_expr_middle() {
         // Lone symbol, other than not
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str>("="),
+            super::binary_expr_middle::<false, false, &str, &Path>("="),
             Ok(("", Symbol::AssignEq.into()))
         );
 
         // Two-character, other than increment/decrement
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str>("+="),
+            super::binary_expr_middle::<false, false, &str, &Path>("+="),
             Ok((
                 "",
                 Operator::Basic {
@@ -295,26 +317,26 @@ mod tests {
 
         // Three-character
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str>("<=>"),
+            super::binary_expr_middle::<false, false, &str, &Path>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Only accept comma if instructed to do so
-        assert!(super::binary_expr_middle::<false, false, &str>(",").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str, &Path>(",").is_err());
         assert_eq!(
-            super::binary_expr_middle::<true, false, &str>(","),
+            super::binary_expr_middle::<true, false, &str, &Path>(","),
             Ok(("", Symbol::Comma.into()))
         );
 
         // Only accept greater sign if instructed to do so
-        assert!(super::binary_expr_middle::<false, false, &str>(">").is_err());
-        assert!(super::binary_expr_middle::<false, false, &str>(">>").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str, &Path>(">").is_err());
+        assert!(super::binary_expr_middle::<false, false, &str, &Path>(">>").is_err());
         assert_eq!(
-            super::binary_expr_middle::<false, true, &str>(">"),
+            super::binary_expr_middle::<false, true, &str, &Path>(">"),
             Ok(("", Symbol::Greater.into()))
         );
         assert_eq!(
-            super::binary_expr_middle::<false, true, &str>(">>"),
+            super::binary_expr_middle::<false, true, &str, &Path>(">>"),
             Ok((
                 "",
                 Operator::Basic {
@@ -334,7 +356,7 @@ mod tests {
             Ok((
                 "",
                 NewExpression {
-                    ty: force_parse(types::type_like, "int"),
+                    ty: force_parse(parse_type_like, "int"),
                     ..Default::default()
                 }
             ))
@@ -347,7 +369,7 @@ mod tests {
                 "",
                 NewExpression {
                     rooted: true,
-                    ty: force_parse(types::type_like, "double"),
+                    ty: force_parse(parse_type_like, "double"),
                     ..Default::default()
                 }
             ))
@@ -360,7 +382,7 @@ mod tests {
                 "",
                 NewExpression {
                     placement: Some(vec![42u8.into()].into()),
-                    ty: force_parse(types::type_like, "MyClass"),
+                    ty: force_parse(parse_type_like, "MyClass"),
                     ..Default::default()
                 }
             ))
@@ -372,7 +394,7 @@ mod tests {
             Ok((
                 "",
                 NewExpression {
-                    ty: force_parse(types::type_like, "MyClass"),
+                    ty: force_parse(parse_type_like, "MyClass"),
                     constructor: Some(vec!['x'.into()].into()),
                     ..Default::default()
                 }

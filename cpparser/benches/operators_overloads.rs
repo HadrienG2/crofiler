@@ -1,11 +1,13 @@
 use cpparser::{names::atoms, EntityParser};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::path::Path;
 
 fn operators_overloads(c: &mut Criterion) {
     use cpparser::operators::overloads;
     let name = |s| format!("operators::overloads::{s}");
 
-    let parse_operator_overload = |s| overloads::operator_overload(s, atoms::identifier);
+    let parse_operator_overload =
+        |s| overloads::operator_overload(s, &atoms::identifier, &Path::new);
     let parser = EntityParser::new();
     c.bench_function(&name("operator_overload/old/+"), |b| {
         b.iter(|| parse_operator_overload(black_box("operator+")))

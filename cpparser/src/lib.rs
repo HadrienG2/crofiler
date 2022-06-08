@@ -10,14 +10,17 @@ pub mod templates;
 pub mod types;
 pub mod values;
 
-use crate::types::specifiers::legacy::{self, LegacyName};
+use crate::{
+    names::atoms,
+    types::specifiers::legacy::{self, LegacyName},
+};
 use asylum::{
     lasso::{Rodeo, RodeoResolver},
     path::{InternedPath, InternedPaths, PathInterner, PathKey},
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::cell::RefCell;
+use std::{cell::RefCell, path::Path};
 
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
@@ -26,9 +29,9 @@ pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 pub type Error<I> = nom::error::Error<I>;
 
 /// Parser for C++ entities
-pub fn entity(s: &str) -> IResult<Option<types::TypeLike>> {
+pub fn entity(s: &str) -> IResult<Option<types::TypeLike<&str, &Path>>> {
     use nom::combinator::eof;
-    let type_like = types::type_like.map(Some);
+    let type_like = (|s| types::type_like(s, &atoms::identifier, &Path::new)).map(Some);
     let unknown = EntityParser::parse_unknown_entity.value(None);
     type_like.or(unknown).terminated(eof).parse(s)
 }
@@ -132,10 +135,12 @@ pub(crate) mod tests {
 
     #[test]
     fn entity() {
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+
         // Something that looks like a type name
         assert_eq!(
             super::entity("type_name"),
-            Ok(("", Some(force_parse(types::type_like, "type_name"))))
+            Ok(("", Some(force_parse(parse_type_like, "type_name"))))
         );
 
         // The infamous unknown clang entity

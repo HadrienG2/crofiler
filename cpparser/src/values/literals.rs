@@ -10,7 +10,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Literal<atoms::IdentifierKey>> {
-        literal(s, |s| self.parse_identifier(s))
+        literal(s, &|s| self.parse_identifier(s))
     }
 }
 
@@ -19,8 +19,8 @@ impl EntityParser {
 // TODO: Make private once users are migrated
 pub fn literal<'source, IdentifierKey: 'source>(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-) -> IResult<Literal<IdentifierKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+) -> IResult<'source, Literal<IdentifierKey>> {
     use nom::combinator::opt;
     (literal_value.and(opt(parse_identifier)))
         .map(|(value, custom_suffix)| Literal {
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn literal() {
-        let parse_literal = |s| super::literal(s, atoms::identifier);
+        let parse_literal = |s| super::literal(s, &atoms::identifier);
         assert_eq!(parse_literal("'x'"), Ok(("", 'x'.into())));
         assert_eq!(
             parse_literal("42_m"),

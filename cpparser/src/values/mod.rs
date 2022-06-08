@@ -65,7 +65,7 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
         sequence::{delimited, separated_pair},
     };
 
-    let literal = (|s| literals::literal(s, atoms::identifier)).map(ValueHeader::Literal);
+    let literal = (|s| literals::literal(s, &atoms::identifier)).map(ValueHeader::Literal);
 
     let parenthesized = delimited(
         char('(').and(space0),
@@ -75,7 +75,7 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     .map(ValueHeader::Parenthesized);
 
     let unary_op = separated_pair(
-        operators::usage::unary_expr_prefix,
+        |s| operators::usage::unary_expr_prefix(s, &atoms::identifier, &Path::new),
         space0,
         value_like::<ALLOW_COMMA, ALLOW_GREATER>.map(Box::new),
     )
@@ -84,8 +84,8 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     let new_expression =
         operators::usage::new_expression.map(|e| ValueHeader::NewExpression(Box::new(e)));
 
-    let id_expression =
-        (|s| scopes::id_expression(s, atoms::identifier, Path::new)).map(ValueHeader::IdExpression);
+    let id_expression = (|s| scopes::id_expression(s, &atoms::identifier, &Path::new))
+        .map(ValueHeader::IdExpression);
 
     literal
         .or(unary_op)
@@ -109,7 +109,10 @@ pub enum ValueHeader<'source> {
     Parenthesized(Box<ValueLike<'source>>),
 
     /// Unary operator applied to a value
-    UnaryOp(Operator<'source, &'source str>, Box<ValueLike<'source>>),
+    UnaryOp(
+        Operator<'source, &'source str, &'source Path>,
+        Box<ValueLike<'source>>,
+    ),
 
     /// New-expression
     NewExpression(Box<NewExpression<'source>>),
@@ -135,7 +138,12 @@ fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     };
 
     let binary_op = separated_pair(
-        operators::usage::binary_expr_middle::<ALLOW_COMMA, ALLOW_GREATER, &'source str>,
+        operators::usage::binary_expr_middle::<
+            ALLOW_COMMA,
+            ALLOW_GREATER,
+            &'source str,
+            &'source Path,
+        >,
         space0,
         value_like::<ALLOW_COMMA, ALLOW_GREATER>,
     )
@@ -161,7 +169,7 @@ fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     let function_call = functions::function_call.map(AfterValue::FunctionCall);
 
     let member_access = preceded(char('.').and(space0), |s| {
-        unqualified::unqualified_id(s, atoms::identifier, Path::new)
+        unqualified::unqualified_id(s, &atoms::identifier, &Path::new)
     })
     .map(AfterValue::MemberAccess);
 
@@ -187,7 +195,10 @@ pub enum AfterValue<'source> {
     FunctionCall(Box<[ValueLike<'source>]>),
 
     /// Binary operator (OP x)
-    BinaryOp(Operator<'source, &'source str>, ValueLike<'source>),
+    BinaryOp(
+        Operator<'source, &'source str, &'source Path>,
+        ValueLike<'source>,
+    ),
 
     /// Ternary operator (? x : y)
     TernaryOp(ValueLike<'source>, ValueLike<'source>),
@@ -196,7 +207,7 @@ pub enum AfterValue<'source> {
     MemberAccess(UnqualifiedId<'source, &'source str, &'source Path>),
 
     /// Postfix operator (++ and -- only in current C++)
-    PostfixOp(Operator<'source, &'source str>),
+    PostfixOp(Operator<'source, &'source str, &'source Path>),
 }
 
 #[cfg(test)]
@@ -223,12 +234,13 @@ mod tests {
         );
 
         // ...including c-style casts, not to be confused with parenthesized values
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
             value_header("(T)666"),
             Ok((
                 "",
                 ValueHeader::UnaryOp(
-                    Operator::Conversion(Box::new(force_parse(types::type_like, "T"))),
+                    Operator::Conversion(Box::new(force_parse(parse_type_like, "T"))),
                     Box::new(666u16.into())
                 )
             ))

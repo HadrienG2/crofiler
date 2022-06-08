@@ -22,7 +22,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Lambda<crate::PathKey>> {
-        lambda(s, |path| self.path_to_key(path))
+        lambda(s, &|path| self.path_to_key(path))
     }
 
     /// Parser for other anonymous clang entities called "(anonymous <stuff>)"
@@ -30,7 +30,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, AnonymousEntity<atoms::IdentifierKey>> {
-        anonymous(s, |s| self.parse_identifier(s))
+        anonymous(s, &|s| self.parse_identifier(s))
     }
 }
 
@@ -43,8 +43,8 @@ impl EntityParser {
 // TODO: Make private once users are migrated
 pub fn lambda<'source, PathKey: 'source>(
     s: &'source str,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<Lambda<PathKey>> {
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, Lambda<PathKey>> {
     use nom::{
         bytes::complete::{tag, take_till1},
         character::complete::{anychar, char, u32},
@@ -84,8 +84,8 @@ pub type Column = u32;
 // TODO: Make private once users are migrated
 pub fn anonymous<'source, IdentifierKey: 'source>(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-) -> IResult<AnonymousEntity<IdentifierKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+) -> IResult<'source, AnonymousEntity<IdentifierKey>> {
     use nom::{
         character::complete::char,
         combinator::opt,
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn lambda() {
-        let parse_lambda = |s| super::lambda(s, Path::new);
+        let parse_lambda = |s| super::lambda(s, &Path::new);
         assert_eq!(
             parse_lambda("(lambda at /path/to/source.cpp:123:45)"),
             Ok((
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn anonymous() {
-        let parse_anonymous = |s| super::anonymous(s, atoms::identifier);
+        let parse_anonymous = |s| super::anonymous(s, &atoms::identifier);
         assert_eq!(parse_anonymous("(anonymous)"), Ok(("", None)));
         assert_eq!(
             parse_anonymous("(anonymous class)"),

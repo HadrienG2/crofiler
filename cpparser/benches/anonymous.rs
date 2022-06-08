@@ -1,5 +1,6 @@
 use cpparser::{names::atoms, EntityParser};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::path::Path;
 
 fn anonymous(c: &mut Criterion) {
     use cpparser::anonymous;
@@ -12,7 +13,7 @@ fn anonymous(c: &mut Criterion) {
     });
 
     // Lambda parsing: old-style, without interning...
-    let parse_lambda = |s| anonymous::lambda(s, std::convert::identity);
+    let parse_lambda = |s| anonymous::lambda(s, &Path::new);
     c.bench_function(&name("lambda/old/pass"), |b| {
         b.iter(|| parse_lambda(black_box("(lambda at /x.cpp:1:2)")))
     });
@@ -31,7 +32,7 @@ fn anonymous(c: &mut Criterion) {
     });
 
     // Anonymous entity parsing: old-style, without interning...
-    let parse_anonymous = |s| anonymous::anonymous(s, atoms::identifier);
+    let parse_anonymous = |s| anonymous::anonymous(s, &atoms::identifier);
     c.bench_function(&name("anonymous/old/empty"), |b| {
         b.iter(|| parse_anonymous(black_box("(anonymous)")))
     });

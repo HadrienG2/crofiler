@@ -1,6 +1,7 @@
 //! Function-related parsing
 
 use crate::{
+    names::atoms,
     types::{
         self,
         qualifiers::{ConstVolatile, Reference},
@@ -10,6 +11,7 @@ use crate::{
     EntityParser, IResult,
 };
 use nom::Parser;
+use std::path::Path;
 
 /// Parser recognizing a function call
 pub fn function_call(s: &str) -> IResult<Box<[ValueLike]>> {
@@ -26,7 +28,9 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     };
     use nom_supreme::tag::complete::tag;
 
-    let function_parameters = |s| function_parameters(s, types::type_like);
+    let type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+
+    let function_parameters = |s| function_parameters(s, &type_like);
 
     let cv = preceded(space0, EntityParser::parse_cv);
 
@@ -34,12 +38,9 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
 
     let noexcept = preceded(space0, opt(noexcept));
 
-    let trailing_return = opt(preceded(
-        space0.and(tag("->")).and(space0),
-        types::type_like,
-    ));
+    let trailing_return = opt(preceded(space0.and(tag("->")).and(space0), &type_like));
 
-    tuple((
+    let mut tuple = tuple((
         function_parameters,
         cv,
         reference,
@@ -54,15 +55,16 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
             noexcept,
             trailing_return,
         },
-    )
-    .parse(s)
+    );
+
+    tuple.parse(s)
 }
 //
 /// Function signature
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct FunctionSignature<'source> {
     /// Parameter types
-    parameters: Box<[TypeLike<'source>]>,
+    parameters: Box<[TypeLike<'source, &'source str, &'source Path>]>,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -78,7 +80,7 @@ pub struct FunctionSignature<'source> {
     noexcept: Option<Option<ValueLike<'source>>>,
 
     /// Trailing return type
-    trailing_return: Option<TypeLike<'source>>,
+    trailing_return: Option<TypeLike<'source, &'source str, &'source Path>>,
 }
 
 /// Parser recognizing a set of function parameters, given a parameter grammar
@@ -87,7 +89,7 @@ pub struct FunctionSignature<'source> {
 /// grammar, this parses function calls.
 fn function_parameters<'source, T: 'source>(
     s: &'source str,
-    parameter: impl FnMut(&'source str) -> IResult<T>,
+    parameter: impl FnMut(&'source str) -> IResult<'source, T>,
 ) -> IResult<Box<[T]>> {
     use nom::{
         character::complete::{char, space0},
@@ -138,13 +140,14 @@ mod tests {
 
     #[test]
     fn function_parameters() {
-        let type_parameters = |s| super::function_parameters(s, types::type_like);
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+        let type_parameters = |s| super::function_parameters(s, parse_type_like);
         assert_eq!(type_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
             type_parameters("(signed char*)"),
             Ok((
                 "",
-                vec![force_parse(types::type_like, "signed char*")].into()
+                vec![force_parse(parse_type_like, "signed char*")].into()
             ))
         );
         assert_eq!(
@@ -152,8 +155,8 @@ mod tests {
             Ok((
                 "",
                 vec![
-                    force_parse(types::type_like, "charamel<lol>&"),
-                    force_parse(types::type_like, "T")
+                    force_parse(parse_type_like, "charamel<lol>&"),
+                    force_parse(parse_type_like, "T")
                 ]
                 .into()
             ))
@@ -229,12 +232,13 @@ mod tests {
                 }
             ))
         );
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
             super::function_signature("() -> int"),
             Ok((
                 "",
                 FunctionSignature {
-                    trailing_return: Some(force_parse(types::type_like, "int")),
+                    trailing_return: Some(force_parse(parse_type_like, "int")),
                     ..Default::default()
                 }
             ))

@@ -6,7 +6,7 @@ fn values_literals(c: &mut Criterion) {
     let name = |s| format!("values::literals::{s}");
 
     // Literal parsing: old-style, without interning...
-    let parse_literal = |s| literals::literal(s, atoms::identifier);
+    let parse_literal = |s| literals::literal(s, &atoms::identifier);
     c.bench_function(&name("literal/old/1"), |b| {
         b.iter(|| parse_literal(black_box("1")))
     });

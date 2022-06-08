@@ -8,7 +8,7 @@ fn types_specifiers(c: &mut Criterion) {
 
     let parser = EntityParser::new();
 
-    let parse_type_specifier = |s| specifiers::type_specifier(s, atoms::identifier, Path::new);
+    let parse_type_specifier = |s| specifiers::type_specifier(s, &atoms::identifier, &Path::new);
 
     // Legacy primitive branch (most common parse)
     c.bench_function(&name("type_specifier/old/double"), |b| {

@@ -24,11 +24,9 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier<'source, atoms::IdentifierKey, crate::PathKey>> {
-        type_specifier(
-            s,
-            |s| self.parse_identifier(s),
-            |path| self.path_to_key(path),
-        )
+        type_specifier(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
     }
 }
 
@@ -41,9 +39,9 @@ pub fn type_specifier<
     PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<TypeSpecifier<IdentifierKey, PathKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, TypeSpecifier<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{space0, space1},
         combinator::opt,
@@ -59,8 +57,7 @@ pub fn type_specifier<
         );
     let id_expression = preceded(
         id_header,
-        (|s| scopes::id_expression(s, &parse_identifier, &path_to_key))
-            .map(SimpleType::IdExpression),
+        (|s| scopes::id_expression(s, parse_identifier, path_to_key)).map(SimpleType::IdExpression),
     );
 
     // ...or a legacy C-style primitive type with inner spaces...
@@ -178,7 +175,7 @@ mod tests {
 
     #[test]
     fn type_specifier() {
-        let parse_type_specifier = |s| super::type_specifier(s, atoms::identifier, Path::new);
+        let parse_type_specifier = |s| super::type_specifier(s, &atoms::identifier, &Path::new);
 
         // Normal branch
         assert_eq!(

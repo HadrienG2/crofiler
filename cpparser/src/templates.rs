@@ -1,12 +1,14 @@
 //! Things that could be templates
 
 use crate::{
+    names::atoms,
     types::{self, TypeLike},
     values::{self, ValueLike},
     IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::path::Path;
 
 /// Parser recognizing a set of template parameters
 pub fn template_parameters(s: &str) -> IResult<TemplateParameters> {
@@ -39,7 +41,7 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
         character::complete::{char, space0},
         combinator::peek,
     };
-    let type_like = types::type_like
+    let type_like = (|s| types::type_like(s, &atoms::identifier, &Path::new))
         .map(TemplateParameter::TypeLike)
         .terminated(space0.and(peek(char(',').or(char('>')))));
     let value_like = values::value_like::<false, false>
@@ -53,7 +55,7 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TemplateParameter<'source> {
     /// Type or value looking close enough to a type
-    TypeLike(TypeLike<'source>),
+    TypeLike(TypeLike<'source, &'source str, &'source Path>),
 
     /// Value
     ValueLike(ValueLike<'source>),
@@ -65,8 +67,8 @@ impl<'source> From<ValueLike<'source>> for TemplateParameter<'source> {
     }
 }
 //
-impl<'source> From<TypeLike<'source>> for TemplateParameter<'source> {
-    fn from(t: TypeLike<'source>) -> Self {
+impl<'source> From<TypeLike<'source, &'source str, &'source Path>> for TemplateParameter<'source> {
+    fn from(t: TypeLike<'source, &'source str, &'source Path>) -> Self {
         Self::TypeLike(t)
     }
 }
@@ -93,7 +95,8 @@ mod tests {
             TemplateParameter::ValueLike(i64::MIN.into()),
         );
         fn test_type_parameter(s: &str) {
-            test_template_parameter(s, force_parse(types::type_like, s).into());
+            let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+            test_template_parameter(s, force_parse(parse_type_like, s).into());
         }
         test_type_parameter("signed char*");
         test_type_parameter("charamel<lol>&");
@@ -101,6 +104,7 @@ mod tests {
 
     #[test]
     fn template_parameters() {
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
             super::template_parameters("<>"),
             Ok(("", Some(vec![].into())))
@@ -109,7 +113,7 @@ mod tests {
             super::template_parameters("<T>"),
             Ok((
                 "",
-                Some(vec![force_parse(types::type_like, "T").into()].into())
+                Some(vec![force_parse(parse_type_like, "T").into()].into())
             ))
         );
         assert_eq!(
@@ -118,8 +122,8 @@ mod tests {
                 "",
                 Some(
                     vec![
-                        force_parse(types::type_like, "char").into(),
-                        force_parse(types::type_like, "stuff").into()
+                        force_parse(parse_type_like, "char").into(),
+                        force_parse(parse_type_like, "stuff").into()
                     ]
                     .into()
                 )

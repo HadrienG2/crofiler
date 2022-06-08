@@ -18,11 +18,9 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, IdExpression<'source, atoms::IdentifierKey, crate::PathKey>> {
-        id_expression(
-            s,
-            |s| self.parse_identifier(s),
-            |path| self.path_to_key(path),
-        )
+        id_expression(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
     }
 
     /// Parser for nested name-specifiers (= sequences of scopes).
@@ -35,11 +33,9 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, NestedNameSpecifier<'source, atoms::IdentifierKey, crate::PathKey>> {
-        nested_name_specifier(
-            s,
-            |s| self.parse_identifier(s),
-            |path| self.path_to_key(path),
-        )
+        nested_name_specifier(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
     }
 }
 
@@ -51,12 +47,12 @@ pub fn id_expression<
     PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<IdExpression<IdentifierKey, PathKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, IdExpression<'source, IdentifierKey, PathKey>> {
     use nom::combinator::map_opt;
     map_opt(
-        |s| proto_id_expression(s, &parse_identifier, &path_to_key),
+        |s| proto_id_expression(s, parse_identifier, path_to_key),
         |(path, id_opt)| id_opt.map(|(_backtrack, id)| IdExpression { path, id }),
     )(s)
 }
@@ -106,13 +102,13 @@ impl<
 // TODO: Make private once users are migrated
 pub fn nested_name_specifier<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq + 'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
     PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<NestedNameSpecifier<IdentifierKey, PathKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, NestedNameSpecifier<'source, IdentifierKey, PathKey>> {
     match proto_id_expression(s, parse_identifier, path_to_key) {
         Ok((_rest, (path, Some((backtrack, _id))))) => Ok((backtrack, path)),
         Ok((rest, (path, None))) => Ok((rest, path)),
@@ -128,16 +124,19 @@ pub fn nested_name_specifier<
 #[inline(always)]
 fn proto_id_expression<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq + 'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
     PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
     mut input: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<(
-    NestedNameSpecifier<IdentifierKey, PathKey>,
-    Option<(&str, UnqualifiedId<IdentifierKey, PathKey>)>,
-)> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<
+    'source,
+    (
+        NestedNameSpecifier<'source, IdentifierKey, PathKey>,
+        Option<(&'source str, UnqualifiedId<'source, IdentifierKey, PathKey>)>,
+    ),
+> {
     // Truth that the path starts at root scope (with a leading ::)
     let rooted = if let Some(rest) = input.strip_prefix("::") {
         input = rest;
@@ -159,7 +158,7 @@ fn proto_id_expression<
     };
     //
     while let Ok((rest, scope_or_id)) =
-        scope_or_unqualified_id(input, &parse_identifier, &path_to_key)
+        scope_or_unqualified_id(input, parse_identifier, path_to_key)
     {
         match scope_or_id {
             // As long as there are scopes, keep going
@@ -185,7 +184,7 @@ fn proto_id_expression<
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NestedNameSpecifier<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// Truth that the path starts at the root scope (leading ::)
@@ -195,8 +194,10 @@ pub struct NestedNameSpecifier<
     scopes: Box<[Scope<'source, IdentifierKey, PathKey>]>,
 }
 //
-impl<IdentifierKey: Clone + Debug + PartialEq + Eq, PathKey: Clone + Debug + PartialEq + Eq> Default
-    for NestedNameSpecifier<'_, IdentifierKey, PathKey>
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > Default for NestedNameSpecifier<'_, IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {
@@ -210,13 +211,13 @@ impl<IdentifierKey: Clone + Debug + PartialEq + Eq, PathKey: Clone + Debug + Par
 /// that avoids parsing the shared UnqualifiedId syntax twice.
 fn scope_or_unqualified_id<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq + 'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
     PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
     s: &'source str,
-    parse_identifier: impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: impl Fn(&'source str) -> PathKey,
-) -> IResult<ScopeOrUnqualifiedId<IdentifierKey, PathKey>> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, ScopeOrUnqualifiedId<'source, IdentifierKey, PathKey>> {
     use nom::combinator::opt;
     use nom_supreme::tag::complete::tag;
     // Parse the initial UnqualifiedId
@@ -248,7 +249,7 @@ fn scope_or_unqualified_id<
 #[allow(clippy::large_enum_variant)]
 enum ScopeOrUnqualifiedId<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     Scope(Scope<'source, IdentifierKey, PathKey>),
@@ -261,7 +262,7 @@ enum ScopeOrUnqualifiedId<
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scope<
     'source,
-    IdentifierKey: Clone + Debug + PartialEq + Eq,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// What identifies the scope
@@ -293,7 +294,7 @@ pub mod tests {
     #[test]
     fn scope_or_unqualified_id() {
         let parse_scope_or_unqualified_id =
-            |s| super::scope_or_unqualified_id(s, atoms::identifier, Path::new);
+            |s| super::scope_or_unqualified_id(s, &atoms::identifier, &Path::new);
 
         // Without function signature
         assert_eq!(
@@ -323,7 +324,7 @@ pub mod tests {
     #[test]
     fn proto_id_expression() {
         let parse_proto_id_expression =
-            |s| super::proto_id_expression(s, atoms::identifier, Path::new);
+            |s| super::proto_id_expression(s, &atoms::identifier, &Path::new);
 
         assert_eq!(parse_proto_id_expression(""), Ok(("", Default::default())));
         assert_eq!(
@@ -440,7 +441,7 @@ pub mod tests {
     }
 
     fn parse_nested_name_specifier(s: &str) -> IResult<NestedNameSpecifier<&str, &Path>> {
-        super::nested_name_specifier(s, atoms::identifier, Path::new)
+        super::nested_name_specifier(s, &atoms::identifier, &Path::new)
     }
 
     #[test]
@@ -469,7 +470,7 @@ pub mod tests {
 
     #[test]
     fn id_expression() {
-        let parse_id_expression = |s| super::id_expression(s, atoms::identifier, Path::new);
+        let parse_id_expression = |s| super::id_expression(s, &atoms::identifier, &Path::new);
 
         // Without any path
         assert_eq!(
@@ -478,6 +479,7 @@ pub mod tests {
         );
 
         // With a path
+        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
             parse_id_expression("boost::hana::to_t<unsigned long long>"),
             Ok((
@@ -488,7 +490,7 @@ pub mod tests {
                         is_destructor: false,
                         id: "to_t",
                         template_parameters: Some(Some(
-                            vec![force_parse(types::type_like, "unsigned long long").into()].into()
+                            vec![force_parse(parse_type_like, "unsigned long long").into()].into()
                         ))
                     }
                 }

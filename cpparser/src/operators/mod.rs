@@ -10,7 +10,11 @@ use std::fmt::Debug;
 
 /// C++ operators that can be overloaded
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Operator<'source, IdentifierKey: Clone + Debug + PartialEq + Eq> {
+pub enum Operator<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+> {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
     Basic {
@@ -55,10 +59,14 @@ pub enum Operator<'source, IdentifierKey: Clone + Debug + PartialEq + Eq> {
     CoAwait,
 
     /// Type conversion operator ("operator <type>")
-    Conversion(Box<TypeLike<'source>>),
+    Conversion(Box<TypeLike<'source, IdentifierKey, PathKey>>),
 }
 //
-impl<IdentifierKey: Clone + Debug + PartialEq + Eq> From<Symbol> for Operator<'_, IdentifierKey> {
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > From<Symbol> for Operator<'_, IdentifierKey, PathKey>
+{
     fn from(symbol: Symbol) -> Self {
         Self::Basic {
             symbol,
@@ -76,9 +84,13 @@ impl<IdentifierKey: Clone + Debug + PartialEq + Eq> From<Symbol> for Operator<'_
 /// LEN varying from 1 to 3 in a context where the validity of the overall parse
 /// can be assessed.
 ///
-fn arithmetic_or_comparison<const LEN: usize, IdentifierKey: Clone + Debug + PartialEq + Eq>(
+fn arithmetic_or_comparison<
+    const LEN: usize,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+>(
     s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+) -> IResult<Operator<IdentifierKey, PathKey>> {
     use nom::{combinator::map_opt, sequence::tuple};
     match LEN {
         // Single-character operator
@@ -135,9 +147,12 @@ fn arithmetic_or_comparison<const LEN: usize, IdentifierKey: Clone + Debug + Par
 }
 
 /// Parse deallocation function
-fn delete<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+fn delete<
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+>(
     s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+) -> IResult<Operator<IdentifierKey, PathKey>> {
     use nom::{combinator::opt, sequence::preceded};
     use nom_supreme::tag::complete::tag;
     preceded(EntityParser::keyword_parser("delete"), opt(tag("[]")))
@@ -149,9 +164,12 @@ fn delete<IdentifierKey: Clone + Debug + PartialEq + Eq>(
 }
 
 /// Parse co_await
-fn co_await<IdentifierKey: Clone + Debug + PartialEq + Eq>(
+fn co_await<
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+>(
     s: &str,
-) -> IResult<Operator<IdentifierKey>> {
+) -> IResult<Operator<IdentifierKey, PathKey>> {
     EntityParser::keyword_parser("co_await")
         .value(Operator::CoAwait)
         .parse(s)
@@ -231,6 +249,7 @@ pub enum Symbol {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn symbol() {
@@ -254,17 +273,17 @@ mod tests {
     fn arithmetic_or_comparison() {
         // Lone symbol
         assert_eq!(
-            super::arithmetic_or_comparison::<1, &str>("+"),
+            super::arithmetic_or_comparison::<1, &str, &Path>("+"),
             Ok(("", Symbol::AddPlus.into()))
         );
 
         // Symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison::<1, &str>("-="),
+            super::arithmetic_or_comparison::<1, &str, &Path>("-="),
             Ok(("=", Symbol::SubNeg.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2, &str>("-="),
+            super::arithmetic_or_comparison::<2, &str, &Path>("-="),
             Ok((
                 "",
                 Operator::Basic {
@@ -277,11 +296,11 @@ mod tests {
 
         // Duplicated symbol
         assert_eq!(
-            super::arithmetic_or_comparison::<1, &str>("<<"),
+            super::arithmetic_or_comparison::<1, &str, &Path>("<<"),
             Ok(("<", Symbol::Less.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2, &str>("<<"),
+            super::arithmetic_or_comparison::<2, &str, &Path>("<<"),
             Ok((
                 "",
                 Operator::Basic {
@@ -294,11 +313,11 @@ mod tests {
 
         // Duplicated symbol with equal sign
         assert_eq!(
-            super::arithmetic_or_comparison::<1, &str>(">>="),
+            super::arithmetic_or_comparison::<1, &str, &Path>(">>="),
             Ok((">=", Symbol::Greater.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2, &str>(">>="),
+            super::arithmetic_or_comparison::<2, &str, &Path>(">>="),
             Ok((
                 "=",
                 Operator::Basic {
@@ -309,7 +328,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<3, &str>(">>="),
+            super::arithmetic_or_comparison::<3, &str, &Path>(">>="),
             Ok((
                 "",
                 Operator::Basic {
@@ -324,7 +343,7 @@ mod tests {
         // or as a symbol with an equal sign. We go for consistency with other
         // comparison operators, which will be parsed as the latter.
         assert_eq!(
-            super::arithmetic_or_comparison::<2, &str>("=="),
+            super::arithmetic_or_comparison::<2, &str, &Path>("=="),
             Ok((
                 "",
                 Operator::Basic {
@@ -337,28 +356,28 @@ mod tests {
 
         // Spaceship operator gets its own variant because it's too weird
         assert_eq!(
-            super::arithmetic_or_comparison::<3, &str>("<=>"),
+            super::arithmetic_or_comparison::<3, &str, &Path>("<=>"),
             Ok(("", Operator::Spaceship))
         );
 
         // Same for dereference operator
         assert_eq!(
-            super::arithmetic_or_comparison::<1, &str>("->"),
+            super::arithmetic_or_comparison::<1, &str, &Path>("->"),
             Ok((">", Symbol::SubNeg.into()))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<2, &str>("->"),
+            super::arithmetic_or_comparison::<2, &str, &Path>("->"),
             Ok(("", Operator::Deref { star: false }))
         );
         assert_eq!(
-            super::arithmetic_or_comparison::<3, &str>("->*"),
+            super::arithmetic_or_comparison::<3, &str, &Path>("->*"),
             Ok(("", Operator::Deref { star: true }))
         );
     }
 
     #[test]
     fn delete() {
-        let parse_delete = super::delete::<&str>;
+        let parse_delete = super::delete::<&str, &Path>;
         assert_eq!(
             parse_delete("delete"),
             Ok((

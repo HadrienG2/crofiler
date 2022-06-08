@@ -197,7 +197,7 @@ mod tests {
 
         // Pointer to member
         let parse_nested_name_specifier =
-            |s| scopes::nested_name_specifier(s, atoms::identifier, Path::new);
+            |s| scopes::nested_name_specifier(s, &atoms::identifier, &Path::new);
         assert_eq!(
             parse_decl_operator("A::B::*"),
             Ok((

@@ -6,7 +6,7 @@ fn names_unqualified(c: &mut Criterion) {
     use cpparser::names::unqualified;
     let name = |s| format!("names::unqualified::{s}");
 
-    let parse_unqualified_id = |s| unqualified::unqualified_id(s, atoms::identifier, Path::new);
+    let parse_unqualified_id = |s| unqualified::unqualified_id(s, &atoms::identifier, &Path::new);
     let parser = EntityParser::new();
 
     // Various flavors of named entity
