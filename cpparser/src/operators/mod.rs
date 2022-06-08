@@ -64,7 +64,7 @@ pub enum Operator<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > From<Symbol> for Operator<'_, IdentifierKey, PathKey>
+    > From<Symbol> for Operator<IdentifierKey, PathKey>
 {
     fn from(symbol: Symbol) -> Self {
         Self::Basic {

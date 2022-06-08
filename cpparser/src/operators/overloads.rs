@@ -57,9 +57,9 @@ pub fn operator_overload<
 
     // Try arithmetic operators of increasing length until hopefully finding one
     // that matches optimally.
-    let arith_and_templates = arith_and_templates::<1, IdentifierKey, PathKey>
-        .or(arith_and_templates::<2, IdentifierKey, PathKey>)
-        .or(arith_and_templates::<3, IdentifierKey, PathKey>);
+    let arith_and_templates = (|s| arith_and_templates(s, parse_identifier, path_to_key, 1))
+        .or(|s| arith_and_templates(s, parse_identifier, path_to_key, 2))
+        .or(|s| arith_and_templates(s, parse_identifier, path_to_key, 3));
 
     // The other operator parses don't care about template parameters
     let template_oblivious = (call_or_index.or(|s| custom_literal(s, parse_identifier)))
@@ -71,7 +71,9 @@ pub fn operator_overload<
                 .or((|s| types::type_like(s, parse_identifier, path_to_key))
                     .map(|ty| Operator::Conversion(Box::new(ty)))),
         ))
-        .and(opt(templates::template_parameters));
+        .and(opt(|s| {
+            templates::template_parameters(s, parse_identifier, path_to_key)
+        }));
 
     // And for an operator overload, we need the operator keyword...
     preceded(
@@ -88,21 +90,37 @@ pub fn operator_overload<
 /// stream, as it strongly suggests that the entirety of the operator name was
 /// not parsed and the parse must be retried at a greater LEN.
 ///
+#[inline(always)]
 fn arith_and_templates<
-    const LEN: usize,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
 >(
-    s: &str,
-) -> IResult<(Operator<IdentifierKey, PathKey>, Option<TemplateParameters>)> {
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+    len: usize,
+) -> IResult<
+    'source,
+    (
+        Operator<IdentifierKey, PathKey>,
+        Option<TemplateParameters<IdentifierKey, PathKey>>,
+    ),
+> {
     use nom::{
         combinator::{map_opt, opt, peek},
         sequence::tuple,
     };
+    let arithmetic_or_comparison = match len {
+        1 => super::arithmetic_or_comparison::<1, IdentifierKey, PathKey>,
+        2 => super::arithmetic_or_comparison::<2, IdentifierKey, PathKey>,
+        3 => super::arithmetic_or_comparison::<3, IdentifierKey, PathKey>,
+        _ => panic!("Unexpected operator length {len}"),
+    };
     map_opt(
         tuple((
-            super::arithmetic_or_comparison::<LEN, IdentifierKey, PathKey>,
-            opt(templates::template_parameters),
+            arithmetic_or_comparison,
+            opt(|s| templates::template_parameters(s, parse_identifier, path_to_key)),
             peek(opt(super::symbol)),
         )),
         |(operator, parameters_opt, symbol)| {

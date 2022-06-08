@@ -234,7 +234,7 @@ pub struct NewExpression<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for NewExpression<'_, IdentifierKey, PathKey>
+    > Default for NewExpression<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {

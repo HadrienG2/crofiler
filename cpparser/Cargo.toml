@@ -39,6 +39,9 @@ harness = false
 name = "operators_usage"
 harness = false
 [[bench]]
+name = "templates"
+harness = false
+[[bench]]
 name = "types"
 harness = false
 [[bench]]

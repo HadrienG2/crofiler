@@ -44,13 +44,14 @@ pub fn unqualified_id<
 
     // An entity named by a user-specified identifier
     let named = |is_destructor| {
-        ((parse_identifier).and(opt(templates::template_parameters))).map(
-            move |(id, template_parameters)| UnqualifiedId::Named {
-                is_destructor,
-                id,
-                template_parameters,
-            },
-        )
+        ((parse_identifier).and(opt(|s| {
+            templates::template_parameters(s, parse_identifier, path_to_key)
+        })))
+        .map(move |(id, template_parameters)| UnqualifiedId::Named {
+            is_destructor,
+            id,
+            template_parameters,
+        })
     };
 
     // An operator overload
@@ -136,7 +137,7 @@ pub enum UnqualifiedId<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for UnqualifiedId<'_, IdentifierKey, PathKey>
+    > Default for UnqualifiedId<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self::Anonymous(AnonymousEntity::default())

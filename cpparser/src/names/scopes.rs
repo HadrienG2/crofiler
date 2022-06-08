@@ -195,7 +195,7 @@ pub struct NestedNameSpecifier<
 impl<
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for NestedNameSpecifier<'_, IdentifierKey, PathKey>
+    > Default for NestedNameSpecifier<IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {
