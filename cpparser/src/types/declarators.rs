@@ -96,7 +96,7 @@ fn decl_operator<
     // Array declarator
     let mut array = delimited(
         char('[').and(space0),
-        opt(values::value_like::<false, true>),
+        opt(|s| values::value_like(s, parse_identifier, path_to_key, false, true)),
         space0.and(char(']')),
     )
     .map(DeclOperator::Array);
@@ -151,7 +151,7 @@ pub enum DeclOperator<
     Reference(Reference),
 
     /// Array declarator, with optional size
-    Array(Option<ValueLike<'source>>),
+    Array(Option<ValueLike<'source, IdentifierKey, PathKey>>),
 
     /// Function declarator
     Function(FunctionSignature<'source, IdentifierKey, PathKey>),

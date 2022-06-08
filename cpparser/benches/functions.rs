@@ -5,19 +5,28 @@ use std::path::Path;
 fn functions(c: &mut Criterion) {
     use cpparser::functions;
     let name = |s| format!("functions::{s}");
+    let parser = EntityParser::new();
 
     // Pure function call
-    c.bench_function(&name("function_call/basic"), |b| {
-        b.iter(|| EntityParser::parse_function_call(black_box("()")))
+    let parse_function_call = |s| functions::function_call(s, &atoms::identifier, &Path::new);
+    //
+    c.bench_function(&name("function_call/old/basic"), |b| {
+        b.iter(|| parse_function_call(black_box("()")))
     });
-    c.bench_function(&name("function_call/fail"), |b| {
-        b.iter(|| EntityParser::parse_function_call(black_box("x")))
+    c.bench_function(&name("function_call/new/basic"), |b| {
+        b.iter(|| parser.parse_function_call(black_box("()")))
+    });
+    //
+    c.bench_function(&name("function_call/old/fail"), |b| {
+        b.iter(|| parse_function_call(black_box("x")))
+    });
+    c.bench_function(&name("function_call/new/fail"), |b| {
+        b.iter(|| parser.parse_function_call(black_box("x")))
     });
 
     // ---
 
     // Function signatures
-    let parser = EntityParser::new();
     let parse_function_signature =
         |s| functions::function_signature(s, &atoms::identifier, &Path::new);
 

@@ -93,21 +93,20 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
-    /*use cpparser::operators::usage::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    /* use cpparser::values::*;
+    use std::sync::atomic::AtomicUsize;
     println!();
-    let total_count = CALLS.load(Ordering::Relaxed);
-    println!("unary_expr_prefix parser was called {total_count} times");
-    println!("... with the following outcomes:");
     let print_branch = |name: &str, ctr: &AtomicUsize| {
         println!("    -> {name}: {ctr:?}");
     };
-    print_branch("++/--", &INC_DEC);
-    print_branch("Unary symbol", &UNARY_SYM);
-    print_branch("co_await", &CO_AWAIT);
-    print_branch("delete", &DELETE);
-    print_branch("(cast)", &CAST);
-    println!();*/
+    println!("value_header parser was called {HEADER_CALLS:?} times");
+    println!("... with the following outcomes:");
+    print_branch("Literal", &HEADER_LITERAL);
+    print_branch("Unary operator", &HEADER_UNARY);
+    print_branch("Parenthesized value", &HEADER_PAREN);
+    print_branch("new-expression", &HEADER_NEW);
+    print_branch("id-expression", &HEADER_ID);
+    println!(); */
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)

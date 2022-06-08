@@ -54,5 +54,8 @@ harness = false
 name = "types_specifiers_legacy"
 harness = false
 [[bench]]
+name = "values"
+harness = false
+[[bench]]
 name = "values_literals"
 harness = false

@@ -64,7 +64,7 @@ pub fn unqualified_id<
     // A decltype expression
     let decltype = delimited(
         tag("decltype(").and(space0),
-        values::value_like::<false, true>,
+        |s| values::value_like(s, parse_identifier, path_to_key, false, true),
         space0.and(char(')')),
     )
     .map(Box::new)
@@ -125,7 +125,7 @@ pub enum UnqualifiedId<
     },
 
     /// A decltype(<value>) expression
-    Decltype(Box<ValueLike<'source>>),
+    Decltype(Box<ValueLike<'source, IdentifierKey, PathKey>>),
 
     /// A lambda function, with source location information
     Lambda(Lambda<PathKey>),

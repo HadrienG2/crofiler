@@ -70,7 +70,8 @@ fn operators_usage(c: &mut Criterion) {
     });
 
     // Binary operator between two expressions
-    let parse_binary_expr_middle = EntityParser::parse_binary_expr_middle::<true, true>;
+    let parse_binary_expr_middle = |s| EntityParser::parse_binary_expr_middle(s, true, true);
+    //
     c.bench_function(&name("binary_expr_middle/+"), |b| {
         b.iter(|| parse_binary_expr_middle(black_box("+")))
     });

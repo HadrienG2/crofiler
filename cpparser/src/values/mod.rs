@@ -11,21 +11,61 @@ use crate::{
         unqualified::{self, UnqualifiedId},
     },
     operators::{self, usage::NewExpression, Operator},
-    IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
-use std::path::Path;
+use std::fmt::Debug;
 
-/// Parser recognizing values (and some values that are indistinguishable from
-/// values without extra context)
-pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
-    s: &str,
-) -> IResult<ValueLike> {
+impl EntityParser {
+    /// Parser recognizing values (and some types that are indistinguishable
+    /// from values without extra source code context)
+    ///
+    /// The allow_comma and allow_greater parameters enable preventing parsing
+    /// of operators based on the comma , and greater > sign in template and
+    /// function parameter parsing scenarios, where the simpler interpretation
+    /// of these symbols as parameter separators and template parameter set
+    /// terminator should take priority.
+    ///
+    pub fn parse_value_like<'source>(
+        &self,
+        s: &'source str,
+        allow_comma: bool,
+        allow_greater: bool,
+    ) -> IResult<'source, ValueLike<'source, atoms::IdentifierKey, crate::PathKey>> {
+        value_like(
+            s,
+            &|s| self.parse_identifier(s),
+            &|path| self.path_to_key(path),
+            allow_comma,
+            allow_greater,
+        )
+    }
+}
+
+/// Parser recognizing values (and some types that are indistinguishable from
+/// values without extra source code context)
+///
+/// See EntityParser::parse_value_like for extra docs
+///
+// TODO: Make private once users are migrated
+pub fn value_like<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+    allow_comma: bool,
+    allow_greater: bool,
+) -> IResult<'source, ValueLike<'source, IdentifierKey, PathKey>> {
     use nom::{character::complete::space0, multi::many0, sequence::preceded};
-    value_header::<ALLOW_COMMA, ALLOW_GREATER>
+    (|s| value_header(s, parse_identifier, path_to_key, allow_comma, allow_greater))
         .and(
-            many0(preceded(space0, after_value::<ALLOW_COMMA, ALLOW_GREATER>))
-                .map(|v| v.into_boxed_slice()),
+            many0(preceded(space0, |s| {
+                after_value(s, parse_identifier, path_to_key, allow_comma, allow_greater)
+            }))
+            .map(|v| v.into_boxed_slice()),
         )
         .map(|(header, trailer)| ValueLike { header, trailer })
         .parse(s)
@@ -34,16 +74,26 @@ pub fn value_like<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
 /// A value, or something that looks close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValueLike<'source> {
+pub struct ValueLike<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Initial value-like entity
-    header: ValueHeader<'source>,
+    header: ValueHeader<'source, IdentifierKey, PathKey>,
 
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
-    trailer: Box<[AfterValue<'source>]>,
+    trailer: Box<[AfterValue<'source, IdentifierKey, PathKey>]>,
 }
 //
-impl<'source, T: Into<ValueHeader<'source>>> From<T> for ValueLike<'source> {
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+        T: Into<ValueHeader<'source, IdentifierKey, PathKey>>,
+    > From<T> for ValueLike<'source, IdentifierKey, PathKey>
+{
     fn from(literal: T) -> Self {
         Self {
             header: literal.into(),
@@ -56,158 +106,194 @@ impl<'source, T: Into<ValueHeader<'source>>> From<T> for ValueLike<'source> {
 ///
 /// Used by value_like to prevent infinite recursion on the expression head.
 ///
-// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
-fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
-    s: &str,
-) -> IResult<ValueHeader> {
+fn value_header<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+    allow_comma: bool,
+    allow_greater: bool,
+) -> IResult<'source, ValueHeader<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, separated_pair},
     };
 
-    let literal = (|s| literals::literal(s, &atoms::identifier)).map(ValueHeader::Literal);
+    let literal = (|s| literals::literal(s, parse_identifier)).map(ValueHeader::Literal);
 
+    let parenthesized_value_like = |s| value_like(s, parse_identifier, path_to_key, true, true);
     let parenthesized = delimited(
         char('(').and(space0),
-        value_like::<true, true>.map(Box::new),
+        parenthesized_value_like.map(Box::new),
         space0.and(char(')')),
     )
     .map(ValueHeader::Parenthesized);
 
+    let curr_value_like =
+        |s| value_like(s, parse_identifier, path_to_key, allow_comma, allow_greater);
     let unary_op = separated_pair(
-        |s| operators::usage::unary_expr_prefix(s, &atoms::identifier, &Path::new),
+        |s| operators::usage::unary_expr_prefix(s, parse_identifier, path_to_key),
         space0,
-        value_like::<ALLOW_COMMA, ALLOW_GREATER>.map(Box::new),
+        curr_value_like.map(Box::new),
     )
     .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
-    let new_expression = (|s| operators::usage::new_expression(s, &atoms::identifier, &Path::new))
+    let new_expression = (|s| operators::usage::new_expression(s, parse_identifier, path_to_key))
         .map(|e| ValueHeader::NewExpression(Box::new(e)));
 
-    let id_expression = (|s| scopes::id_expression(s, &atoms::identifier, &Path::new))
+    let id_expression = (|s| scopes::id_expression(s, parse_identifier, path_to_key))
         .map(ValueHeader::IdExpression);
 
     literal
-        .or(unary_op)
-        // Must come after unary_op to avoid mismatching the cast operator as a
-        // parenthesized expression
-        .or(parenthesized)
         .or(new_expression)
-        // Must come late in the trial chain as it can match keywords, including
-        // the name of some operators.
+        // Must come after new_expression as it matches the new keyword
         .or(id_expression)
+        .or(unary_op)
+        // Must come after unary_op to match casts as intended
+        .or(parenthesized)
         .parse(s)
 }
 //
 /// Values that are not expressions starting with a value
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueHeader<'source> {
+pub enum ValueHeader<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Literal
-    Literal(Literal<&'source str>),
+    Literal(Literal<IdentifierKey>),
 
     /// Value with parentheses around it
-    Parenthesized(Box<ValueLike<'source>>),
+    Parenthesized(Box<ValueLike<'source, IdentifierKey, PathKey>>),
 
     /// Unary operator applied to a value
     UnaryOp(
-        Operator<'source, &'source str, &'source Path>,
-        Box<ValueLike<'source>>,
+        Operator<'source, IdentifierKey, PathKey>,
+        Box<ValueLike<'source, IdentifierKey, PathKey>>,
     ),
 
     /// New-expression
-    NewExpression(Box<NewExpression<'source, &'source str, &'source Path>>),
+    NewExpression(Box<NewExpression<'source, IdentifierKey, PathKey>>),
 
     /// Named value
-    IdExpression(IdExpression<'source, &'source str, &'source Path>),
+    IdExpression(IdExpression<'source, IdentifierKey, PathKey>),
 }
 //
-impl<'source, T: Into<Literal<&'source str>>> From<T> for ValueHeader<'source> {
+impl<
+        'source,
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+        T: Into<Literal<IdentifierKey>>,
+    > From<T> for ValueHeader<'source, IdentifierKey, PathKey>
+{
     fn from(literal: T) -> Self {
         Self::Literal(literal.into())
     }
 }
 
 /// Parse things that can come up after a value to form a more complex value
-// FIXME: Optimize, possibly via single-char dispatch as in UnqualifiedId
-fn after_value<'source, const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+fn after_value<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
     s: &'source str,
-) -> IResult<AfterValue> {
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+    allow_comma: bool,
+    allow_greater: bool,
+) -> IResult<'source, AfterValue<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         sequence::{delimited, preceded, separated_pair},
     };
 
+    let curr_value_like =
+        |s| value_like(s, parse_identifier, path_to_key, allow_comma, allow_greater);
+
     let binary_op = separated_pair(
-        operators::usage::binary_expr_middle::<
-            ALLOW_COMMA,
-            ALLOW_GREATER,
-            &'source str,
-            &'source Path,
-        >,
+        |s| operators::usage::binary_expr_middle(s, allow_comma, allow_greater),
         space0,
-        value_like::<ALLOW_COMMA, ALLOW_GREATER>,
+        &curr_value_like,
     )
     .map(|(op, value)| AfterValue::BinaryOp(op, value));
 
-    let ternary_op = preceded(
+    let mut ternary_op = preceded(
         char('?').and(space0),
         separated_pair(
-            value_like::<ALLOW_COMMA, ALLOW_GREATER>,
+            &curr_value_like,
             space0.and(char(':')).and(space0),
-            value_like::<ALLOW_COMMA, ALLOW_GREATER>,
+            &curr_value_like,
         ),
     )
     .map(|(value1, value2)| AfterValue::TernaryOp(value1, value2));
 
-    let array_index = delimited(
+    let value_like_index = |s| value_like(s, parse_identifier, path_to_key, false, true);
+    let mut array_index = delimited(
         char('[').and(space0),
-        value_like::<false, true>,
+        value_like_index,
         space0.and(char(']')),
     )
     .map(AfterValue::ArrayIndex);
 
-    let function_call = functions::function_call.map(AfterValue::FunctionCall);
+    let mut function_call = (|s| functions::function_call(s, parse_identifier, path_to_key))
+        .map(AfterValue::FunctionCall);
 
-    let member_access = preceded(char('.').and(space0), |s| {
-        unqualified::unqualified_id(s, &atoms::identifier, &Path::new)
+    let mut member_access = preceded(char('.').and(space0), |s| {
+        unqualified::unqualified_id(s, parse_identifier, path_to_key)
     })
     .map(AfterValue::MemberAccess);
 
     let postfix_op = operators::usage::increment_decrement.map(AfterValue::PostfixOp);
 
-    binary_op
-        .or(ternary_op)
-        .or(array_index)
-        .or(function_call)
-        .or(member_access)
-        .or(postfix_op)
-        .parse(s)
+    // Since this parser is quite hot (~1M calls on a test workload) and usually
+    // fails, we reduce the cost of failure by dispatching to appropriate
+    // sub-parsers after checking the first char of input.
+    // Branches other than _ are ordered by decreasing occurence frequency.
+    match s.as_bytes().first() {
+        Some(b'(') => function_call.parse(s),
+        Some(b'?') => ternary_op.parse(s),
+        Some(b'.') => member_access.parse(s),
+        Some(b'[') => array_index.parse(s),
+        _ => binary_op.or(postfix_op).parse(s),
+    }
 }
 //
 /// Things that can come up after a value to form a more complex value
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AfterValue<'source> {
+pub enum AfterValue<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Array indexing
-    ArrayIndex(ValueLike<'source>),
+    ArrayIndex(ValueLike<'source, IdentifierKey, PathKey>),
 
     /// Function call
-    FunctionCall(Box<[ValueLike<'source>]>),
+    FunctionCall(Box<[ValueLike<'source, IdentifierKey, PathKey>]>),
 
     /// Binary operator (OP x)
     BinaryOp(
-        Operator<'source, &'source str, &'source Path>,
-        ValueLike<'source>,
+        Operator<'source, IdentifierKey, PathKey>,
+        ValueLike<'source, IdentifierKey, PathKey>,
     ),
 
     /// Ternary operator (? x : y)
-    TernaryOp(ValueLike<'source>, ValueLike<'source>),
+    TernaryOp(
+        ValueLike<'source, IdentifierKey, PathKey>,
+        ValueLike<'source, IdentifierKey, PathKey>,
+    ),
 
     /// Member access (. stuff)
-    MemberAccess(UnqualifiedId<'source, &'source str, &'source Path>),
+    MemberAccess(UnqualifiedId<'source, IdentifierKey, PathKey>),
 
     /// Postfix operator (++ and -- only in current C++)
-    PostfixOp(Operator<'source, &'source str, &'source Path>),
+    PostfixOp(Operator<'source, IdentifierKey, PathKey>),
 }
 
 #[cfg(test)]
@@ -216,17 +302,19 @@ mod tests {
     use crate::{tests::force_parse, types};
     use operators::Symbol;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn value_header() {
-        let value_header = super::value_header::<false, false>;
+        let parse_value_header =
+            |s| super::value_header(s, &atoms::identifier, &Path::new, true, true);
 
         // Literal
-        assert_eq!(value_header("'@'"), Ok(("", '@'.into())));
+        assert_eq!(parse_value_header("'@'"), Ok(("", '@'.into())));
 
         // Unary operators are supported...
         assert_eq!(
-            value_header("&123"),
+            parse_value_header("&123"),
             Ok((
                 "",
                 ValueHeader::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
@@ -236,7 +324,7 @@ mod tests {
         // ...including c-style casts, not to be confused with parenthesized values
         let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            value_header("(T)666"),
+            parse_value_header("(T)666"),
             Ok((
                 "",
                 ValueHeader::UnaryOp(
@@ -248,7 +336,7 @@ mod tests {
 
         // Parenthesized values are supported too
         assert_eq!(
-            value_header("(42)"),
+            parse_value_header("(42)"),
             Ok(("", ValueHeader::Parenthesized(Box::new(42u8.into()))))
         );
 
@@ -256,7 +344,7 @@ mod tests {
         let parse_new_expression =
             |s| operators::usage::new_expression(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            value_header("new TROOT"),
+            parse_value_header("new TROOT"),
             Ok((
                 "",
                 ValueHeader::NewExpression(Box::new(force_parse(
@@ -268,42 +356,43 @@ mod tests {
 
         // Named values as well
         assert_eq!(
-            value_header("MyValue"),
+            parse_value_header("MyValue"),
             Ok(("", ValueHeader::IdExpression("MyValue".into())))
         );
     }
 
     #[test]
     fn after_value() {
-        let after_value = super::after_value::<false, false>;
+        let parse_after_value =
+            |s| super::after_value(s, &atoms::identifier, &Path::new, true, true);
         assert_eq!(
-            after_value("[666]"),
+            parse_after_value("[666]"),
             Ok(("", AfterValue::ArrayIndex(666u16.into()),))
         );
         assert_eq!(
-            after_value("('c', -5)"),
+            parse_after_value("('c', -5)"),
             Ok((
                 "",
                 AfterValue::FunctionCall(vec!['c'.into(), (-5i8).into()].into()),
             ))
         );
         assert_eq!(
-            after_value("+42"),
+            parse_after_value("+42"),
             Ok((
                 "",
                 AfterValue::BinaryOp(Symbol::AddPlus.into(), (42u8).into())
             ))
         );
         assert_eq!(
-            after_value("? 123 : 456"),
+            parse_after_value("? 123 : 456"),
             Ok(("", AfterValue::TernaryOp(123u8.into(), 456u16.into())))
         );
         assert_eq!(
-            after_value(".lol"),
+            parse_after_value(".lol"),
             Ok(("", AfterValue::MemberAccess("lol".into())))
         );
         assert_eq!(
-            after_value("++"),
+            parse_after_value("++"),
             Ok((
                 "",
                 AfterValue::PostfixOp(Operator::Basic {
@@ -317,9 +406,9 @@ mod tests {
 
     #[test]
     fn value_like() {
-        let value_like = super::value_like::<false, false>;
+        let parse_value_like = |s| super::value_like(s, &atoms::identifier, &Path::new, true, true);
         assert_eq!(
-            value_like("array[666]"),
+            parse_value_like("array[666]"),
             Ok((
                 "",
                 ValueLike {
@@ -329,7 +418,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            value_like("func( 3,'x' )[666]"),
+            parse_value_like("func( 3,'x' )[666]"),
             Ok((
                 "",
                 ValueLike {

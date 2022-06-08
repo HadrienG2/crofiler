@@ -37,10 +37,12 @@ impl EntityParser {
     /// want to allow the greater > and shr >> operators in order to avoid confusing
     /// the template parameter parser.
     ///
-    pub fn parse_binary_expr_middle<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
+    pub fn parse_binary_expr_middle(
         s: &str,
+        allow_comma: bool,
+        allow_greater: bool,
     ) -> IResult<Operator<atoms::IdentifierKey, crate::PathKey>> {
-        binary_expr_middle::<ALLOW_COMMA, ALLOW_GREATER, atoms::IdentifierKey, crate::PathKey>(s)
+        binary_expr_middle(s, allow_comma, allow_greater)
     }
 
     /// Parse new expression, i.e. usage of the new operator
@@ -116,12 +118,12 @@ pub fn unary_expr_prefix<
 ///
 // TODO: Make private once users are migrated
 pub fn binary_expr_middle<
-    const ALLOW_COMMA: bool,
-    const ALLOW_GREATER: bool,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
     PathKey: Clone + Debug + PartialEq + Eq,
 >(
     s: &str,
+    allow_comma: bool,
+    allow_greater: bool,
 ) -> IResult<Operator<IdentifierKey, PathKey>> {
     // Most 1-character operators can be used in binary position, except for
     // the negation operators Not and BitNot
@@ -137,8 +139,8 @@ pub fn binary_expr_middle<
                     BitNot | Not => false,
                     AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq
                     | Less => true,
-                    Comma => ALLOW_COMMA,
-                    Greater => ALLOW_GREATER,
+                    Comma => allow_comma,
+                    Greater => allow_greater,
                 }
             }
             _ => unreachable!(),
@@ -157,7 +159,7 @@ pub fn binary_expr_middle<
                 match symbol {
                     AddPlus | SubNeg => false,
                     AndRef | Or | AssignEq | Less => true,
-                    Greater => ALLOW_GREATER,
+                    Greater => allow_greater,
                     Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
                 }
             }
@@ -194,9 +196,9 @@ pub fn new_expression<
         rooted,
         tag("new").and(space0),
         tuple((
-            opt(functions::function_call).terminated(space0),
+            opt(|s| functions::function_call(s, parse_identifier, path_to_key)).terminated(space0),
             (|s| types::type_like(s, parse_identifier, path_to_key)).terminated(space0),
-            opt(functions::function_call),
+            opt(|s| functions::function_call(s, parse_identifier, path_to_key)),
         )),
     )
     .map(|(rooted, (placement, ty, constructor))| NewExpression {
@@ -221,13 +223,13 @@ pub struct NewExpression<
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<Box<[ValueLike<'source>]>>,
+    placement: Option<Box<[ValueLike<'source, IdentifierKey, PathKey>]>>,
 
     /// Type of values being created
     ty: TypeLike<'source, IdentifierKey, PathKey>,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<Box<[ValueLike<'source>]>>,
+    constructor: Option<Box<[ValueLike<'source, IdentifierKey, PathKey>]>>,
 }
 //
 impl<
@@ -368,13 +370,13 @@ mod tests {
     fn binary_expr_middle() {
         // Lone symbol, other than not
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str, &Path>("="),
+            super::binary_expr_middle::<&str, &Path>("=", true, true),
             Ok(("", Symbol::AssignEq.into()))
         );
 
         // Two-character, other than increment/decrement
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str, &Path>("+="),
+            super::binary_expr_middle::<&str, &Path>("+=", true, true),
             Ok((
                 "",
                 Operator::Basic {
@@ -387,26 +389,26 @@ mod tests {
 
         // Three-character
         assert_eq!(
-            super::binary_expr_middle::<false, false, &str, &Path>("<=>"),
+            super::binary_expr_middle::<&str, &Path>("<=>", true, true),
             Ok(("", Operator::Spaceship))
         );
 
         // Only accept comma if instructed to do so
-        assert!(super::binary_expr_middle::<false, false, &str, &Path>(",").is_err());
+        assert!(super::binary_expr_middle::<&str, &Path>(",", false, true).is_err());
         assert_eq!(
-            super::binary_expr_middle::<true, false, &str, &Path>(","),
+            super::binary_expr_middle::<&str, &Path>(",", true, true),
             Ok(("", Symbol::Comma.into()))
         );
 
         // Only accept greater sign if instructed to do so
-        assert!(super::binary_expr_middle::<false, false, &str, &Path>(">").is_err());
-        assert!(super::binary_expr_middle::<false, false, &str, &Path>(">>").is_err());
+        assert!(super::binary_expr_middle::<&str, &Path>(">", true, false).is_err());
+        assert!(super::binary_expr_middle::<&str, &Path>(">>", true, false).is_err());
         assert_eq!(
-            super::binary_expr_middle::<false, true, &str, &Path>(">"),
+            super::binary_expr_middle::<&str, &Path>(">", true, true),
             Ok(("", Symbol::Greater.into()))
         );
         assert_eq!(
-            super::binary_expr_middle::<false, true, &str, &Path>(">>"),
+            super::binary_expr_middle::<&str, &Path>(">>", true, true),
             Ok((
                 "",
                 Operator::Basic {

@@ -45,7 +45,7 @@ pub fn type_like<
     // GNU-style type attributes come first
     let attributes = opt(delimited(
         tag("__attribute__("),
-        functions::function_call,
+        |s| functions::function_call(s, parse_identifier, path_to_key),
         char(')'),
     ))
     .map(Option::unwrap_or_default);
@@ -73,7 +73,7 @@ pub struct TypeLike<
     PathKey: Clone + Debug + PartialEq + Eq,
 > {
     /// GNU-style attributes __attribute__((...))
-    attributes: Box<[ValueLike<'source>]>,
+    attributes: Box<[ValueLike<'source, IdentifierKey, PathKey>]>,
 
     /// Type specifier
     type_specifier: TypeSpecifier<'source, IdentifierKey, PathKey>,
@@ -119,6 +119,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::path::Path;
 
+    fn parse_attribute_value(s: &str) -> IResult<ValueLike<&str, &Path>> {
+        values::value_like(s, &atoms::identifier, &Path::new, false, false)
+    }
+
     #[test]
     fn type_like() {
         let parse_type_like = |s| super::type_like(s, &atoms::identifier, &Path::new);
@@ -143,8 +147,7 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    attributes: vec![force_parse(values::value_like::<false, false>, "unused")]
-                        .into(),
+                    attributes: vec![force_parse(parse_attribute_value, "unused")].into(),
                     type_specifier: force_parse(parse_type_specifier, "long long"),
                     ..Default::default()
                 }

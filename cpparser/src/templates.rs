@@ -44,7 +44,7 @@ fn template_parameter(s: &str) -> IResult<TemplateParameter> {
     let type_like = (|s| types::type_like(s, &atoms::identifier, &Path::new))
         .map(TemplateParameter::TypeLike)
         .terminated(space0.and(peek(char(',').or(char('>')))));
-    let value_like = values::value_like::<false, false>
+    let value_like = (|s| values::value_like(s, &atoms::identifier, &Path::new, false, false))
         .map(TemplateParameter::ValueLike)
         .terminated(space0.and(peek(char(',').or(char('>')))));
     type_like.or(value_like).parse(s)
@@ -58,11 +58,11 @@ pub enum TemplateParameter<'source> {
     TypeLike(TypeLike<'source, &'source str, &'source Path>),
 
     /// Value
-    ValueLike(ValueLike<'source>),
+    ValueLike(ValueLike<'source, &'source str, &'source Path>),
 }
 //
-impl<'source> From<ValueLike<'source>> for TemplateParameter<'source> {
-    fn from(v: ValueLike<'source>) -> Self {
+impl<'source> From<ValueLike<'source, &'source str, &'source Path>> for TemplateParameter<'source> {
+    fn from(v: ValueLike<'source, &'source str, &'source Path>) -> Self {
         Self::ValueLike(v)
     }
 }
