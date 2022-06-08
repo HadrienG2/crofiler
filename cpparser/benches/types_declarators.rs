@@ -10,6 +10,14 @@ fn types_declarators(c: &mut Criterion) {
 
     let parse_declarator = |s| declarators::declarator(s, &atoms::identifier, &Path::new);
 
+    // Empty declarator
+    c.bench_function(&name("declarator/old/empty"), |b| {
+        b.iter(|| parse_declarator(black_box("")))
+    });
+    c.bench_function(&name("declarator/new/empty"), |b| {
+        b.iter(|| parser.parse_declarator(black_box("")))
+    });
+
     // Reference
     c.bench_function(&name("declarator/old/&"), |b| {
         b.iter(|| parse_declarator(black_box("&")))
