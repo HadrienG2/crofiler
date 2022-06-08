@@ -186,18 +186,19 @@ pub fn new_expression<
     use nom::{
         character::complete::space0,
         combinator::opt,
-        sequence::{preceded, tuple},
+        sequence::{separated_pair, tuple},
     };
     use nom_supreme::tag::complete::tag;
     let rooted = opt(tag("::")).map(|o| o.is_some());
-    (rooted.and(preceded(
+    separated_pair(
+        rooted,
         tag("new").and(space0),
         tuple((
             opt(functions::function_call).terminated(space0),
             (|s| types::type_like(s, parse_identifier, path_to_key)).terminated(space0),
             opt(functions::function_call),
         )),
-    )))
+    )
     .map(|(rooted, (placement, ty, constructor))| NewExpression {
         rooted,
         placement,
