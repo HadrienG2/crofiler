@@ -32,7 +32,7 @@ pub fn type_like(s: &str) -> IResult<TypeLike> {
     tuple((
         attributes.terminated(space0),
         (|s| specifiers::type_specifier(s, atoms::identifier, Path::new)).terminated(space0),
-        declarators::declarator,
+        |s| declarators::declarator(s, &atoms::identifier, &Path::new),
     ))
     .map(|(attributes, type_specifier, declarator)| TypeLike {
         attributes,
@@ -53,7 +53,7 @@ pub struct TypeLike<'source> {
     type_specifier: TypeSpecifier<'source, &'source str, &'source Path>,
 
     /// Declarator
-    declarator: Declarator<'source>,
+    declarator: Declarator<'source, &'source str, &'source Path>,
 }
 //
 impl<'source, T: Into<TypeSpecifier<'source, &'source str, &'source Path>>> From<T>

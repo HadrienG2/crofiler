@@ -33,6 +33,9 @@ harness = false
 name = "operators_overloads"
 harness = false
 [[bench]]
+name = "types_declarators"
+harness = false
+[[bench]]
 name = "types_qualifiers"
 harness = false
 [[bench]]

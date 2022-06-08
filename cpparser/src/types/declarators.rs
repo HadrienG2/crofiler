@@ -14,21 +14,62 @@ use crate::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::path::Path;
+use std::fmt::Debug;
+
+impl EntityParser {
+    /// Parser for declarators
+    pub fn parse_declarator<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Declarator<'source, atoms::IdentifierKey, crate::PathKey>> {
+        declarator(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
+    }
+
+    /// Parser for a declarator component
+    pub fn parse_decl_operator<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, DeclOperator<'source, atoms::IdentifierKey, crate::PathKey>> {
+        decl_operator(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
+    }
+}
 
 /// Parser for declarators
-pub fn declarator(s: &str) -> IResult<Declarator> {
+// TODO: Make private once users are migrated
+pub fn declarator<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, Declarator<'source, IdentifierKey, PathKey>> {
     use nom::{character::complete::space0, multi::many0};
-    many0(decl_operator.terminated(space0))
+    many0((|s| decl_operator(s, parse_identifier, path_to_key)).terminated(space0))
         .map(Vec::into_boxed_slice)
         .parse(s)
 }
 
 /// Declarator
-pub type Declarator<'source> = Box<[DeclOperator<'source>]>;
+pub type Declarator<'source, IdentifierKey, PathKey> =
+    Box<[DeclOperator<'source, IdentifierKey, PathKey>]>;
 
-/// In a type name, a declarator is composed of one or more operators
-fn decl_operator(s: &str) -> IResult<DeclOperator> {
+/// Parser for a declarator component
+// TODO: Make private once users are migrated
+fn decl_operator<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, DeclOperator<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::{char, space0},
         combinator::opt,
@@ -48,7 +89,7 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
     // The member pointer declarator is very exotic (2/1M parses) and harder to
     // parse so we don't unify it with basic_pointer.
     let nested_star =
-        (|s| scopes::nested_name_specifier(s, atoms::identifier, Path::new)).terminated(char('*'));
+        (|s| scopes::nested_name_specifier(s, parse_identifier, path_to_key)).terminated(char('*'));
     let mut member_pointer = separated_pair(nested_star, space0, EntityParser::parse_cv)
         .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
@@ -66,7 +107,7 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
     // Parenthesized declarator (to override operator priorities)
     let parenthesized = delimited(
         char('(').and(space0),
-        declarator.verify(|d| d != &Declarator::default()),
+        (|s| declarator(s, parse_identifier, path_to_key)).verify(|d| d != &Declarator::default()),
         space0.and(char(')')),
     )
     .map(DeclOperator::Parenthesized);
@@ -91,11 +132,15 @@ fn decl_operator(s: &str) -> IResult<DeclOperator> {
 /// Operators that can appear within a declarator
 // FIXME: This type appears in Box<[T]>, intern it once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum DeclOperator<'source> {
+pub enum DeclOperator<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
-        path: NestedNameSpecifier<'source, &'source str, &'source Path>,
+        path: NestedNameSpecifier<'source, IdentifierKey, PathKey>,
 
         /// Const and volatile qualifiers,
         cv: ConstVolatile,
@@ -111,20 +156,24 @@ pub enum DeclOperator<'source> {
     Function(FunctionSignature<'source>),
 
     /// Parentheses, used to override operator priorities
-    Parenthesized(Declarator<'source>),
+    Parenthesized(Declarator<'source, IdentifierKey, PathKey>),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::names::atoms;
     use crate::tests::force_parse;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn decl_operator() {
+        let parse_decl_operator = |s| super::decl_operator(s, &atoms::identifier, &Path::new);
+
         // Basic pointer syntax
         assert_eq!(
-            super::decl_operator("*"),
+            parse_decl_operator("*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -136,7 +185,7 @@ mod tests {
 
         // Pointer with CV qualifier
         assert_eq!(
-            super::decl_operator("* const"),
+            parse_decl_operator("* const"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -150,7 +199,7 @@ mod tests {
         let parse_nested_name_specifier =
             |s| scopes::nested_name_specifier(s, atoms::identifier, Path::new);
         assert_eq!(
-            super::decl_operator("A::B::*"),
+            parse_decl_operator("A::B::*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -162,31 +211,31 @@ mod tests {
 
         // Reference
         assert_eq!(
-            super::decl_operator("&"),
+            parse_decl_operator("&"),
             Ok(("", DeclOperator::Reference(Reference::LValue)))
         );
 
         // Array of unknown length
         assert_eq!(
-            super::decl_operator("[]"),
+            parse_decl_operator("[]"),
             Ok(("", DeclOperator::Array(None)))
         );
 
         // Array of known length
         assert_eq!(
-            super::decl_operator("[42]"),
+            parse_decl_operator("[42]"),
             Ok(("", DeclOperator::Array(Some(42u8.into()))))
         );
 
         // Function signature
         assert_eq!(
-            super::decl_operator("()"),
+            parse_decl_operator("()"),
             Ok(("", DeclOperator::Function(FunctionSignature::default())))
         );
 
         // Parenthesized declarator
         assert_eq!(
-            super::decl_operator("(&&)"),
+            parse_decl_operator("(&&)"),
             Ok((
                 "",
                 DeclOperator::Parenthesized(
@@ -198,18 +247,20 @@ mod tests {
 
     #[test]
     fn declarator() {
+        let parse_declarator = |s| super::declarator(s, &atoms::identifier, &Path::new);
+
         // Empty declarator
-        assert_eq!(super::declarator(""), Ok(("", Declarator::default())));
+        assert_eq!(parse_declarator(""), Ok(("", Declarator::default())));
 
         // Single operator
         assert_eq!(
-            super::declarator("&"),
+            parse_declarator("&"),
             Ok(("", vec![DeclOperator::Reference(Reference::LValue)].into()))
         );
 
         // Multiple operators
         assert_eq!(
-            super::declarator("&&*const()"),
+            parse_declarator("&&*const()"),
             Ok((
                 "",
                 vec![
