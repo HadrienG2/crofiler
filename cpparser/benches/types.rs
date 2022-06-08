@@ -33,6 +33,14 @@ fn types(c: &mut Criterion) {
     c.bench_function(&name("type_like/new/double&"), |b| {
         b.iter(|| parser.parse_type_like(black_box("double&")))
     });
+
+    // Failing case
+    c.bench_function(&name("type_like/old/fail"), |b| {
+        b.iter(|| parse_type_like(black_box("1")))
+    });
+    c.bench_function(&name("type_like/new/fail"), |b| {
+        b.iter(|| parser.parse_type_like(black_box("1")))
+    });
 }
 
 criterion_group!(benches, types);

@@ -47,6 +47,14 @@ fn types_specifiers(c: &mut Criterion) {
     c.bench_function(&name("type_specifier/new/typename T"), |b| {
         b.iter(|| parser.parse_type_specifier(black_box("typename T")))
     });
+
+    // Failing case
+    c.bench_function(&name("type_specifier/old/fail"), |b| {
+        b.iter(|| parse_type_specifier(black_box("1")))
+    });
+    c.bench_function(&name("type_specifier/new/fail"), |b| {
+        b.iter(|| parser.parse_type_specifier(black_box("1")))
+    });
 }
 
 criterion_group!(benches, types_specifiers);

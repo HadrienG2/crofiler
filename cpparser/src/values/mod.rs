@@ -81,8 +81,8 @@ fn value_header<const ALLOW_COMMA: bool, const ALLOW_GREATER: bool>(
     )
     .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
-    let new_expression =
-        operators::usage::new_expression.map(|e| ValueHeader::NewExpression(Box::new(e)));
+    let new_expression = (|s| operators::usage::new_expression(s, &atoms::identifier, &Path::new))
+        .map(|e| ValueHeader::NewExpression(Box::new(e)));
 
     let id_expression = (|s| scopes::id_expression(s, &atoms::identifier, &Path::new))
         .map(ValueHeader::IdExpression);
@@ -115,7 +115,7 @@ pub enum ValueHeader<'source> {
     ),
 
     /// New-expression
-    NewExpression(Box<NewExpression<'source>>),
+    NewExpression(Box<NewExpression<'source, &'source str, &'source Path>>),
 
     /// Named value
     IdExpression(IdExpression<'source, &'source str, &'source Path>),
@@ -253,12 +253,14 @@ mod tests {
         );
 
         // New expressions too
+        let parse_new_expression =
+            |s| operators::usage::new_expression(s, &atoms::identifier, &Path::new);
         assert_eq!(
             value_header("new TROOT"),
             Ok((
                 "",
                 ValueHeader::NewExpression(Box::new(force_parse(
-                    operators::usage::new_expression,
+                    parse_new_expression,
                     "new TROOT"
                 ))),
             ))

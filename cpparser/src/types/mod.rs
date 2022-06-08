@@ -25,6 +25,7 @@ impl EntityParser {
 
 /// Parser recognizing types (and some values that are indistinguishable from
 /// types without extra context).
+// TODO: Make private once users are migrated
 pub fn type_like<
     'source,
     IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,

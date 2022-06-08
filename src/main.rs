@@ -93,21 +93,20 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
-    /*use cpparser::types::declarators::*;
+    /*use cpparser::operators::usage::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     println!();
     let total_count = CALLS.load(Ordering::Relaxed);
-    println!("decl_operator parser was called {total_count} times");
+    println!("unary_expr_prefix parser was called {total_count} times");
     println!("... with the following outcomes:");
     let print_branch = |name: &str, ctr: &AtomicUsize| {
         println!("    -> {name}: {ctr:?}");
     };
-    print_branch("Member pointer", &MEMBER_POINTER);
-    print_branch("Normal pointer", &NORMAL_POINTER);
-    print_branch("Reference", &REFERENCE);
-    print_branch("Array", &ARRAY);
-    print_branch("Function", &FUNCTION);
-    print_branch("Parenthesized (overlaps others)", &PARENTHESIZED);
+    print_branch("++/--", &INC_DEC);
+    print_branch("Unary symbol", &UNARY_SYM);
+    print_branch("co_await", &CO_AWAIT);
+    print_branch("delete", &DELETE);
+    print_branch("(cast)", &CAST);
     println!();*/
 
     // Hierarchical profile prototype

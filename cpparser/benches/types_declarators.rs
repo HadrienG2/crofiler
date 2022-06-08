@@ -65,6 +65,14 @@ fn types_declarators(c: &mut Criterion) {
     c.bench_function(&name("declarator/new/T::*"), |b| {
         b.iter(|| parser.parse_declarator(black_box("T::*")))
     });
+
+    // Failing case
+    c.bench_function(&name("declarator/old/fail"), |b| {
+        b.iter(|| parse_declarator(black_box("1")))
+    });
+    c.bench_function(&name("declarator/new/fail"), |b| {
+        b.iter(|| parser.parse_declarator(black_box("1")))
+    });
 }
 
 criterion_group!(benches, types_declarators);

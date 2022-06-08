@@ -9,6 +9,7 @@ fn operators_overloads(c: &mut Criterion) {
     let parse_operator_overload =
         |s| overloads::operator_overload(s, &atoms::identifier, &Path::new);
     let parser = EntityParser::new();
+
     c.bench_function(&name("operator_overload/old/+"), |b| {
         b.iter(|| parse_operator_overload(black_box("operator+")))
     });

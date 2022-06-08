@@ -112,7 +112,7 @@ fn arithmetic_or_comparison<
                 equal: false,
             }),
 
-            // Pointer dereference
+            // Pointer dereference ->
             (Symbol::SubNeg, Symbol::Greater) => Some(Operator::Deref { star: false }),
 
             // Anything else sounds bad
@@ -129,7 +129,7 @@ fn arithmetic_or_comparison<
                 equal: true,
             }),
 
-            // Dereference operators
+            // Dereference operator ->*
             (Symbol::SubNeg, Symbol::Greater, Symbol::MulDeref) => {
                 Some(Operator::Deref { star: true })
             }
