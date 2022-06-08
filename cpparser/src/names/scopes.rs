@@ -223,22 +223,24 @@ fn scope_or_unqualified_id<
     // Parse the initial UnqualifiedId
     match unqualified::unqualified_id(s, parse_identifier, path_to_key) {
         // An UnqualifiedId was found, but is this actually a Scope?
-        Ok((after_id, id)) => match opt(functions::function_signature)
-            .terminated(tag("::"))
-            .parse(after_id)
-        {
-            // Yes, return the Scope
-            Ok((after_scope, function_signature)) => Ok((
-                after_scope,
-                ScopeOrUnqualifiedId::Scope(Scope {
-                    id,
-                    function_signature,
-                }),
-            )),
+        Ok((after_id, id)) => {
+            match opt(|s| functions::function_signature(s, parse_identifier, path_to_key))
+                .terminated(tag("::"))
+                .parse(after_id)
+            {
+                // Yes, return the Scope
+                Ok((after_scope, function_signature)) => Ok((
+                    after_scope,
+                    ScopeOrUnqualifiedId::Scope(Scope {
+                        id,
+                        function_signature,
+                    }),
+                )),
 
-            // No, return the initial UnqualifiedId as if nothing else happened
-            Err(_) => Ok((after_id, ScopeOrUnqualifiedId::UnqualifiedId(id))),
-        },
+                // No, return the initial UnqualifiedId as if nothing else happened
+                Err(_) => Ok((after_id, ScopeOrUnqualifiedId::UnqualifiedId(id))),
+            }
+        }
 
         // If there is no UnqualifiedId, there is also no Scope
         Err(error) => Err(error),
@@ -270,7 +272,7 @@ pub struct Scope<
 
     /// When functions are scopes containing other entities (which can happen
     /// because lambdas), the function signature will be specified.
-    function_signature: Option<FunctionSignature<'source>>,
+    function_signature: Option<FunctionSignature<'source, IdentifierKey, PathKey>>,
 }
 //
 impl<'source, T: Into<UnqualifiedId<'source, &'source str, &'source Path>>> From<T>

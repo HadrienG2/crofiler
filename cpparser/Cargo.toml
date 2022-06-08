@@ -21,6 +21,9 @@ bench = false
 name = "anonymous"
 harness = false
 [[bench]]
+name = "functions"
+harness = false
+[[bench]]
 name = "names_atoms"
 harness = false
 [[bench]]

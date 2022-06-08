@@ -102,7 +102,8 @@ fn decl_operator<
     .map(DeclOperator::Array);
 
     // Function declarator
-    let function = functions::function_signature.map(DeclOperator::Function);
+    let function = (|s| functions::function_signature(s, parse_identifier, path_to_key))
+        .map(DeclOperator::Function);
 
     // Parenthesized declarator (to override operator priorities)
     let parenthesized = delimited(
@@ -153,7 +154,7 @@ pub enum DeclOperator<
     Array(Option<ValueLike<'source>>),
 
     /// Function declarator
-    Function(FunctionSignature<'source>),
+    Function(FunctionSignature<'source, IdentifierKey, PathKey>),
 
     /// Parentheses, used to override operator priorities
     Parenthesized(Declarator<'source, IdentifierKey, PathKey>),

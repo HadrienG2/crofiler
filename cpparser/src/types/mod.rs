@@ -98,10 +98,9 @@ impl<
 }
 //
 impl<
-        'source,
         IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
         PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for TypeLike<'source, IdentifierKey, PathKey>
+    > Default for TypeLike<'_, IdentifierKey, PathKey>
 {
     fn default() -> Self {
         Self {
@@ -166,6 +165,8 @@ mod tests {
         );
 
         // Fun template/expression ambiguity found during testing
+        let parse_function_signature =
+            |s| functions::function_signature(s, &atoms::identifier, &Path::new);
         assert_eq!(
             parse_type_like("T<1>(U)"),
             Ok((
@@ -173,7 +174,7 @@ mod tests {
                 TypeLike {
                     type_specifier: force_parse(parse_type_specifier, "T<1>"),
                     declarator: vec![DeclOperator::Function(force_parse(
-                        functions::function_signature,
+                        parse_function_signature,
                         "(U)"
                     ))]
                     .into(),

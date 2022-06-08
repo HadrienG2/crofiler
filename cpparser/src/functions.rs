@@ -11,16 +11,43 @@ use crate::{
     EntityParser, IResult,
 };
 use nom::Parser;
-use std::path::Path;
+use nom_supreme::ParserExt;
+use std::fmt::Debug;
+
+impl EntityParser {
+    /// Parser recognizing a function call
+    pub fn parse_function_call(s: &str) -> IResult<Box<[ValueLike]>> {
+        function_call(s)
+    }
+
+    /// Parser recognizing a function signature (parameters + qualifiers)
+    pub fn parse_function_signature<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, FunctionSignature<'source, atoms::IdentifierKey, crate::PathKey>> {
+        function_signature(s, &|s| self.parse_identifier(s), &|path| {
+            self.path_to_key(path)
+        })
+    }
+}
 
 /// Parser recognizing a function call
+// TODO: Make private once users are migrated
 pub fn function_call(s: &str) -> IResult<Box<[ValueLike]>> {
     function_parameters(s, values::value_like::<false, true>)
 }
 
 /// Parser recognizing a function signature (parameters + qualifiers)
-// FIXME: Investigate need to optimize, if so do things like deduplicating space0 parsing
-pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
+// TODO: Make private once users are migrated
+pub fn function_signature<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
+    PathKey: Clone + Debug + PartialEq + Eq + 'source,
+>(
+    s: &'source str,
+    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
+    path_to_key: &impl Fn(&'source str) -> PathKey,
+) -> IResult<'source, FunctionSignature<'source, IdentifierKey, PathKey>> {
     use nom::{
         character::complete::space0,
         combinator::opt,
@@ -28,24 +55,18 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
     };
     use nom_supreme::tag::complete::tag;
 
-    let type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+    let type_like = |s| types::type_like(s, parse_identifier, path_to_key);
 
     let function_parameters = |s| function_parameters(s, &type_like);
 
-    let cv = preceded(space0, EntityParser::parse_cv);
-
-    let reference = preceded(space0, EntityParser::parse_reference);
-
-    let noexcept = preceded(space0, opt(noexcept));
-
-    let trailing_return = opt(preceded(space0.and(tag("->")).and(space0), &type_like));
+    let trailing_return = preceded(tag("->").and(space0), &type_like);
 
     let mut tuple = tuple((
-        function_parameters,
-        cv,
-        reference,
-        noexcept,
-        trailing_return,
+        function_parameters.terminated(space0),
+        EntityParser::parse_cv.terminated(space0),
+        EntityParser::parse_reference.terminated(space0),
+        opt(noexcept.terminated(space0)),
+        opt(trailing_return),
     ))
     .map(
         |(parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
@@ -61,10 +82,14 @@ pub fn function_signature(s: &str) -> IResult<FunctionSignature> {
 }
 //
 /// Function signature
-#[derive(Clone, Default, Debug, Eq, PartialEq)]
-pub struct FunctionSignature<'source> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionSignature<
+    'source,
+    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+    PathKey: Clone + Debug + PartialEq + Eq,
+> {
     /// Parameter types
-    parameters: Box<[TypeLike<'source, &'source str, &'source Path>]>,
+    parameters: Box<[TypeLike<'source, IdentifierKey, PathKey>]>,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -80,7 +105,23 @@ pub struct FunctionSignature<'source> {
     noexcept: Option<Option<ValueLike<'source>>>,
 
     /// Trailing return type
-    trailing_return: Option<TypeLike<'source, &'source str, &'source Path>>,
+    trailing_return: Option<TypeLike<'source, IdentifierKey, PathKey>>,
+}
+//
+impl<
+        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
+        PathKey: Clone + Debug + PartialEq + Eq,
+    > Default for FunctionSignature<'_, IdentifierKey, PathKey>
+{
+    fn default() -> Self {
+        Self {
+            parameters: Default::default(),
+            cv: Default::default(),
+            reference: Default::default(),
+            noexcept: Default::default(),
+            trailing_return: Default::default(),
+        }
+    }
 }
 
 /// Parser recognizing a set of function parameters, given a parameter grammar
@@ -105,16 +146,16 @@ fn function_parameters<'source, T: 'source>(
 /// Parser recognizing the noexcept qualifier and its optional argument
 fn noexcept(s: &str) -> IResult<Option<ValueLike>> {
     use nom::{
-        character::complete::char,
+        character::complete::{char, space0},
         combinator::opt,
         sequence::{delimited, preceded},
     };
     preceded(
         EntityParser::keyword_parser("noexcept"),
         opt(delimited(
-            char('('),
+            char('(').and(space0),
             values::value_like::<false, true>,
-            char(')'),
+            space0.and(char(')')),
         )),
     )
     .parse(s)
@@ -125,6 +166,7 @@ mod tests {
     use super::*;
     use crate::tests::force_parse;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     #[test]
     fn noexcept() {
@@ -165,12 +207,14 @@ mod tests {
 
     #[test]
     fn function_signature() {
+        let parse_function_signature =
+            |s| super::function_signature(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            super::function_signature("()"),
+            parse_function_signature("()"),
             Ok(("", FunctionSignature::default()))
         );
         assert_eq!(
-            super::function_signature("() const"),
+            parse_function_signature("() const"),
             Ok((
                 "",
                 FunctionSignature {
@@ -180,7 +224,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::function_signature("() &&"),
+            parse_function_signature("() &&"),
             Ok((
                 "",
                 FunctionSignature {
@@ -190,7 +234,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::function_signature("() noexcept"),
+            parse_function_signature("() noexcept"),
             Ok((
                 "",
                 FunctionSignature {
@@ -200,7 +244,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::function_signature("() volatile &"),
+            parse_function_signature("() volatile &"),
             Ok((
                 "",
                 FunctionSignature {
@@ -211,7 +255,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::function_signature("() volatile const noexcept"),
+            parse_function_signature("() volatile const noexcept"),
             Ok((
                 "",
                 FunctionSignature {
@@ -222,7 +266,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            super::function_signature("() && noexcept(456)"),
+            parse_function_signature("() && noexcept(456)"),
             Ok((
                 "",
                 FunctionSignature {
@@ -234,7 +278,7 @@ mod tests {
         );
         let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            super::function_signature("() -> int"),
+            parse_function_signature("() -> int"),
             Ok((
                 "",
                 FunctionSignature {
