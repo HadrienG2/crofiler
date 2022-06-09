@@ -139,7 +139,7 @@ impl EntityParser {
 
 /// New expression, i.e. usage of the new operator
 // FIXME: This type appears in Box<T>, intern that once data is owned
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct NewExpression {
     /// Whether this new expression is rooted (starts with ::), which means that
     /// class-specific replacements will be ignored

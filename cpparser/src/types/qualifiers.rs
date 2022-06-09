@@ -33,7 +33,7 @@ impl EntityParser {
 }
 
 /// CV qualifiers
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ConstVolatile {
     /// Const qualifier
     is_const: bool,
@@ -67,7 +67,7 @@ impl BitOr for ConstVolatile {
 }
 
 /// Reference qualifiers
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum Reference {
     /// No reference signs

@@ -154,7 +154,7 @@ impl EntityParser {
 
 /// A value, or something that looks close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ValueLike {
     /// Initial value-like entity
     header: ValueHeader,
@@ -174,7 +174,7 @@ impl<T: Into<ValueHeader>> From<T> for ValueLike {
 }
 
 /// Values that are not expressions starting with a value
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueHeader {
     /// Literal
     Literal(Literal),
@@ -212,7 +212,7 @@ impl From<IdExpression> for ValueHeader {
 
 /// Things that can come up after a value to form a more complex value
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AfterValue {
     /// Array indexing
     ArrayIndex(ValueLike),

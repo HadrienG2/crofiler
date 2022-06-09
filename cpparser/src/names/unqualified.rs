@@ -80,7 +80,7 @@ impl EntityParser {
 /// identifiers, it allows for things like templating and operator overloading
 /// but not for scoping.
 ///
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum UnqualifiedId {
     /// An entity named by a user-specified identifier
     Named {

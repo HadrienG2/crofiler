@@ -46,7 +46,7 @@ impl EntityParser {
 
 /// A type name, or something looking close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
     attributes: Box<[ValueLike]>,

@@ -58,7 +58,7 @@ pub type TemplateParameters = Option<Box<[TemplateParameter]>>;
 
 /// Template parameter
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TemplateParameter {
     /// Type or value looking close enough to a type
     TypeLike(TypeLike),

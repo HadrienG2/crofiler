@@ -127,7 +127,7 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
 }
 
 /// C-style type
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum LegacyName {
     /// "short int"
@@ -171,7 +171,7 @@ pub enum LegacyName {
 }
 
 /// C-style type name component
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 struct LegacyNameBuilder {
     /// Base type (usually int)
     base: Option<Base>,
@@ -294,7 +294,7 @@ impl LegacyNameBuilder {
 }
 
 /// C-style type signedness
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 enum Signedness {
     /// Most types are signed by default
@@ -305,7 +305,7 @@ enum Signedness {
 }
 //
 /// C-style type size
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 enum Size {
     /// Short is usually 16-bit
@@ -319,7 +319,7 @@ enum Size {
 }
 //
 /// C-style base type to which qualifiers can be applied
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 enum Base {
     /// "int" (default if unspecified)

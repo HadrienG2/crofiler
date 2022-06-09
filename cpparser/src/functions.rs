@@ -77,7 +77,7 @@ impl EntityParser {
 }
 
 /// Function signature
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct FunctionSignature {
     /// Parameter types
     parameters: Box<[TypeLike]>,

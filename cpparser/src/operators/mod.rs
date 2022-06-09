@@ -9,7 +9,7 @@ use nom_supreme::ParserExt;
 use std::fmt::Debug;
 
 /// C++ operators that can be overloaded
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Operator {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
@@ -181,7 +181,7 @@ fn symbol(s: &str) -> IResult<Symbol> {
 }
 
 /// Symbols most commonly found in C++ operator names
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Symbol {
     /// +

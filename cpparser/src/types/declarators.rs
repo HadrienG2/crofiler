@@ -86,7 +86,7 @@ pub type Declarator = Box<[DeclOperator]>;
 
 /// Operators that can appear within a declarator
 // FIXME: This type appears in Box<[T]>, intern it once data is owned
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclOperator {
     /// Pointer declarator
     Pointer {

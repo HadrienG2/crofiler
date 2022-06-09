@@ -54,7 +54,7 @@ impl EntityParser {
 }
 
 /// Lambda location description
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Lambda {
     /// In which file the lambda is declared
     file: PathKey,

@@ -121,7 +121,7 @@ impl EntityParser {
 }
 
 /// C++ id-expression
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct IdExpression {
     /// Hierarchical scope
     path: NestedNameSpecifier,
@@ -140,7 +140,7 @@ impl<T: Into<UnqualifiedId>> From<T> for IdExpression {
 }
 
 /// A nested name specifier
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct NestedNameSpecifier {
     /// Truth that the path starts at the root scope (leading ::)
     rooted: bool,
@@ -158,7 +158,7 @@ impl<T: Into<Box<[Scope]>>> From<T> for NestedNameSpecifier {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 enum ScopeOrUnqualifiedId {
     Scope(Scope),
@@ -168,7 +168,7 @@ enum ScopeOrUnqualifiedId {
 /// Scope (namespaces, classes, and anything else to which inner identifiers
 /// could possibly belong) without recursion (that's NestedNameSpecifier).
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Scope {
     /// What identifies the scope
     id: UnqualifiedId,

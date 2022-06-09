@@ -18,7 +18,7 @@ impl EntityParser {
 }
 
 /// A modern C++ literal, accounting for custom literals
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Literal {
     /// Inner value
     value: LiteralValue,
@@ -43,7 +43,7 @@ fn literal_value(s: &str) -> IResult<LiteralValue> {
 }
 
 /// A literal value, or something that looks close enough to it
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LiteralValue {
     /// Signed 64-bit integer
     I64(i64),
