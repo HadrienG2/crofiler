@@ -7,10 +7,7 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
-    names::{
-        atoms,
-        scopes::{self, IdExpression},
-    },
+    names::{atoms, scopes::IdExpression},
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -24,61 +21,43 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier<atoms::IdentifierKey, crate::PathKey>> {
-        type_specifier(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
+        use nom::{
+            character::complete::{space0, space1},
+            combinator::opt,
+            sequence::{preceded, tuple},
+        };
+
+        // The inner simple type can be an id-expression (which must be preceded
+        // keywords in obscure circumstances...)
+        let id_header =
+            opt(
+                Self::keywords_parser(["typename", "class", "struct", "enum", "union"]).and(space1),
+            );
+        let id_expression = preceded(
+            id_header,
+            (|s| self.parse_id_expression(s)).map(SimpleType::IdExpression),
+        );
+
+        // ...or a legacy C-style primitive type with inner spaces...
+        let legacy_primitive = (|s| self.parse_legacy_name(s)).map(SimpleType::LegacyName);
+
+        // ...and we'll try all of that
+        let simple_type = legacy_primitive.or(id_expression);
+
+        // The simple type can be surrounded by cv qualifiers on both sides
+        tuple((
+            Self::parse_cv.terminated(space0),
+            simple_type,
+            preceded(space0, Self::parse_cv),
+        ))
+        .map(|(cv1, simple_type, cv2)| TypeSpecifier {
+            cv: cv1 | cv2,
+            simple_type,
         })
+        .parse(s)
     }
 }
 
-/// Parser recognizing type specifiers, as defined by
-/// <https://en.cppreference.com/w/cpp/language/declarations>
-// TODO: Make private once users are migrated
-pub fn type_specifier<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, TypeSpecifier<IdentifierKey, PathKey>> {
-    use nom::{
-        character::complete::{space0, space1},
-        combinator::opt,
-        sequence::{preceded, tuple},
-    };
-
-    // The inner simple type can be an id-expression (which must be preceded
-    // keywords in obscure circumstances...)
-    let id_header =
-        opt(
-            EntityParser::keywords_parser(["typename", "class", "struct", "enum", "union"])
-                .and(space1),
-        );
-    let id_expression = preceded(
-        id_header,
-        (|s| scopes::id_expression(s, parse_identifier, path_to_key)).map(SimpleType::IdExpression),
-    );
-
-    // ...or a legacy C-style primitive type with inner spaces...
-    let legacy_primitive = legacy::legacy_name.map(SimpleType::LegacyName);
-
-    // ...and we'll try all of that
-    let simple_type = legacy_primitive.or(id_expression);
-
-    // The simple type can be surrounded by cv qualifiers on both sides
-    tuple((
-        EntityParser::parse_cv.terminated(space0),
-        simple_type,
-        preceded(space0, EntityParser::parse_cv),
-    ))
-    .map(|(cv1, simple_type, cv2)| TypeSpecifier {
-        cv: cv1 | cv2,
-        simple_type,
-    })
-    .parse(s)
-}
-//
 /// Type specifier
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TypeSpecifier<
@@ -165,20 +144,21 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::unwrap_parse;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
 
     #[test]
     fn type_specifier() {
-        let parse_type_specifier = |s| super::type_specifier(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
+        let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
 
         // Normal branch
         assert_eq!(
-            parse_type_specifier("whatever"),
+            parser.parse_type_specifier("whatever"),
             Ok((
                 "",
                 TypeSpecifier {
-                    simple_type: SimpleType::IdExpression("whatever".into()),
+                    simple_type: SimpleType::IdExpression(id_expression("whatever")),
                     ..Default::default()
                 }
             ))
@@ -186,7 +166,7 @@ mod tests {
 
         // Legacy primitive branch
         assert_eq!(
-            parse_type_specifier("unsigned int"),
+            parser.parse_type_specifier("unsigned int"),
             Ok((
                 "",
                 TypeSpecifier {
@@ -198,7 +178,7 @@ mod tests {
 
         // CV qualifiers are accepted before and after
         assert_eq!(
-            parse_type_specifier("const unsigned long volatile"),
+            parser.parse_type_specifier("const unsigned long volatile"),
             Ok((
                 "",
                 TypeSpecifier {
@@ -210,11 +190,11 @@ mod tests {
 
         // And we can live with the occasional keyword
         assert_eq!(
-            parse_type_specifier("const class MyClass"),
+            parser.parse_type_specifier("const class MyClass"),
             Ok((
                 "",
                 TypeSpecifier {
-                    simple_type: SimpleType::IdExpression("MyClass".into()),
+                    simple_type: SimpleType::IdExpression(id_expression("MyClass")),
                     cv: ConstVolatile::CONST,
                 }
             ))

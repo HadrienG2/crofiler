@@ -1,12 +1,7 @@
 //! Operator-related grammar that is only used when declaring overloads
 
 use super::Operator;
-use crate::{
-    names::atoms,
-    templates::{self, TemplateParameters},
-    types::{self},
-    EntityParser, IResult,
-};
+use crate::{names::atoms, templates::TemplateParameters, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
@@ -27,110 +22,89 @@ impl EntityParser {
             Option<TemplateParameters<atoms::IdentifierKey, crate::PathKey>>,
         ),
     > {
-        operator_overload(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
-        })
+        use nom::{character::complete::char, combinator::opt, sequence::preceded};
+
+        // Try arithmetic operators of increasing length until hopefully finding one
+        // that matches optimally.
+        let arith_and_templates = (|s| self.parse_arith_and_templates(s, 1))
+            .or(|s| self.parse_arith_and_templates(s, 2))
+            .or(|s| self.parse_arith_and_templates(s, 3));
+
+        // The other operator parses don't care about template parameters
+        let template_oblivious = (call_or_index.or(|s| self.parse_custom_literal(s)))
+            .or(preceded(
+                char(' '),
+                new.or(super::delete)
+                    .or(super::co_await)
+                    // Must come last as it matches keywords
+                    .or((|s| self.parse_type_like(s)).map(|ty| Operator::Conversion(Box::new(ty)))),
+            ))
+            .and(opt(|s| self.parse_template_parameters(s)));
+
+        // And for an operator overload, we need the operator keyword...
+        preceded(
+            Self::keyword_parser("operator"),
+            arith_and_templates.or(template_oblivious),
+        )
+        .parse(s)
     }
-}
 
-/// Parse any supported operator overload
-///
-/// See EntityParser::parse_operator_overload for semantics
-///
-// TODO: Make private once clients have been migrated
-pub fn operator_overload<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<
-    'source,
-    (
-        Operator<IdentifierKey, PathKey>,
-        Option<TemplateParameters<IdentifierKey, PathKey>>,
-    ),
-> {
-    use nom::{character::complete::char, combinator::opt, sequence::preceded};
+    /// Try to parse input as an arithmetic or comparison operator name, optionally
+    /// followed by a set of template parameters.
+    ///
+    /// Reject the parse if there are operator-like symbols coming up next in the
+    /// stream, as it strongly suggests that the entirety of the operator name was
+    /// not parsed and the parse must be retried at a greater LEN.
+    ///
+    #[inline(always)]
+    fn parse_arith_and_templates<'source>(
+        &self,
+        s: &'source str,
+        len: usize,
+    ) -> IResult<
+        'source,
+        (
+            Operator<atoms::IdentifierKey, crate::PathKey>,
+            Option<TemplateParameters<atoms::IdentifierKey, crate::PathKey>>,
+        ),
+    > {
+        use nom::{
+            combinator::{map_opt, opt, peek},
+            sequence::tuple,
+        };
+        let arithmetic_or_comparison = match len {
+            1 => super::arithmetic_or_comparison::<1, atoms::IdentifierKey, crate::PathKey>,
+            2 => super::arithmetic_or_comparison::<2, atoms::IdentifierKey, crate::PathKey>,
+            3 => super::arithmetic_or_comparison::<3, atoms::IdentifierKey, crate::PathKey>,
+            _ => panic!("Unexpected operator length {len}"),
+        };
+        map_opt(
+            tuple((
+                arithmetic_or_comparison,
+                opt(|s| self.parse_template_parameters(s)),
+                peek(opt(super::symbol)),
+            )),
+            |(operator, parameters_opt, symbol)| {
+                if symbol.is_none() {
+                    Some((operator, parameters_opt))
+                } else {
+                    None
+                }
+            },
+        )(s)
+    }
 
-    // Try arithmetic operators of increasing length until hopefully finding one
-    // that matches optimally.
-    let arith_and_templates = (|s| arith_and_templates(s, parse_identifier, path_to_key, 1))
-        .or(|s| arith_and_templates(s, parse_identifier, path_to_key, 2))
-        .or(|s| arith_and_templates(s, parse_identifier, path_to_key, 3));
-
-    // The other operator parses don't care about template parameters
-    let template_oblivious = (call_or_index.or(|s| custom_literal(s, parse_identifier)))
-        .or(preceded(
-            char(' '),
-            new.or(super::delete)
-                .or(super::co_await)
-                // Must come last as it matches keywords
-                .or((|s| types::type_like(s, parse_identifier, path_to_key))
-                    .map(|ty| Operator::Conversion(Box::new(ty)))),
-        ))
-        .and(opt(|s| {
-            templates::template_parameters(s, parse_identifier, path_to_key)
-        }));
-
-    // And for an operator overload, we need the operator keyword...
-    preceded(
-        EntityParser::keyword_parser("operator"),
-        arith_and_templates.or(template_oblivious),
-    )
-    .parse(s)
-}
-
-/// Try to parse input as an arithmetic or comparison operator name, optionally
-/// followed by a set of template parameters.
-///
-/// Reject the parse if there are operator-like symbols coming up next in the
-/// stream, as it strongly suggests that the entirety of the operator name was
-/// not parsed and the parse must be retried at a greater LEN.
-///
-#[inline(always)]
-fn arith_and_templates<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-    len: usize,
-) -> IResult<
-    'source,
-    (
-        Operator<IdentifierKey, PathKey>,
-        Option<TemplateParameters<IdentifierKey, PathKey>>,
-    ),
-> {
-    use nom::{
-        combinator::{map_opt, opt, peek},
-        sequence::tuple,
-    };
-    let arithmetic_or_comparison = match len {
-        1 => super::arithmetic_or_comparison::<1, IdentifierKey, PathKey>,
-        2 => super::arithmetic_or_comparison::<2, IdentifierKey, PathKey>,
-        3 => super::arithmetic_or_comparison::<3, IdentifierKey, PathKey>,
-        _ => panic!("Unexpected operator length {len}"),
-    };
-    map_opt(
-        tuple((
-            arithmetic_or_comparison,
-            opt(|s| templates::template_parameters(s, parse_identifier, path_to_key)),
-            peek(opt(super::symbol)),
-        )),
-        |(operator, parameters_opt, symbol)| {
-            if symbol.is_none() {
-                Some((operator, parameters_opt))
-            } else {
-                None
-            }
-        },
-    )(s)
+    /// Parse custom literal
+    fn parse_custom_literal<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Operator<atoms::IdentifierKey, crate::PathKey>> {
+        use nom::{character::complete::space0, sequence::preceded};
+        use nom_supreme::tag::complete::tag;
+        preceded(tag("\"\"").and(space0), |s| self.parse_identifier(s))
+            .map(Operator::CustomLiteral)
+            .parse(s)
+    }
 }
 
 /// Parse bracket pair operators: calling and array indexing
@@ -143,22 +117,6 @@ fn call_or_index<
     use nom_supreme::tag::complete::tag;
     (tag("()").value(false).or(tag("[]").value(true)))
         .map(|is_index| Operator::CallIndex { is_index })
-        .parse(s)
-}
-
-/// Parse custom literal
-fn custom_literal<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-) -> IResult<'source, Operator<IdentifierKey, PathKey>> {
-    use nom::{character::complete::space0, sequence::preceded};
-    use nom_supreme::tag::complete::tag;
-    preceded(tag("\"\"").and(space0), parse_identifier)
-        .map(Operator::CustomLiteral)
         .parse(s)
 }
 
@@ -183,13 +141,12 @@ fn new<
 mod tests {
     use super::super::Symbol;
     use super::*;
-    use crate::tests::force_parse;
+    use crate::tests::unwrap_parse;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
 
     #[test]
     fn call_or_index() {
-        let parse_call_or_index = super::call_or_index::<&str, &Path>;
+        let parse_call_or_index = super::call_or_index::<atoms::IdentifierKey, crate::PathKey>;
         assert_eq!(
             parse_call_or_index("()"),
             Ok(("", Operator::CallIndex { is_index: false }))
@@ -200,21 +157,21 @@ mod tests {
         );
     }
 
-    fn parse_custom_literal(s: &str) -> IResult<Operator<&str, &Path>> {
-        super::custom_literal(s, &atoms::identifier)
-    }
-
     #[test]
     fn custom_literal() {
+        let parser = EntityParser::new();
         assert_eq!(
-            parse_custom_literal("\"\" _whatever"),
-            Ok(("", Operator::CustomLiteral("_whatever")))
+            parser.parse_custom_literal("\"\" _whatever"),
+            Ok((
+                "",
+                Operator::CustomLiteral(unwrap_parse(parser.parse_identifier("_whatever")))
+            ))
         );
     }
 
     #[test]
     fn new() {
-        let parse_new = super::new::<&str, &Path>;
+        let parse_new = super::new::<atoms::IdentifierKey, crate::PathKey>;
         assert_eq!(
             parse_new("new"),
             Ok((
@@ -239,12 +196,11 @@ mod tests {
 
     #[test]
     fn operator_overload() {
-        let parse_operator_overload =
-            |s| super::operator_overload(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
 
         // Symbol-based operators don't need spaces
         assert_eq!(
-            parse_operator_overload("operator*="),
+            parser.parse_operator_overload("operator*="),
             Ok((
                 "",
                 (
@@ -258,17 +214,23 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_operator_overload("operator[]"),
+            parser.parse_operator_overload("operator[]"),
             Ok(("", (Operator::CallIndex { is_index: true }, None)))
         );
         assert_eq!(
-            parse_operator_overload("operator\"\" _stuff"),
-            Ok(("", (Operator::CustomLiteral("_stuff"), None)))
+            parser.parse_operator_overload("operator\"\" _stuff"),
+            Ok((
+                "",
+                (
+                    Operator::CustomLiteral(unwrap_parse(parser.parse_identifier("_stuff"))),
+                    None
+                )
+            ))
         );
 
         // Keyword-based operators need spaces
         assert_eq!(
-            parse_operator_overload("operator new[]"),
+            parser.parse_operator_overload("operator new[]"),
             Ok((
                 "",
                 (
@@ -281,21 +243,18 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_operator_overload("operator co_await"),
+            parser.parse_operator_overload("operator co_await"),
             Ok(("", (Operator::CoAwait, None)))
         );
 
         // Type conversion operator works
-        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
         assert_eq!(
-            parse_operator_overload("operator unsigned long long"),
+            parser.parse_operator_overload("operator unsigned long long"),
             Ok((
                 "",
                 (
-                    Operator::Conversion(Box::new(force_parse(
-                        parse_type_like,
-                        "unsigned long long"
-                    ))),
+                    Operator::Conversion(Box::new(type_like("unsigned long long"))),
                     None
                 )
             ))
@@ -303,7 +262,7 @@ mod tests {
 
         // Ambiguities between template and operator syntax are handled well
         assert_eq!(
-            parse_operator_overload("operator<<>"),
+            parser.parse_operator_overload("operator<<>"),
             Ok((
                 "",
                 (
@@ -317,7 +276,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_operator_overload("operator<<void>"),
+            parser.parse_operator_overload("operator<<void>"),
             Ok((
                 "",
                 (
@@ -326,9 +285,7 @@ mod tests {
                         twice: false,
                         equal: false,
                     },
-                    Some(Some(
-                        vec![force_parse(parse_type_like, "void").into()].into()
-                    ))
+                    Some(Some(vec![type_like("void").into()].into()))
                 )
             ))
         );

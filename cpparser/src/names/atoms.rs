@@ -96,8 +96,7 @@ impl<const LEN: usize> KeywordMappings<(), LEN> for [&'static str; LEN] {
 }
 
 /// Parser recognizing any valid C++ identifier
-// TODO: Make private once every direct user is migrated to EntityParser.
-pub fn identifier(s: &str) -> IResult<&str> {
+fn identifier(s: &str) -> IResult<&str> {
     #[cfg(feature = "unicode_xid")]
     {
         use nom::{bytes::complete::take_while, character::complete::satisfy};
@@ -210,10 +209,15 @@ mod tests {
 
     #[test]
     fn identifier() {
+        let parser = EntityParser::new();
         const ID: &str = "_abczd_123904";
-        assert_eq!(super::identifier(ID), Ok(("", ID)));
+        let (rest, key) = parser.parse_identifier(ID).unwrap();
+        assert_eq!(rest, "");
         let mut id_str = ID.to_string();
         id_str.push('*');
-        assert_eq!(super::identifier(&id_str), Ok(("*", ID)));
+        assert_eq!(parser.parse_identifier(&id_str), Ok(("*", key)));
+
+        let entities = parser.finalize();
+        assert_eq!(entities.identifier(key), ID);
     }
 }

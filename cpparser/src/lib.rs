@@ -29,23 +29,6 @@ pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 pub type Error<I> = nom::error::Error<I>;
 
 /// Parser for C++ entities
-// TODO: Make private once clients have been migrated
-pub fn entity<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Option<types::TypeLike<IdentifierKey, PathKey>>> {
-    use nom::combinator::eof;
-    let type_like = (|s| types::type_like(s, parse_identifier, path_to_key)).map(Some);
-    let unknown = EntityParser::parse_unknown_entity.value(None);
-    type_like.or(unknown).terminated(eof).parse(s)
-}
-
-/// Parser for C++ entities
 //
 // The toplevel module only contains the data structures and general
 // functionality, parser-specific impl blocks can be found in individual modules
@@ -104,13 +87,14 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Option<types::TypeLike<atoms::IdentifierKey, PathKey>>> {
-        entity(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
-        })
+        use nom::combinator::eof;
+        let type_like = (|s| self.parse_type_like(s)).map(Some);
+        let unknown = Self::parse_unknown_entity.value(None);
+        type_like.or(unknown).terminated(eof).parse(s)
     }
 
     /// Done parsing entities, just keep access to them
-    pub fn finish(self) -> Entities {
+    pub fn finalize(self) -> Entities {
         Entities {
             identifiers: self.identifiers.into_inner().into_resolver(),
             paths: self.paths.into_inner().finalize(),
@@ -145,29 +129,24 @@ impl Entities {
 pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
 
-    pub fn force_parse<'source, Output>(
-        mut parser: impl Parser<&'source str, Output, Error<&'source str>>,
-        source: &'source str,
-    ) -> Output {
-        let (rest, output) = parser.parse(source).unwrap();
+    pub fn unwrap_parse<Output>(res: IResult<Output>) -> Output {
+        let (rest, output) = res.unwrap();
         assert_eq!(rest, "");
         output
     }
 
     #[test]
     fn entity() {
-        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
-        let parse_entity = |s| super::entity(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
 
         // Something that looks like a type name
         assert_eq!(
-            parse_entity("type_name"),
-            Ok(("", Some(force_parse(parse_type_like, "type_name"))))
+            parser.parse_entity("type_name"),
+            Ok(("", Some(unwrap_parse(parser.parse_type_like("type_name")))))
         );
 
         // The infamous unknown clang entity
-        assert_eq!(parse_entity("<unknown>"), Ok(("", None)));
+        assert_eq!(parser.parse_entity("<unknown>"), Ok(("", None)));
     }
 }

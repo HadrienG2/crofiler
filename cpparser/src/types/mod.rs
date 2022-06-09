@@ -5,7 +5,7 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{functions, names::atoms, values::ValueLike, EntityParser, IResult};
+use crate::{names::atoms, values::ValueLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
@@ -17,51 +17,34 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeLike<atoms::IdentifierKey, crate::PathKey>> {
-        type_like(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
+        use nom::{
+            character::complete::{char, space0},
+            combinator::opt,
+            sequence::{delimited, tuple},
+        };
+        use nom_supreme::tag::complete::tag;
+
+        // GNU-style type attributes come first
+        let attributes = opt(delimited(
+            tag("__attribute__("),
+            |s| self.parse_function_call(s),
+            char(')'),
+        ))
+        .map(Option::unwrap_or_default);
+
+        // Then come the type specifier and declarator
+        tuple((
+            attributes.terminated(space0),
+            (|s| self.parse_type_specifier(s)).terminated(space0),
+            |s| self.parse_declarator(s),
+        ))
+        .map(|(attributes, type_specifier, declarator)| TypeLike {
+            attributes,
+            type_specifier,
+            declarator,
         })
+        .parse(s)
     }
-}
-
-/// Parser recognizing types (and some values that are indistinguishable from
-/// types without extra context).
-// TODO: Make private once users are migrated
-pub fn type_like<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, TypeLike<IdentifierKey, PathKey>> {
-    use nom::{
-        character::complete::{char, space0},
-        combinator::opt,
-        sequence::{delimited, tuple},
-    };
-    use nom_supreme::tag::complete::tag;
-
-    // GNU-style type attributes come first
-    let attributes = opt(delimited(
-        tag("__attribute__("),
-        |s| functions::function_call(s, parse_identifier, path_to_key),
-        char(')'),
-    ))
-    .map(Option::unwrap_or_default);
-
-    // Then come the type specifier and declarator
-    tuple((
-        attributes.terminated(space0),
-        (|s| specifiers::type_specifier(s, parse_identifier, path_to_key)).terminated(space0),
-        |s| declarators::declarator(s, parse_identifier, path_to_key),
-    ))
-    .map(|(attributes, type_specifier, declarator)| TypeLike {
-        attributes,
-        type_specifier,
-        declarator,
-    })
-    .parse(s)
 }
 
 /// A type name, or something looking close enough to it
@@ -113,27 +96,21 @@ impl<
 mod tests {
     use super::declarators::DeclOperator;
     use super::*;
-    use crate::{functions::FunctionSignature, tests::force_parse, values};
+    use crate::{functions::FunctionSignature, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
-    use std::path::Path;
-
-    fn parse_attribute_value(s: &str) -> IResult<ValueLike<&str, &Path>> {
-        values::value_like(s, &atoms::identifier, &Path::new, false, false)
-    }
 
     #[test]
     fn type_like() {
-        let parse_type_like = |s| super::type_like(s, &atoms::identifier, &Path::new);
-        let parse_type_specifier =
-            |s| specifiers::type_specifier(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
+        let type_specifier = |s| unwrap_parse(parser.parse_type_specifier(s));
 
         // Basic type specifier
         assert_eq!(
-            parse_type_like("signed char"),
+            parser.parse_type_like("signed char"),
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(parse_type_specifier, "signed char"),
+                    type_specifier: type_specifier("signed char"),
                     ..Default::default()
                 }
             ))
@@ -141,12 +118,13 @@ mod tests {
 
         // GNU-style attributes before
         assert_eq!(
-            parse_type_like("__attribute__((unused)) long long"),
+            parser.parse_type_like("__attribute__((unused)) long long"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: vec![force_parse(parse_attribute_value, "unused")].into(),
-                    type_specifier: force_parse(parse_type_specifier, "long long"),
+                    attributes: vec![unwrap_parse(parser.parse_value_like("unused", true, true))]
+                        .into(),
+                    type_specifier: type_specifier("long long"),
                     ..Default::default()
                 }
             ))
@@ -154,11 +132,11 @@ mod tests {
 
         // Basic function pointer
         assert_eq!(
-            parse_type_like("something()"),
+            parser.parse_type_like("something()"),
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(parse_type_specifier, "something"),
+                    type_specifier: type_specifier("something"),
                     declarator: vec![DeclOperator::Function(FunctionSignature::default())].into(),
                     ..Default::default()
                 }
@@ -166,17 +144,14 @@ mod tests {
         );
 
         // Fun template/expression ambiguity found during testing
-        let parse_function_signature =
-            |s| functions::function_signature(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            parse_type_like("T<1>(U)"),
+            parser.parse_type_like("T<1>(U)"),
             Ok((
                 "",
                 TypeLike {
-                    type_specifier: force_parse(parse_type_specifier, "T<1>"),
-                    declarator: vec![DeclOperator::Function(force_parse(
-                        parse_function_signature,
-                        "(U)"
+                    type_specifier: type_specifier("T<1>"),
+                    declarator: vec![DeclOperator::Function(unwrap_parse(
+                        parser.parse_function_signature("(U)")
                     ))]
                     .into(),
                     ..Default::default()

@@ -126,12 +126,6 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     }
 }
 
-/// Convenience shorthand for generating legacy_name_parser and using it
-// TODO: Make private once users are migrated
-pub fn legacy_name(s: &str) -> IResult<LegacyName> {
-    legacy_name_parser()(s)
-}
-//
 /// C-style type
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
@@ -346,7 +340,8 @@ mod tests {
     #[test]
     fn legacy_name() {
         use LegacyName::*;
-        let test_legacy_name = |i, o| assert_eq!(super::legacy_name(i), Ok(("", o)));
+        let parser = EntityParser::new();
+        let test_legacy_name = |i, o| assert_eq!(parser.parse_legacy_name(i), Ok(("", o)));
 
         test_legacy_name("short", SignedShort);
         test_legacy_name("short int", SignedShort);

@@ -10,24 +10,14 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Literal<atoms::IdentifierKey>> {
-        literal(s, &|s| self.parse_identifier(s))
+        use nom::combinator::opt;
+        (literal_value.and(opt(|s| self.parse_identifier(s))))
+            .map(|(value, custom_suffix)| Literal {
+                value,
+                custom_suffix,
+            })
+            .parse(s)
     }
-}
-
-/// Parser for literals
-//
-// TODO: Make private once users are migrated
-pub fn literal<'source, IdentifierKey: 'source>(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-) -> IResult<'source, Literal<IdentifierKey>> {
-    use nom::combinator::opt;
-    (literal_value.and(opt(parse_identifier)))
-        .map(|(value, custom_suffix)| Literal {
-            value,
-            custom_suffix,
-        })
-        .parse(s)
 }
 
 /// A modern C++ literal, accounting for custom literals
@@ -137,6 +127,8 @@ fn character(s: &str) -> IResult<char> {
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::unwrap_parse;
+
     use super::*;
     use pretty_assertions::assert_eq;
     use std::fmt::Write;
@@ -208,15 +200,15 @@ mod tests {
 
     #[test]
     fn literal() {
-        let parse_literal = |s| super::literal(s, &atoms::identifier);
-        assert_eq!(parse_literal("'x'"), Ok(("", 'x'.into())));
+        let parser = EntityParser::new();
+        assert_eq!(parser.parse_literal("'x'"), Ok(("", 'x'.into())));
         assert_eq!(
-            parse_literal("42_m"),
+            parser.parse_literal("42_m"),
             Ok((
                 "",
                 Literal {
                     value: 42u8.into(),
-                    custom_suffix: Some("_m")
+                    custom_suffix: Some(unwrap_parse(parser.parse_identifier("_m")))
                 }
             ))
         );

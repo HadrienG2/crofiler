@@ -1,11 +1,11 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
 use crate::{
-    anonymous::{self, AnonymousEntity, Lambda},
+    anonymous::{AnonymousEntity, Lambda},
     names::atoms,
     operators::Operator,
-    templates::{self, TemplateParameters},
-    values::{self, ValueLike},
+    templates::TemplateParameters,
+    values::ValueLike,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -17,81 +17,64 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, UnqualifiedId<atoms::IdentifierKey, crate::PathKey>> {
-        unqualified_id(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
-        })
+        use nom::{
+            character::complete::{char, space0},
+            combinator::opt,
+            sequence::delimited,
+        };
+        use nom_supreme::tag::complete::tag;
+
+        // An entity named by a user-specified identifier
+        let named = |is_destructor| {
+            ((|s| self.parse_identifier(s)).and(opt(|s| self.parse_template_parameters(s)))).map(
+                move |(id, template_parameters)| UnqualifiedId::Named {
+                    is_destructor,
+                    id,
+                    template_parameters,
+                },
+            )
+        };
+
+        // An operator overload
+        let operator =
+            (|s| self.parse_operator_overload(s)).map(|(operator, template_parameters)| {
+                UnqualifiedId::Operator {
+                    operator,
+                    template_parameters,
+                }
+            });
+
+        // A decltype expression
+        let decltype = delimited(
+            tag("decltype(").and(space0),
+            |s| self.parse_value_like(s, false, true),
+            space0.and(char(')')),
+        )
+        .map(Box::new)
+        .map(UnqualifiedId::Decltype);
+
+        // Anonymous entities to which clang gives a name
+        let lambda = (|s| self.parse_lambda(s)).map(UnqualifiedId::Lambda);
+        let anonymous = (|s| self.parse_anonymous(s)).map(UnqualifiedId::Anonymous);
+
+        // Operator and decltype must go before named because named matches keywords
+        //
+        // Since this parser is **very** hot (500M calls on a test workload), even
+        // failed sub-parser trials taking ~10ns contribute to its performance, so
+        // we dispatch to appropriate sub-parsers by eagerly checking the first
+        // character of input. This also allows us to tell if a named entity is a
+        // destructor or not. Branches other than _ are ordered by decreasing freq.
+        //
+        match s.as_bytes().first() {
+            Some(b'(') => lambda.or(anonymous).parse(s),
+            Some(b'd') => decltype.or(named(false)).parse(s),
+            Some(b'o') => operator.or(named(false)).parse(s),
+            Some(b'~') => named(true).parse(&s[1..]),
+            _ => named(false).parse(s),
+        }
     }
 }
 
-/// Parser for unqualified id-expressions
-// TODO: Make private once users are migrated
-pub fn unqualified_id<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, UnqualifiedId<IdentifierKey, PathKey>> {
-    use crate::operators::overloads::operator_overload;
-    use nom::{
-        character::complete::{char, space0},
-        combinator::opt,
-        sequence::delimited,
-    };
-    use nom_supreme::tag::complete::tag;
-
-    // An entity named by a user-specified identifier
-    let named = |is_destructor| {
-        ((parse_identifier).and(opt(|s| {
-            templates::template_parameters(s, parse_identifier, path_to_key)
-        })))
-        .map(move |(id, template_parameters)| UnqualifiedId::Named {
-            is_destructor,
-            id,
-            template_parameters,
-        })
-    };
-
-    // An operator overload
-    let operator = (|s| operator_overload(s, parse_identifier, path_to_key)).map(
-        |(operator, template_parameters)| UnqualifiedId::Operator {
-            operator,
-            template_parameters,
-        },
-    );
-
-    // A decltype expression
-    let decltype = delimited(
-        tag("decltype(").and(space0),
-        |s| values::value_like(s, parse_identifier, path_to_key, false, true),
-        space0.and(char(')')),
-    )
-    .map(Box::new)
-    .map(UnqualifiedId::Decltype);
-
-    // Anonymous entities to which clang gives a name
-    let lambda = (|s| anonymous::lambda(s, path_to_key)).map(UnqualifiedId::Lambda);
-    let anonymous = (|s| anonymous::anonymous(s, parse_identifier)).map(UnqualifiedId::Anonymous);
-
-    // Operator and decltype must go before named because named matches keywords
-    //
-    // Since this parser is **very** hot (500M calls on a test workload), even
-    // failed sub-parser trials taking ~10ns contribute to its performance, so
-    // we dispatch to appropriate sub-parsers by eagerly checking the first
-    // character of input. This also allows us to tell if a named entity is a
-    // destructor or not. Branches other than _ are ordered by decreasing freq.
-    //
-    match s.as_bytes().first() {
-        Some(b'(') => lambda.or(anonymous).parse(s),
-        Some(b'd') => decltype.or(named(false)).parse(s),
-        Some(b'o') => operator.or(named(false)).parse(s),
-        Some(b'~') => named(true).parse(&s[1..]),
-        _ => named(false).parse(s),
-    }
-}
-//
 /// Unqualified id-expression
 ///
 /// This is the next level of complexity in C++ entity naming after raw
@@ -159,25 +142,35 @@ impl<'source, PathKey: Clone + Debug + PartialEq + Eq> From<&'source str>
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{tests::force_parse, types};
+    use crate::tests::unwrap_parse;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
 
     #[test]
     fn unqualified_id() {
-        let parse_unqualified_id = |s| super::unqualified_id(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
 
         // Just an identifier
-        assert_eq!(parse_unqualified_id("basic"), Ok(("", "basic".into())));
+        let identifier = |s| unwrap_parse(parser.parse_identifier(s));
+        assert_eq!(
+            parser.parse_unqualified_id("basic"),
+            Ok((
+                "",
+                UnqualifiedId::Named {
+                    is_destructor: false,
+                    id: identifier("basic"),
+                    template_parameters: None
+                }
+            ))
+        );
 
         // Destructor
         assert_eq!(
-            parse_unqualified_id("~stuff"),
+            parser.parse_unqualified_id("~stuff"),
             Ok((
                 "",
                 UnqualifiedId::Named {
                     is_destructor: true,
-                    id: "stuff",
+                    id: identifier("stuff"),
                     template_parameters: None,
                 }
             ))
@@ -185,40 +178,34 @@ pub mod tests {
 
         // Template with no parameters
         assert_eq!(
-            parse_unqualified_id("no_parameters<>"),
+            parser.parse_unqualified_id("no_parameters<>"),
             Ok((
                 "",
                 UnqualifiedId::Named {
                     is_destructor: false,
-                    id: "no_parameters",
+                    id: identifier("no_parameters"),
                     template_parameters: Some(Some(vec![].into())),
                 }
             ))
         );
 
         // Template with a few parameters
-        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
+        let template_parameters = |s| unwrap_parse(parser.parse_template_parameters(s));
         assert_eq!(
-            parse_unqualified_id("A<B, C>"),
+            parser.parse_unqualified_id("A<B, C>"),
             Ok((
                 "",
                 UnqualifiedId::Named {
                     is_destructor: false,
-                    id: "A",
-                    template_parameters: Some(Some(
-                        vec![
-                            force_parse(parse_type_like, "B").into(),
-                            force_parse(parse_type_like, "C").into()
-                        ]
-                        .into()
-                    ))
+                    id: identifier("A"),
+                    template_parameters: Some(template_parameters("<B, C>"))
                 }
             ))
         );
 
         // Operator overload
         assert_eq!(
-            parse_unqualified_id("operator()"),
+            parser.parse_unqualified_id("operator()"),
             Ok((
                 "",
                 UnqualifiedId::Operator {
@@ -230,31 +217,27 @@ pub mod tests {
 
         // Decltype
         assert_eq!(
-            parse_unqualified_id("decltype(42)"),
+            parser.parse_unqualified_id("decltype(42)"),
             Ok(("", UnqualifiedId::Decltype(Box::new(42u8.into()))))
         );
 
         // Lambda
         assert_eq!(
-            parse_unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
+            parser.parse_unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
             Ok((
                 "",
-                UnqualifiedId::Lambda(force_parse(
-                    |s| anonymous::lambda(s, &Path::new),
-                    "(lambda at /path/to/stuff.h:9876:54)"
+                UnqualifiedId::Lambda(unwrap_parse(
+                    parser.parse_lambda("(lambda at /path/to/stuff.h:9876:54)")
                 ))
             ))
         );
 
         // Anonymous entity
         assert_eq!(
-            parse_unqualified_id("(anonymous class)"),
+            parser.parse_unqualified_id("(anonymous class)"),
             Ok((
                 "",
-                UnqualifiedId::Anonymous(force_parse(
-                    |s| anonymous::anonymous(s, &atoms::identifier),
-                    "(anonymous class)"
-                ))
+                UnqualifiedId::Anonymous(unwrap_parse(parser.parse_anonymous("(anonymous class)")))
             ))
         );
     }

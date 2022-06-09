@@ -3,11 +3,10 @@
 use crate::{
     names::atoms,
     types::{
-        self,
         qualifiers::{ConstVolatile, Reference},
         TypeLike,
     },
-    values::{self, ValueLike},
+    values::ValueLike,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -20,9 +19,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, Box<[ValueLike<atoms::IdentifierKey, crate::PathKey>]>> {
-        function_call(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
-        })
+        function_parameters(s, |s| self.parse_value_like(s, false, true))
     }
 
     /// Parser recognizing a function signature (parameters + qualifiers)
@@ -30,74 +27,59 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, FunctionSignature<atoms::IdentifierKey, crate::PathKey>> {
-        function_signature(s, &|s| self.parse_identifier(s), &|path| {
-            self.path_to_key(path)
-        })
+        use nom::{
+            character::complete::space0,
+            combinator::opt,
+            sequence::{preceded, tuple},
+        };
+        use nom_supreme::tag::complete::tag;
+
+        let type_like = |s| self.parse_type_like(s);
+
+        let trailing_return = preceded(tag("->").and(space0), &type_like);
+
+        let mut tuple = tuple((
+            (|s| function_parameters(s, &type_like)).terminated(space0),
+            Self::parse_cv.terminated(space0),
+            Self::parse_reference.terminated(space0),
+            opt((|s| self.parse_noexcept(s)).terminated(space0)),
+            opt(trailing_return),
+        ))
+        .map(
+            |(parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
+                parameters,
+                cv,
+                reference,
+                noexcept,
+                trailing_return,
+            },
+        );
+
+        tuple.parse(s)
+    }
+
+    /// Parser recognizing the noexcept qualifier and its optional argument
+    fn parse_noexcept<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Option<ValueLike<atoms::IdentifierKey, crate::PathKey>>> {
+        use nom::{
+            character::complete::{char, space0},
+            combinator::opt,
+            sequence::{delimited, preceded},
+        };
+        preceded(
+            Self::keyword_parser("noexcept"),
+            opt(delimited(
+                char('(').and(space0),
+                |s| self.parse_value_like(s, false, true),
+                space0.and(char(')')),
+            )),
+        )
+        .parse(s)
     }
 }
 
-/// Parser recognizing a function call
-// TODO: Make private once users are migrated
-pub fn function_call<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Box<[ValueLike<IdentifierKey, PathKey>]>> {
-    function_parameters(s, |s| {
-        values::value_like(s, parse_identifier, path_to_key, false, true)
-    })
-}
-
-/// Parser recognizing a function signature (parameters + qualifiers)
-// TODO: Make private once users are migrated
-pub fn function_signature<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, FunctionSignature<IdentifierKey, PathKey>> {
-    use nom::{
-        character::complete::space0,
-        combinator::opt,
-        sequence::{preceded, tuple},
-    };
-    use nom_supreme::tag::complete::tag;
-
-    let type_like = |s| types::type_like(s, parse_identifier, path_to_key);
-
-    let function_parameters = |s| function_parameters(s, &type_like);
-
-    let noexcept = |s| noexcept(s, parse_identifier, path_to_key);
-
-    let trailing_return = preceded(tag("->").and(space0), &type_like);
-
-    let mut tuple = tuple((
-        function_parameters.terminated(space0),
-        EntityParser::parse_cv.terminated(space0),
-        EntityParser::parse_reference.terminated(space0),
-        opt(noexcept.terminated(space0)),
-        opt(trailing_return),
-    ))
-    .map(
-        |(parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
-            parameters,
-            cv,
-            reference,
-            noexcept,
-            trailing_return,
-        },
-    );
-
-    tuple.parse(s)
-}
-//
 /// Function signature
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature<
@@ -144,6 +126,7 @@ impl<
 ///
 /// With a type grammar, this parses function signatures, and with a value
 /// grammar, this parses function calls.
+///
 fn function_parameters<'source, T: 'source>(
     s: &'source str,
     parameter: impl FnMut(&'source str) -> IResult<'source, T>,
@@ -159,88 +142,51 @@ fn function_parameters<'source, T: 'source>(
         .parse(s)
 }
 
-/// Parser recognizing the noexcept qualifier and its optional argument
-fn noexcept<
-    'source,
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq + 'source,
-    PathKey: Clone + Debug + PartialEq + Eq + 'source,
->(
-    s: &'source str,
-    parse_identifier: &impl Fn(&'source str) -> IResult<IdentifierKey>,
-    path_to_key: &impl Fn(&'source str) -> PathKey,
-) -> IResult<'source, Option<ValueLike<IdentifierKey, PathKey>>> {
-    use nom::{
-        character::complete::{char, space0},
-        combinator::opt,
-        sequence::{delimited, preceded},
-    };
-    preceded(
-        EntityParser::keyword_parser("noexcept"),
-        opt(delimited(
-            char('(').and(space0),
-            |s| values::value_like(s, parse_identifier, path_to_key, false, true),
-            space0.and(char(')')),
-        )),
-    )
-    .parse(s)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::force_parse;
+    use crate::tests::unwrap_parse;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
-
-    fn parse_value_like(s: &str) -> IResult<ValueLike<&str, &Path>> {
-        values::value_like(s, &atoms::identifier, &Path::new, true, true)
-    }
 
     #[test]
     fn noexcept() {
-        let parse_noexcept = |s| super::noexcept(s, &atoms::identifier, &Path::new);
-        assert_eq!(parse_noexcept("noexcept"), Ok(("", None)));
+        let parser = EntityParser::new();
+        assert_eq!(parser.parse_noexcept("noexcept"), Ok(("", None)));
         assert_eq!(
-            parse_noexcept("noexcept(123)"),
-            Ok(("", Some(force_parse(parse_value_like, "123"))))
+            parser.parse_noexcept("noexcept(123)"),
+            Ok((
+                "",
+                Some(unwrap_parse(parser.parse_value_like("123", true, true)))
+            ))
         );
     }
 
     #[test]
     fn function_parameters() {
-        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
-        let type_parameters = |s| super::function_parameters(s, parse_type_like);
-        assert_eq!(type_parameters("()"), Ok(("", vec![].into())));
+        let parser = EntityParser::new();
+        let parse_type_parameters =
+            |s| super::function_parameters(s, &|s| parser.parse_type_like(s));
+        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
+        assert_eq!(parse_type_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
-            type_parameters("(signed char*)"),
-            Ok((
-                "",
-                vec![force_parse(parse_type_like, "signed char*")].into()
-            ))
+            parse_type_parameters("(signed char*)"),
+            Ok(("", vec![type_like("signed char*")].into()))
         );
         assert_eq!(
-            type_parameters("(charamel<lol>&, T)"),
-            Ok((
-                "",
-                vec![
-                    force_parse(parse_type_like, "charamel<lol>&"),
-                    force_parse(parse_type_like, "T")
-                ]
-                .into()
-            ))
+            parse_type_parameters("(charamel<lol>&, T)"),
+            Ok(("", vec![type_like("charamel<lol>&"), type_like("T")].into()))
         );
     }
 
     #[test]
     fn function_signature() {
-        let parse_function_signature =
-            |s| super::function_signature(s, &atoms::identifier, &Path::new);
+        let parser = EntityParser::new();
         assert_eq!(
-            parse_function_signature("()"),
+            parser.parse_function_signature("()"),
             Ok(("", FunctionSignature::default()))
         );
         assert_eq!(
-            parse_function_signature("() const"),
+            parser.parse_function_signature("() const"),
             Ok((
                 "",
                 FunctionSignature {
@@ -250,7 +196,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_function_signature("() &&"),
+            parser.parse_function_signature("() &&"),
             Ok((
                 "",
                 FunctionSignature {
@@ -260,7 +206,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_function_signature("() noexcept"),
+            parser.parse_function_signature("() noexcept"),
             Ok((
                 "",
                 FunctionSignature {
@@ -270,7 +216,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_function_signature("() volatile &"),
+            parser.parse_function_signature("() volatile &"),
             Ok((
                 "",
                 FunctionSignature {
@@ -281,7 +227,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_function_signature("() volatile const noexcept"),
+            parser.parse_function_signature("() volatile const noexcept"),
             Ok((
                 "",
                 FunctionSignature {
@@ -292,23 +238,24 @@ mod tests {
             ))
         );
         assert_eq!(
-            parse_function_signature("() && noexcept(456)"),
+            parser.parse_function_signature("() && noexcept(456)"),
             Ok((
                 "",
                 FunctionSignature {
                     reference: Reference::RValue,
-                    noexcept: Some(Some(force_parse(parse_value_like, "456"))),
+                    noexcept: Some(Some(unwrap_parse(
+                        parser.parse_value_like("456", true, true),
+                    ))),
                     ..Default::default()
                 }
             ))
         );
-        let parse_type_like = |s| types::type_like(s, &atoms::identifier, &Path::new);
         assert_eq!(
-            parse_function_signature("() -> int"),
+            parser.parse_function_signature("() -> int"),
             Ok((
                 "",
                 FunctionSignature {
-                    trailing_return: Some(force_parse(parse_type_like, "int")),
+                    trailing_return: Some(unwrap_parse(parser.parse_type_like("int"))),
                     ..Default::default()
                 }
             ))
@@ -317,14 +264,14 @@ mod tests {
 
     #[test]
     fn function_call() {
-        let parse_function_call = |s| super::function_call(s, &atoms::identifier, &Path::new);
-        assert_eq!(parse_function_call("()"), Ok(("", vec![].into())));
+        let parser = EntityParser::new();
+        assert_eq!(parser.parse_function_call("()"), Ok(("", vec![].into())));
         assert_eq!(
-            parse_function_call("(123)"),
+            parser.parse_function_call("(123)"),
             Ok(("", vec![123u8.into()].into()))
         );
         assert_eq!(
-            parse_function_call("(42, 'a')"),
+            parser.parse_function_call("(42, 'a')"),
             Ok(("", vec![42u8.into(), 'a'.into()].into()))
         );
     }
