@@ -1,15 +1,12 @@
 //! Literals (and things that should be literals like negative numbers)
 
-use crate::{names::atoms, EntityParser, IResult};
+use crate::{names::atoms::IdentifierKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
 impl EntityParser {
     /// Parser for literals
-    pub fn parse_literal<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Literal<atoms::IdentifierKey>> {
+    pub fn parse_literal<'source>(&self, s: &'source str) -> IResult<'source, Literal> {
         use nom::combinator::opt;
         (literal_value.and(opt(|s| self.parse_identifier(s))))
             .map(|(value, custom_suffix)| Literal {
@@ -22,7 +19,7 @@ impl EntityParser {
 
 /// A modern C++ literal, accounting for custom literals
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Literal<IdentifierKey> {
+pub struct Literal {
     /// Inner value
     value: LiteralValue,
 
@@ -30,7 +27,7 @@ pub struct Literal<IdentifierKey> {
     custom_suffix: Option<IdentifierKey>,
 }
 //
-impl<T: Into<LiteralValue>, U> From<T> for Literal<U> {
+impl<T: Into<LiteralValue>> From<T> for Literal {
     fn from(value: T) -> Self {
         Self {
             value: value.into(),

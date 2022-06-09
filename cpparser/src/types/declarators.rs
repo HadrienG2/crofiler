@@ -4,9 +4,7 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    functions::FunctionSignature,
-    names::{atoms, scopes::NestedNameSpecifier},
-    values::ValueLike,
+    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueLike,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -15,10 +13,7 @@ use std::fmt::Debug;
 
 impl EntityParser {
     /// Parser for declarators
-    pub fn parse_declarator<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Declarator<atoms::IdentifierKey, crate::PathKey>> {
+    pub fn parse_declarator<'source>(&self, s: &'source str) -> IResult<'source, Declarator> {
         use nom::{character::complete::space0, multi::many0};
         many0((|s| self.parse_decl_operator(s)).terminated(space0))
             .map(Vec::into_boxed_slice)
@@ -26,10 +21,7 @@ impl EntityParser {
     }
 
     /// Parser for a declarator component
-    fn parse_decl_operator<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, DeclOperator<atoms::IdentifierKey, crate::PathKey>> {
+    fn parse_decl_operator<'source>(&self, s: &'source str) -> IResult<'source, DeclOperator> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -90,19 +82,16 @@ impl EntityParser {
 }
 
 /// Declarator
-pub type Declarator<IdentifierKey, PathKey> = Box<[DeclOperator<IdentifierKey, PathKey>]>;
+pub type Declarator = Box<[DeclOperator]>;
 
 /// Operators that can appear within a declarator
 // FIXME: This type appears in Box<[T]>, intern it once data is owned
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum DeclOperator<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub enum DeclOperator {
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
-        path: NestedNameSpecifier<IdentifierKey, PathKey>,
+        path: NestedNameSpecifier,
 
         /// Const and volatile qualifiers,
         cv: ConstVolatile,
@@ -112,13 +101,31 @@ pub enum DeclOperator<
     Reference(Reference),
 
     /// Array declarator, with optional size
-    Array(Option<ValueLike<IdentifierKey, PathKey>>),
+    Array(Option<ValueLike>),
 
     /// Function declarator
-    Function(FunctionSignature<IdentifierKey, PathKey>),
+    Function(FunctionSignature),
 
     /// Parentheses, used to override operator priorities
-    Parenthesized(Declarator<IdentifierKey, PathKey>),
+    Parenthesized(Declarator),
+}
+//
+impl From<Reference> for DeclOperator {
+    fn from(r: Reference) -> Self {
+        Self::Reference(r)
+    }
+}
+//
+impl From<FunctionSignature> for DeclOperator {
+    fn from(f: FunctionSignature) -> Self {
+        Self::Function(f)
+    }
+}
+//
+impl From<Declarator> for DeclOperator {
+    fn from(d: Declarator) -> Self {
+        Self::Parenthesized(d)
+    }
 }
 
 #[cfg(test)]
@@ -170,7 +177,7 @@ mod tests {
         // Reference
         assert_eq!(
             parser.parse_decl_operator("&"),
-            Ok(("", DeclOperator::Reference(Reference::LValue)))
+            Ok(("", Reference::LValue.into()))
         );
 
         // Array of unknown length
@@ -182,13 +189,18 @@ mod tests {
         // Array of known length
         assert_eq!(
             parser.parse_decl_operator("[42]"),
-            Ok(("", DeclOperator::Array(Some(42u8.into()))))
+            Ok((
+                "",
+                DeclOperator::Array(Some(unwrap_parse(
+                    parser.parse_value_like("42", true, true)
+                )))
+            ))
         );
 
         // Function signature
         assert_eq!(
             parser.parse_decl_operator("()"),
-            Ok(("", DeclOperator::Function(FunctionSignature::default())))
+            Ok(("", FunctionSignature::default().into()))
         );
 
         // Parenthesized declarator
@@ -196,9 +208,7 @@ mod tests {
             parser.parse_decl_operator("(&&)"),
             Ok((
                 "",
-                DeclOperator::Parenthesized(
-                    vec![DeclOperator::Reference(Reference::RValue)].into()
-                )
+                DeclOperator::Parenthesized(vec![Reference::RValue.into()].into())
             ))
         );
     }
@@ -213,7 +223,7 @@ mod tests {
         // Single operator
         assert_eq!(
             parser.parse_declarator("&"),
-            Ok(("", vec![DeclOperator::Reference(Reference::LValue)].into()))
+            Ok(("", vec![Reference::LValue.into()].into()))
         );
 
         // Multiple operators
@@ -222,12 +232,12 @@ mod tests {
             Ok((
                 "",
                 vec![
-                    DeclOperator::Reference(Reference::RValue),
+                    Reference::RValue.into(),
                     DeclOperator::Pointer {
                         path: NestedNameSpecifier::default(),
                         cv: ConstVolatile::CONST,
                     },
-                    DeclOperator::Function(FunctionSignature::default())
+                    FunctionSignature::default().into()
                 ]
                 .into()
             ))

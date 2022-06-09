@@ -2,21 +2,20 @@
 
 use crate::{
     anonymous::{AnonymousEntity, Lambda},
-    names::atoms,
+    names::atoms::IdentifierKey,
     operators::Operator,
     templates::TemplateParameters,
     values::ValueLike,
     EntityParser, IResult,
 };
 use nom::Parser;
-use std::fmt::Debug;
 
 impl EntityParser {
     /// Parser for unqualified id-expressions
     pub fn parse_unqualified_id<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, UnqualifiedId<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, UnqualifiedId> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -82,10 +81,7 @@ impl EntityParser {
 /// but not for scoping.
 ///
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UnqualifiedId<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub enum UnqualifiedId {
     /// An entity named by a user-specified identifier
     Named {
         /// Truth that this is a destructor (names starts with ~)
@@ -95,47 +91,62 @@ pub enum UnqualifiedId<
         id: IdentifierKey,
 
         /// Optional template parameters
-        template_parameters: Option<TemplateParameters<IdentifierKey, PathKey>>,
+        template_parameters: Option<TemplateParameters>,
     },
 
     /// An operator overload
     Operator {
         /// Which operator was overloaded
-        operator: Operator<IdentifierKey, PathKey>,
+        operator: Operator,
 
         /// Optional template parameters
-        template_parameters: Option<TemplateParameters<IdentifierKey, PathKey>>,
+        template_parameters: Option<TemplateParameters>,
     },
 
     /// A decltype(<value>) expression
-    Decltype(Box<ValueLike<IdentifierKey, PathKey>>),
+    Decltype(Box<ValueLike>),
 
     /// A lambda function, with source location information
-    Lambda(Lambda<PathKey>),
+    Lambda(Lambda),
 
     /// Another kind of anonymous entity from clang
-    Anonymous(AnonymousEntity<IdentifierKey>),
+    Anonymous(AnonymousEntity),
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for UnqualifiedId<IdentifierKey, PathKey>
-{
+impl Default for UnqualifiedId {
     fn default() -> Self {
         Self::Anonymous(AnonymousEntity::default())
     }
 }
 //
-impl<'source, PathKey: Clone + Debug + PartialEq + Eq> From<&'source str>
-    for UnqualifiedId<&'source str, PathKey>
-{
-    fn from(id: &'source str) -> Self {
+impl From<IdentifierKey> for UnqualifiedId {
+    fn from(id: IdentifierKey) -> Self {
         Self::Named {
             is_destructor: false,
             id,
             template_parameters: None,
         }
+    }
+}
+//
+impl From<Operator> for UnqualifiedId {
+    fn from(operator: Operator) -> Self {
+        Self::Operator {
+            operator,
+            template_parameters: None,
+        }
+    }
+}
+//
+impl From<Lambda> for UnqualifiedId {
+    fn from(l: Lambda) -> Self {
+        Self::Lambda(l)
+    }
+}
+//
+impl From<AnonymousEntity> for UnqualifiedId {
+    fn from(a: AnonymousEntity) -> Self {
+        Self::Anonymous(a)
     }
 }
 
@@ -153,14 +164,7 @@ pub mod tests {
         let identifier = |s| unwrap_parse(parser.parse_identifier(s));
         assert_eq!(
             parser.parse_unqualified_id("basic"),
-            Ok((
-                "",
-                UnqualifiedId::Named {
-                    is_destructor: false,
-                    id: identifier("basic"),
-                    template_parameters: None
-                }
-            ))
+            Ok(("", identifier("basic").into()))
         );
 
         // Destructor
@@ -206,19 +210,18 @@ pub mod tests {
         // Operator overload
         assert_eq!(
             parser.parse_unqualified_id("operator()"),
-            Ok((
-                "",
-                UnqualifiedId::Operator {
-                    operator: Operator::CallIndex { is_index: false },
-                    template_parameters: Default::default(),
-                }
-            ))
+            Ok(("", Operator::CallIndex { is_index: false }.into()))
         );
 
         // Decltype
         assert_eq!(
             parser.parse_unqualified_id("decltype(42)"),
-            Ok(("", UnqualifiedId::Decltype(Box::new(42u8.into()))))
+            Ok((
+                "",
+                UnqualifiedId::Decltype(Box::new(unwrap_parse(
+                    parser.parse_value_like("42", true, true)
+                )))
+            ))
         );
 
         // Lambda
@@ -226,9 +229,7 @@ pub mod tests {
             parser.parse_unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
             Ok((
                 "",
-                UnqualifiedId::Lambda(unwrap_parse(
-                    parser.parse_lambda("(lambda at /path/to/stuff.h:9876:54)")
-                ))
+                unwrap_parse(parser.parse_lambda("(lambda at /path/to/stuff.h:9876:54)")).into()
             ))
         );
 
@@ -237,7 +238,7 @@ pub mod tests {
             parser.parse_unqualified_id("(anonymous class)"),
             Ok((
                 "",
-                UnqualifiedId::Anonymous(unwrap_parse(parser.parse_anonymous("(anonymous class)")))
+                unwrap_parse(parser.parse_anonymous("(anonymous class)")).into()
             ))
         );
     }

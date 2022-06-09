@@ -10,10 +10,7 @@ pub mod templates;
 pub mod types;
 pub mod values;
 
-use crate::{
-    names::atoms,
-    types::specifiers::legacy::{self, LegacyName},
-};
+use crate::types::specifiers::legacy::{self, LegacyName};
 use asylum::{
     lasso::{Rodeo, RodeoResolver},
     path::{InternedPath, InternedPaths, PathInterner, PathKey},
@@ -86,7 +83,7 @@ impl EntityParser {
     pub fn parse_entity<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Option<types::TypeLike<atoms::IdentifierKey, PathKey>>> {
+    ) -> IResult<'source, Option<types::TypeLike>> {
         use nom::combinator::eof;
         let type_like = (|s| self.parse_type_like(s)).map(Some);
         let unknown = Self::parse_unknown_entity.value(None);

@@ -151,7 +151,7 @@ fn end_of_identifier(s: &str) -> IResult<()> {
 fn is_id_start(c: char) -> bool {
     unicode_xid::UnicodeXID::is_xid_start(c) || c == '_'
 }
-
+//
 /// Truth that a character can be used as the start of a C++ identifier
 // This version assumes ASCII input
 #[cfg(not(feature = "unicode-xid"))]
@@ -168,7 +168,7 @@ fn is_id_start(b: u8) -> bool {
 fn is_id_continue(c: char) -> bool {
     unicode_xid::UnicodeXID::is_xid_continue(c)
 }
-
+//
 /// Truth that a character can be used in the middle of a C++ identifier
 // This version assumes ASCII input
 #[cfg(not(feature = "unicode-xid"))]
@@ -213,9 +213,12 @@ mod tests {
         const ID: &str = "_abczd_123904";
         let (rest, key) = parser.parse_identifier(ID).unwrap();
         assert_eq!(rest, "");
+        assert_eq!(parser.num_identifiers(), 1);
+
         let mut id_str = ID.to_string();
         id_str.push('*');
         assert_eq!(parser.parse_identifier(&id_str), Ok(("*", key)));
+        assert_eq!(parser.num_identifiers(), 1);
 
         let entities = parser.finalize();
         assert_eq!(entities.identifier(key), ID);

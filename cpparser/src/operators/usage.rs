@@ -1,16 +1,13 @@
 //! Operator-related grammar that is only used when parsing expressions
 
 use super::{Operator, Symbol};
-use crate::{names::atoms, types::TypeLike, values::ValueLike, EntityParser, IResult};
+use crate::{types::TypeLike, values::ValueLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
 
 impl EntityParser {
     /// Parse the increment/decrement operator
-    pub fn parse_increment_decrement(
-        s: &str,
-    ) -> IResult<Operator<atoms::IdentifierKey, crate::PathKey>> {
+    pub fn parse_increment_decrement(s: &str) -> IResult<Operator> {
         use nom_supreme::tag::complete::tag;
         (tag("++").value(Operator::Basic {
             symbol: Symbol::AddPlus,
@@ -26,10 +23,7 @@ impl EntityParser {
     }
 
     /// Parse an unary operator that can be applied to an expression in prefix position
-    pub fn parse_unary_expr_prefix<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Operator<atoms::IdentifierKey, crate::PathKey>> {
+    pub fn parse_unary_expr_prefix<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
         use nom::{
             character::complete::{char, space0, space1},
             sequence::delimited,
@@ -64,51 +58,49 @@ impl EntityParser {
         s: &str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<Operator<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<Operator> {
         // Most 1-character operators can be used in binary position, except for
         // the negation operators Not and BitNot
-        let arith1 = super::arithmetic_or_comparison::<1, atoms::IdentifierKey, crate::PathKey>
-            .verify(|op| match op {
-                Operator::Basic {
-                    symbol,
-                    twice: false,
-                    equal: false,
-                } => {
-                    use Symbol::*;
-                    match symbol {
-                        BitNot | Not => false,
-                        AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq
-                        | Less => true,
-                        Comma => allow_comma,
-                        Greater => allow_greater,
-                    }
+        let arith1 = super::arithmetic_or_comparison::<1>.verify(|op| match op {
+            Operator::Basic {
+                symbol,
+                twice: false,
+                equal: false,
+            } => {
+                use Symbol::*;
+                match symbol {
+                    BitNot | Not => false,
+                    AddPlus | SubNeg | MulDeref | Div | Mod | Xor | AndRef | Or | AssignEq
+                    | Less => true,
+                    Comma => allow_comma,
+                    Greater => allow_greater,
                 }
-                _ => unreachable!(),
-            });
+            }
+            _ => unreachable!(),
+        });
 
         // Most 2-character operators can be used in binary position, except for
         // increment and decrement, and shr in template contexts.
-        let arith2 = super::arithmetic_or_comparison::<2, atoms::IdentifierKey, crate::PathKey>
-            .verify(|op| match op {
-                Operator::Basic {
-                    symbol,
-                    twice: true,
-                    equal: false,
-                } => {
-                    use Symbol::*;
-                    match symbol {
-                        AddPlus | SubNeg => false,
-                        AndRef | Or | AssignEq | Less => true,
-                        Greater => allow_greater,
-                        Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
-                    }
+        let arith2 = super::arithmetic_or_comparison::<2>.verify(|op| match op {
+            Operator::Basic {
+                symbol,
+                twice: true,
+                equal: false,
+            } => {
+                use Symbol::*;
+                match symbol {
+                    AddPlus | SubNeg => false,
+                    AndRef | Or | AssignEq | Less => true,
+                    Greater => allow_greater,
+                    Xor | Mod | Div | MulDeref | BitNot | Not | Comma => unreachable!(),
                 }
-                // This may need to be revised as C++ evolves
-                _ => true,
-            });
+            }
+            // This may need to be revised as C++ evolves
+            _ => true,
+        });
 
         // All 3-character operators can be used in binary position
-        let arith3 = super::arithmetic_or_comparison::<3, atoms::IdentifierKey, crate::PathKey>;
+        let arith3 = super::arithmetic_or_comparison::<3>;
 
         // No other operator can be used in binary position
         arith3.or(arith2).or(arith1).parse(s)
@@ -118,7 +110,7 @@ impl EntityParser {
     pub fn parse_new_expression<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, NewExpression<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, NewExpression> {
         use nom::{
             character::complete::space0,
             combinator::opt,
@@ -147,38 +139,20 @@ impl EntityParser {
 
 /// New expression, i.e. usage of the new operator
 // FIXME: This type appears in Box<T>, intern that once data is owned
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NewExpression<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NewExpression {
     /// Whether this new expression is rooted (starts with ::), which means that
     /// class-specific replacements will be ignored
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<Box<[ValueLike<IdentifierKey, PathKey>]>>,
+    placement: Option<Box<[ValueLike]>>,
 
     /// Type of values being created
-    ty: TypeLike<IdentifierKey, PathKey>,
+    ty: TypeLike,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<Box<[ValueLike<IdentifierKey, PathKey>]>>,
-}
-//
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for NewExpression<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
-        Self {
-            rooted: Default::default(),
-            placement: Default::default(),
-            ty: Default::default(),
-            constructor: Default::default(),
-        }
-    }
+    constructor: Option<Box<[ValueLike]>>,
 }
 
 #[cfg(test)]
@@ -270,10 +244,7 @@ mod tests {
         // Casts
         assert_eq!(
             parser.parse_unary_expr_prefix("(float)"),
-            Ok((
-                "",
-                Operator::Conversion(Box::new(unwrap_parse(parser.parse_type_like("float"))))
-            ))
+            Ok(("", unwrap_parse(parser.parse_type_like("float")).into()))
         );
 
         // co_await
@@ -380,12 +351,13 @@ mod tests {
         );
 
         // Placement parameters
+        let function_call = |s| unwrap_parse(parser.parse_function_call(s));
         assert_eq!(
             parser.parse_new_expression("new (42) MyClass"),
             Ok((
                 "",
                 NewExpression {
-                    placement: Some(vec![42u8.into()].into()),
+                    placement: Some(function_call("(42)")),
                     ty: type_like("MyClass"),
                     ..Default::default()
                 }
@@ -399,7 +371,7 @@ mod tests {
                 "",
                 NewExpression {
                     ty: type_like("MyClass"),
-                    constructor: Some(vec!['x'.into()].into()),
+                    constructor: Some(function_call("('x')")),
                     ..Default::default()
                 }
             ))

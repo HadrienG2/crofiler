@@ -1,7 +1,6 @@
 //! Function-related parsing
 
 use crate::{
-    names::atoms,
     types::{
         qualifiers::{ConstVolatile, Reference},
         TypeLike,
@@ -18,7 +17,7 @@ impl EntityParser {
     pub fn parse_function_call<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Box<[ValueLike<atoms::IdentifierKey, crate::PathKey>]>> {
+    ) -> IResult<'source, Box<[ValueLike]>> {
         function_parameters(s, |s| self.parse_value_like(s, false, true))
     }
 
@@ -26,7 +25,7 @@ impl EntityParser {
     pub fn parse_function_signature<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, FunctionSignature<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, FunctionSignature> {
         use nom::{
             character::complete::space0,
             combinator::opt,
@@ -59,10 +58,7 @@ impl EntityParser {
     }
 
     /// Parser recognizing the noexcept qualifier and its optional argument
-    fn parse_noexcept<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Option<ValueLike<atoms::IdentifierKey, crate::PathKey>>> {
+    fn parse_noexcept<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueLike>> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -81,13 +77,10 @@ impl EntityParser {
 }
 
 /// Function signature
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FunctionSignature<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FunctionSignature {
     /// Parameter types
-    parameters: Box<[TypeLike<IdentifierKey, PathKey>]>,
+    parameters: Box<[TypeLike]>,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -100,24 +93,17 @@ pub struct FunctionSignature<
     /// The first layer of Option represents presence or absence of the
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
-    noexcept: Option<Option<ValueLike<IdentifierKey, PathKey>>>,
+    noexcept: Option<Option<ValueLike>>,
 
     /// Trailing return type
-    trailing_return: Option<TypeLike<IdentifierKey, PathKey>>,
+    trailing_return: Option<TypeLike>,
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for FunctionSignature<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
+impl<T: Into<Box<[TypeLike]>>> From<T> for FunctionSignature {
+    fn from(parameters: T) -> Self {
         Self {
-            parameters: Default::default(),
-            cv: Default::default(),
-            reference: Default::default(),
-            noexcept: Default::default(),
-            trailing_return: Default::default(),
+            parameters: parameters.into(),
+            ..Default::default()
         }
     }
 }
@@ -167,6 +153,7 @@ mod tests {
         let parse_type_parameters =
             |s| super::function_parameters(s, &|s| parser.parse_type_like(s));
         let type_like = |s| unwrap_parse(parser.parse_type_like(s));
+
         assert_eq!(parse_type_parameters("()"), Ok(("", vec![].into())));
         assert_eq!(
             parse_type_parameters("(signed char*)"),
@@ -181,6 +168,7 @@ mod tests {
     #[test]
     fn function_signature() {
         let parser = EntityParser::new();
+
         assert_eq!(
             parser.parse_function_signature("()"),
             Ok(("", FunctionSignature::default()))
@@ -265,14 +253,19 @@ mod tests {
     #[test]
     fn function_call() {
         let parser = EntityParser::new();
+        let value_like = |s| unwrap_parse(parser.parse_value_like(s, true, true));
+
         assert_eq!(parser.parse_function_call("()"), Ok(("", vec![].into())));
         assert_eq!(
             parser.parse_function_call("(123)"),
-            Ok(("", vec![123u8.into()].into()))
+            Ok(("", vec![value_like("123").into()].into()))
         );
         assert_eq!(
             parser.parse_function_call("(42, 'a')"),
-            Ok(("", vec![42u8.into(), 'a'.into()].into()))
+            Ok((
+                "",
+                vec![value_like("42").into(), value_like("'a'").into()].into()
+            ))
         );
     }
 }

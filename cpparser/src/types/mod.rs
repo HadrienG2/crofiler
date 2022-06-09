@@ -5,7 +5,7 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{names::atoms, values::ValueLike, EntityParser, IResult};
+use crate::{values::ValueLike, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
@@ -13,10 +13,7 @@ use std::fmt::Debug;
 impl EntityParser {
     /// Parser recognizing types (and some values that are indistinguishable from
     /// types without extra context).
-    pub fn parse_type_like<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, TypeLike<atoms::IdentifierKey, crate::PathKey>> {
+    pub fn parse_type_like<'source>(&self, s: &'source str) -> IResult<'source, TypeLike> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -49,27 +46,19 @@ impl EntityParser {
 
 /// A type name, or something looking close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct TypeLike<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
-    attributes: Box<[ValueLike<IdentifierKey, PathKey>]>,
+    attributes: Box<[ValueLike]>,
 
     /// Type specifier
-    type_specifier: TypeSpecifier<IdentifierKey, PathKey>,
+    type_specifier: TypeSpecifier,
 
     /// Declarator
-    declarator: Declarator<IdentifierKey, PathKey>,
+    declarator: Declarator,
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<TypeSpecifier<IdentifierKey, PathKey>>,
-    > From<T> for TypeLike<IdentifierKey, PathKey>
-{
+impl<T: Into<TypeSpecifier>> From<T> for TypeLike {
     fn from(type_specifier: T) -> Self {
         Self {
             type_specifier: type_specifier.into(),
@@ -77,24 +66,9 @@ impl<
         }
     }
 }
-//
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for TypeLike<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
-        Self {
-            attributes: Default::default(),
-            type_specifier: Default::default(),
-            declarator: Default::default(),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::declarators::DeclOperator;
     use super::*;
     use crate::{functions::FunctionSignature, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
@@ -107,13 +81,7 @@ mod tests {
         // Basic type specifier
         assert_eq!(
             parser.parse_type_like("signed char"),
-            Ok((
-                "",
-                TypeLike {
-                    type_specifier: type_specifier("signed char"),
-                    ..Default::default()
-                }
-            ))
+            Ok(("", type_specifier("signed char").into()))
         );
 
         // GNU-style attributes before
@@ -122,8 +90,7 @@ mod tests {
             Ok((
                 "",
                 TypeLike {
-                    attributes: vec![unwrap_parse(parser.parse_value_like("unused", true, true))]
-                        .into(),
+                    attributes: unwrap_parse(parser.parse_function_call("(unused)")),
                     type_specifier: type_specifier("long long"),
                     ..Default::default()
                 }
@@ -137,7 +104,7 @@ mod tests {
                 "",
                 TypeLike {
                     type_specifier: type_specifier("something"),
-                    declarator: vec![DeclOperator::Function(FunctionSignature::default())].into(),
+                    declarator: vec![FunctionSignature::default().into()].into(),
                     ..Default::default()
                 }
             ))
@@ -150,10 +117,8 @@ mod tests {
                 "",
                 TypeLike {
                     type_specifier: type_specifier("T<1>"),
-                    declarator: vec![DeclOperator::Function(unwrap_parse(
-                        parser.parse_function_signature("(U)")
-                    ))]
-                    .into(),
+                    declarator: vec![unwrap_parse(parser.parse_function_signature("(U)")).into()]
+                        .into(),
                     ..Default::default()
                 }
             ))

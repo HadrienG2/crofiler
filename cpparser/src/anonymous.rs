@@ -1,7 +1,7 @@
 //! Clang-provided names to C++ entities that don't have a language-defined name
 //! including lambdas, anonymous classes, anonymous namespaces...
 
-use crate::{names::atoms, EntityParser, IResult};
+use crate::{names::atoms::IdentifierKey, EntityParser, IResult, PathKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -18,10 +18,7 @@ impl EntityParser {
     /// Windows-style disk designator at the start, because I have no idea how
     /// to handle this inherent grammar ambiguity better...
     ///
-    pub fn parse_lambda<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Lambda<crate::PathKey>> {
+    pub fn parse_lambda<'source>(&self, s: &'source str) -> IResult<'source, Lambda> {
         use nom::{
             bytes::complete::{tag, take_till1},
             character::complete::{anychar, char, u32},
@@ -41,10 +38,7 @@ impl EntityParser {
     }
 
     /// Parser for other anonymous clang entities called "(anonymous <stuff>)"
-    pub fn parse_anonymous<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, AnonymousEntity<atoms::IdentifierKey>> {
+    pub fn parse_anonymous<'source>(&self, s: &'source str) -> IResult<'source, AnonymousEntity> {
         use nom::{
             character::complete::char,
             combinator::opt,
@@ -61,7 +55,7 @@ impl EntityParser {
 
 /// Lambda location description
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Lambda<PathKey> {
+pub struct Lambda {
     /// In which file the lambda is declared
     file: PathKey,
 
@@ -80,7 +74,7 @@ pub type Column = u32;
 /// So far, only anonymous classes and namespaces were seen, but for all I know
 /// there might be others... In any case, if the <something> is specified, it is
 /// reported back as the string argument to this option.
-pub type AnonymousEntity<IdentifierKey> = Option<IdentifierKey>;
+pub type AnonymousEntity = Option<IdentifierKey>;
 
 #[cfg(test)]
 mod tests {

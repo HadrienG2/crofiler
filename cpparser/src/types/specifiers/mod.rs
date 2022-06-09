@@ -6,10 +6,7 @@ pub mod legacy;
 
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
-use crate::{
-    names::{atoms, scopes::IdExpression},
-    EntityParser, IResult,
-};
+use crate::{names::scopes::IdExpression, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
@@ -20,7 +17,7 @@ impl EntityParser {
     pub fn parse_type_specifier<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, TypeSpecifier<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, TypeSpecifier> {
         use nom::{
             character::complete::{space0, space1},
             combinator::opt,
@@ -59,24 +56,16 @@ impl EntityParser {
 }
 
 /// Type specifier
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct TypeSpecifier<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct TypeSpecifier {
     /// CV qualifiers applying to the simple type
     cv: ConstVolatile,
 
     /// Simple type
-    simple_type: SimpleType<IdentifierKey, PathKey>,
+    simple_type: SimpleType,
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<SimpleType<IdentifierKey, PathKey>>,
-    > From<T> for TypeSpecifier<IdentifierKey, PathKey>
-{
+impl<T: Into<SimpleType>> From<T> for TypeSpecifier {
     fn from(simple_type: T) -> Self {
         Self {
             cv: ConstVolatile::default(),
@@ -84,58 +73,30 @@ impl<
         }
     }
 }
-//
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for TypeSpecifier<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
-        Self {
-            cv: Default::default(),
-            simple_type: Default::default(),
-        }
-    }
-}
 
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum SimpleType<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub enum SimpleType {
     /// Id-expressions
-    IdExpression(IdExpression<IdentifierKey, PathKey>),
+    IdExpression(IdExpression),
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for SimpleType<IdentifierKey, PathKey>
-{
+impl Default for SimpleType {
     fn default() -> Self {
         Self::IdExpression(IdExpression::default())
     }
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > From<IdExpression<IdentifierKey, PathKey>> for SimpleType<IdentifierKey, PathKey>
-{
-    fn from(i: IdExpression<IdentifierKey, PathKey>) -> Self {
+impl From<IdExpression> for SimpleType {
+    fn from(i: IdExpression) -> Self {
         Self::IdExpression(i)
     }
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > From<LegacyName> for SimpleType<IdentifierKey, PathKey>
-{
+impl From<LegacyName> for SimpleType {
     fn from(n: LegacyName) -> Self {
         Self::LegacyName(n)
     }
@@ -155,25 +116,13 @@ mod tests {
         // Normal branch
         assert_eq!(
             parser.parse_type_specifier("whatever"),
-            Ok((
-                "",
-                TypeSpecifier {
-                    simple_type: SimpleType::IdExpression(id_expression("whatever")),
-                    ..Default::default()
-                }
-            ))
+            Ok(("", id_expression("whatever").into()))
         );
 
         // Legacy primitive branch
         assert_eq!(
             parser.parse_type_specifier("unsigned int"),
-            Ok((
-                "",
-                TypeSpecifier {
-                    simple_type: SimpleType::LegacyName(LegacyName::UnsignedInt),
-                    ..Default::default()
-                }
-            ))
+            Ok(("", LegacyName::UnsignedInt.into()))
         );
 
         // CV qualifiers are accepted before and after
@@ -183,7 +132,7 @@ mod tests {
                 "",
                 TypeSpecifier {
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
-                    simple_type: SimpleType::LegacyName(LegacyName::UnsignedLong),
+                    simple_type: LegacyName::UnsignedLong.into(),
                 }
             ))
         );
@@ -194,7 +143,7 @@ mod tests {
             Ok((
                 "",
                 TypeSpecifier {
-                    simple_type: SimpleType::IdExpression(id_expression("MyClass")),
+                    simple_type: id_expression("MyClass").into(),
                     cv: ConstVolatile::CONST,
                 }
             ))

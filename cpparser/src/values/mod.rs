@@ -4,7 +4,7 @@ pub mod literals;
 
 use self::literals::Literal;
 use crate::{
-    names::{atoms, scopes::IdExpression, unqualified::UnqualifiedId},
+    names::{scopes::IdExpression, unqualified::UnqualifiedId},
     operators::{usage::NewExpression, Operator},
     EntityParser, IResult,
 };
@@ -26,7 +26,7 @@ impl EntityParser {
         s: &'source str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<'source, ValueLike<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, ValueLike> {
         use nom::{character::complete::space0, multi::many0, sequence::preceded};
         (|s| self.parse_value_header(s, allow_comma, allow_greater))
             .and(
@@ -50,7 +50,7 @@ impl EntityParser {
         s: &'source str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<'source, ValueHeader<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, ValueHeader> {
         use nom::{
             character::complete::{char, space0},
             sequence::{delimited, separated_pair},
@@ -98,7 +98,7 @@ impl EntityParser {
         s: &'source str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<'source, AfterValue<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, AfterValue> {
         use nom::{
             character::complete::{char, space0},
             sequence::{delimited, preceded, separated_pair},
@@ -155,27 +155,19 @@ impl EntityParser {
 /// A value, or something that looks close enough to it
 // FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValueLike<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub struct ValueLike {
     /// Initial value-like entity
-    header: ValueHeader<IdentifierKey, PathKey>,
+    header: ValueHeader,
 
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
-    trailer: Box<[AfterValue<IdentifierKey, PathKey>]>,
+    trailer: Box<[AfterValue]>,
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<ValueHeader<IdentifierKey, PathKey>>,
-    > From<T> for ValueLike<IdentifierKey, PathKey>
-{
-    fn from(literal: T) -> Self {
+impl<T: Into<ValueHeader>> From<T> for ValueLike {
+    fn from(header: T) -> Self {
         Self {
-            header: literal.into(),
+            header: header.into(),
             trailer: Box::default(),
         }
     }
@@ -183,70 +175,62 @@ impl<
 
 /// Values that are not expressions starting with a value
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueHeader<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub enum ValueHeader {
     /// Literal
-    Literal(Literal<IdentifierKey>),
+    Literal(Literal),
 
     /// Value with parentheses around it
-    Parenthesized(Box<ValueLike<IdentifierKey, PathKey>>),
+    Parenthesized(Box<ValueLike>),
 
     /// Unary operator applied to a value
-    UnaryOp(
-        Operator<IdentifierKey, PathKey>,
-        Box<ValueLike<IdentifierKey, PathKey>>,
-    ),
+    UnaryOp(Operator, Box<ValueLike>),
 
     /// New-expression
-    NewExpression(Box<NewExpression<IdentifierKey, PathKey>>),
+    NewExpression(Box<NewExpression>),
 
     /// Named value
-    IdExpression(IdExpression<IdentifierKey, PathKey>),
+    IdExpression(IdExpression),
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-        T: Into<Literal<IdentifierKey>>,
-    > From<T> for ValueHeader<IdentifierKey, PathKey>
-{
-    fn from(literal: T) -> Self {
-        Self::Literal(literal.into())
+impl From<Literal> for ValueHeader {
+    fn from(l: Literal) -> Self {
+        Self::Literal(l)
+    }
+}
+//
+impl From<NewExpression> for ValueHeader {
+    fn from(n: NewExpression) -> Self {
+        Self::NewExpression(Box::new(n))
+    }
+}
+//
+impl From<IdExpression> for ValueHeader {
+    fn from(i: IdExpression) -> Self {
+        Self::IdExpression(i)
     }
 }
 
 /// Things that can come up after a value to form a more complex value
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AfterValue<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+pub enum AfterValue {
     /// Array indexing
-    ArrayIndex(ValueLike<IdentifierKey, PathKey>),
+    ArrayIndex(ValueLike),
 
     /// Function call
-    FunctionCall(Box<[ValueLike<IdentifierKey, PathKey>]>),
+    FunctionCall(Box<[ValueLike]>),
 
     /// Binary operator (OP x)
-    BinaryOp(
-        Operator<IdentifierKey, PathKey>,
-        ValueLike<IdentifierKey, PathKey>,
-    ),
+    BinaryOp(Operator, ValueLike),
 
     /// Ternary operator (? x : y)
-    TernaryOp(
-        ValueLike<IdentifierKey, PathKey>,
-        ValueLike<IdentifierKey, PathKey>,
-    ),
+    TernaryOp(ValueLike, ValueLike),
 
     /// Member access (. stuff)
-    MemberAccess(UnqualifiedId<IdentifierKey, PathKey>),
+    MemberAccess(UnqualifiedId),
 
     /// Postfix operator (++ and -- only in current C++)
-    PostfixOp(Operator<IdentifierKey, PathKey>),
+    PostfixOp(Operator),
 }
 
 #[cfg(test)]
@@ -260,16 +244,17 @@ mod tests {
     fn value_header() {
         let parser = EntityParser::new();
         let parse_value_header = |s| parser.parse_value_header(s, true, true);
+        let literal = |s| unwrap_parse(parser.parse_literal(s));
 
         // Literal
-        assert_eq!(parse_value_header("'@'"), Ok(("", '@'.into())));
+        assert_eq!(parse_value_header("'@'"), Ok(("", literal("'@'").into())));
 
         // Unary operators are supported...
         assert_eq!(
             parse_value_header("&123"),
             Ok((
                 "",
-                ValueHeader::UnaryOp(Symbol::AndRef.into(), Box::new((123u8).into()))
+                ValueHeader::UnaryOp(Symbol::AndRef.into(), Box::new(literal("123").into()))
             ))
         );
 
@@ -279,8 +264,8 @@ mod tests {
             Ok((
                 "",
                 ValueHeader::UnaryOp(
-                    Operator::Conversion(Box::new(unwrap_parse(parser.parse_type_like("T")))),
-                    Box::new(666u16.into())
+                    unwrap_parse(parser.parse_type_like("T")).into(),
+                    Box::new(literal("666").into())
                 )
             ))
         );
@@ -288,7 +273,10 @@ mod tests {
         // Parenthesized values are supported too
         assert_eq!(
             parse_value_header("(42)"),
-            Ok(("", ValueHeader::Parenthesized(Box::new(42u8.into()))))
+            Ok((
+                "",
+                ValueHeader::Parenthesized(Box::new(literal("42").into()))
+            ))
         );
 
         // New expressions too
@@ -316,11 +304,12 @@ mod tests {
     fn after_value() {
         let parser = EntityParser::new();
         let parse_after_value = |s| parser.parse_after_value(s, true, true);
+        let literal = |s| unwrap_parse(parser.parse_literal(s));
 
         // Array indexing
         assert_eq!(
             parse_after_value("[666]"),
-            Ok(("", AfterValue::ArrayIndex(666u16.into()),))
+            Ok(("", AfterValue::ArrayIndex(literal("666").into()),))
         );
 
         // Function call
@@ -328,7 +317,7 @@ mod tests {
             parse_after_value("('c', -5)"),
             Ok((
                 "",
-                AfterValue::FunctionCall(vec!['c'.into(), (-5i8).into()].into()),
+                AfterValue::FunctionCall(vec![literal("'c'").into(), literal("-5").into()].into()),
             ))
         );
 
@@ -337,14 +326,17 @@ mod tests {
             parse_after_value("+42"),
             Ok((
                 "",
-                AfterValue::BinaryOp(Symbol::AddPlus.into(), (42u8).into())
+                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal("42").into())
             ))
         );
 
         // Ternary operator
         assert_eq!(
             parse_after_value("? 123 : 456"),
-            Ok(("", AfterValue::TernaryOp(123u8.into(), 456u16.into())))
+            Ok((
+                "",
+                AfterValue::TernaryOp(literal("123").into(), literal("456").into())
+            ))
         );
 
         // Member access
@@ -375,13 +367,15 @@ mod tests {
         let parser = EntityParser::new();
         let parse_value_like = |s| parser.parse_value_like(s, true, true);
         let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
+        let literal = |s| unwrap_parse(parser.parse_literal(s));
+
         assert_eq!(
             parse_value_like("array[666]"),
             Ok((
                 "",
                 ValueLike {
                     header: ValueHeader::IdExpression(id_expression("array")),
-                    trailer: vec![AfterValue::ArrayIndex(666u16.into())].into(),
+                    trailer: vec![AfterValue::ArrayIndex(literal("666").into())].into(),
                 }
             ))
         );
@@ -392,8 +386,10 @@ mod tests {
                 ValueLike {
                     header: ValueHeader::IdExpression(id_expression("func")),
                     trailer: vec![
-                        AfterValue::FunctionCall(vec![(3u8).into(), 'x'.into()].into()),
-                        AfterValue::ArrayIndex(666u16.into())
+                        AfterValue::FunctionCall(
+                            vec![literal("3").into(), literal("'x'").into()].into()
+                        ),
+                        AfterValue::ArrayIndex(literal("666").into())
                     ]
                     .into(),
                 }

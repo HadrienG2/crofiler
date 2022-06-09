@@ -1,17 +1,13 @@
 //! Handling of hierarchical scopes
 
-use super::{atoms, unqualified::UnqualifiedId};
+use super::unqualified::UnqualifiedId;
 use crate::{functions::FunctionSignature, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{fmt::Debug, path::Path};
 
 impl EntityParser {
     /// Parser for id-expressions (= nested name-specifier + UnqualifiedId)
-    pub fn parse_id_expression<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, IdExpression<atoms::IdentifierKey, crate::PathKey>> {
+    pub fn parse_id_expression<'source>(&self, s: &'source str) -> IResult<'source, IdExpression> {
         use nom::combinator::map_opt;
         map_opt(
             |s| self.parse_proto_id_expression(s),
@@ -28,7 +24,7 @@ impl EntityParser {
     pub fn parse_nested_name_specifier<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, NestedNameSpecifier<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, NestedNameSpecifier> {
         match self.parse_proto_id_expression(s) {
             Ok((_rest, (path, Some((backtrack, _id))))) => Ok((backtrack, path)),
             Ok((rest, (path, None))) => Ok((rest, path)),
@@ -46,16 +42,7 @@ impl EntityParser {
     fn parse_proto_id_expression<'source>(
         &self,
         mut input: &'source str,
-    ) -> IResult<
-        'source,
-        (
-            NestedNameSpecifier<atoms::IdentifierKey, crate::PathKey>,
-            Option<(
-                &'source str,
-                UnqualifiedId<atoms::IdentifierKey, crate::PathKey>,
-            )>,
-        ),
-    > {
+    ) -> IResult<'source, (NestedNameSpecifier, Option<(&'source str, UnqualifiedId)>)> {
         // Truth that the path starts at root scope (with a leading ::)
         let rooted = if let Some(rest) = input.strip_prefix("::") {
             input = rest;
@@ -66,7 +53,7 @@ impl EntityParser {
 
         // Parse sequence of scope_or_unqualified_id, accumulating scopes
         let mut scopes = Vec::new();
-        let make_output = |scopes: Vec<Scope<atoms::IdentifierKey, crate::PathKey>>, id_opt| {
+        let make_output = |scopes: Vec<Scope>, id_opt| {
             (
                 NestedNameSpecifier {
                     rooted,
@@ -102,7 +89,7 @@ impl EntityParser {
     fn parse_scope_or_unqualified_id<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, ScopeOrUnqualifiedId<atoms::IdentifierKey, crate::PathKey>> {
+    ) -> IResult<'source, ScopeOrUnqualifiedId> {
         use nom::combinator::opt;
         use nom_supreme::tag::complete::tag;
         // Parse the initial UnqualifiedId
@@ -134,21 +121,16 @@ impl EntityParser {
 }
 
 /// C++ id-expression
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IdExpression<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct IdExpression {
     /// Hierarchical scope
-    path: NestedNameSpecifier<IdentifierKey, PathKey>,
+    path: NestedNameSpecifier,
 
     /// Unqualified id-expression
-    id: UnqualifiedId<IdentifierKey, PathKey>,
+    id: UnqualifiedId,
 }
 //
-impl<'source, T: Into<UnqualifiedId<&'source str, &'source Path>>> From<T>
-    for IdExpression<&'source str, &'source Path>
-{
+impl<T: Into<UnqualifiedId>> From<T> for IdExpression {
     fn from(id: T) -> Self {
         Self {
             id: id.into(),
@@ -156,79 +138,51 @@ impl<'source, T: Into<UnqualifiedId<&'source str, &'source Path>>> From<T>
         }
     }
 }
-//
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for IdExpression<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
-        Self {
-            path: Default::default(),
-            id: Default::default(),
-        }
-    }
-}
 
 /// A nested name specifier
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NestedNameSpecifier<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NestedNameSpecifier {
     /// Truth that the path starts at the root scope (leading ::)
     rooted: bool,
 
     /// Sequence of inner scopes
-    scopes: Box<[Scope<IdentifierKey, PathKey>]>,
+    scopes: Box<[Scope]>,
 }
 //
-impl<
-        IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-        PathKey: Clone + Debug + PartialEq + Eq,
-    > Default for NestedNameSpecifier<IdentifierKey, PathKey>
-{
-    fn default() -> Self {
+impl<T: Into<Box<[Scope]>>> From<T> for NestedNameSpecifier {
+    fn from(scopes: T) -> Self {
         Self {
-            rooted: Default::default(),
-            scopes: Default::default(),
+            scopes: scopes.into(),
+            ..Default::default()
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-enum ScopeOrUnqualifiedId<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
-    Scope(Scope<IdentifierKey, PathKey>),
-    UnqualifiedId(UnqualifiedId<IdentifierKey, PathKey>),
+enum ScopeOrUnqualifiedId {
+    Scope(Scope),
+    UnqualifiedId(UnqualifiedId),
 }
 //
 /// Scope (namespaces, classes, and anything else to which inner identifiers
 /// could possibly belong) without recursion (that's NestedNameSpecifier).
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Scope<
-    IdentifierKey: Clone + Debug + Default + PartialEq + Eq,
-    PathKey: Clone + Debug + PartialEq + Eq,
-> {
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Scope {
     /// What identifies the scope
-    id: UnqualifiedId<IdentifierKey, PathKey>,
+    id: UnqualifiedId,
 
     /// When functions are scopes containing other entities (which can happen
     /// because lambdas), the function signature will be specified.
-    function_signature: Option<FunctionSignature<IdentifierKey, PathKey>>,
+    function_signature: Option<FunctionSignature>,
 }
 //
-impl<'source, T: Into<UnqualifiedId<&'source str, &'source Path>>> From<T>
-    for Scope<&'source str, &'source Path>
-{
+impl<T: Into<UnqualifiedId>> From<T> for Scope {
     fn from(id: T) -> Self {
         Self {
             id: id.into(),
-            function_signature: None,
+            ..Default::default()
         }
     }
 }
@@ -249,10 +203,7 @@ pub mod tests {
             parser.parse_scope_or_unqualified_id("std::"),
             Ok((
                 "",
-                ScopeOrUnqualifiedId::Scope(Scope {
-                    id: unqualified_id("std"),
-                    function_signature: None
-                })
+                ScopeOrUnqualifiedId::Scope(unqualified_id("std").into())
             ))
         );
 
@@ -284,10 +235,7 @@ pub mod tests {
         let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
         let scopes = |ss: Vec<&str>| {
             ss.into_iter()
-                .map(|s| Scope {
-                    id: unwrap_parse(parser.parse_unqualified_id(s)),
-                    function_signature: None,
-                })
+                .map(|s| unwrap_parse(parser.parse_unqualified_id(s)).into())
                 .collect()
         };
 
@@ -416,10 +364,7 @@ pub mod tests {
         let parser = EntityParser::new();
         let scopes = |ss: Vec<&str>| {
             ss.into_iter()
-                .map(|s| Scope {
-                    id: unwrap_parse(parser.parse_unqualified_id(s)),
-                    function_signature: None,
-                })
+                .map(|s| unwrap_parse(parser.parse_unqualified_id(s)).into())
                 .collect()
         };
         assert_eq!(
