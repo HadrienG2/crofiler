@@ -34,7 +34,7 @@ impl<Item> InternedSequences<Item> {
 pub type SequenceKey = Range<usize>;
 
 /// Interner for sequence of things
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SequenceInterner<Item: Clone + Eq + Hash> {
     /// Number of items that was interned so far
     num_items: usize,
@@ -99,6 +99,12 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
         InternedSequences {
             concatenated: concatenated.into_boxed_slice(),
         }
+    }
+}
+//
+impl<Item: Clone + Eq + Hash> Default for SequenceInterner<Item> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

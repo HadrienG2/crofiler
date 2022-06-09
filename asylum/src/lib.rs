@@ -39,7 +39,7 @@ pub type Key = usize;
 /// Interner for arbitrary things
 //
 // Holds unique items received so far, along with interning order
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Interner<Item: Clone + Eq + Hash>(HashMap<Item, usize>);
 //
 impl<Item: Clone + Eq + Hash> Interner<Item> {
@@ -85,6 +85,12 @@ impl<Item: Clone + Eq + Hash> Interner<Item> {
 
         // ...and we're done
         Interned(items)
+    }
+}
+//
+impl<Item: Clone + Eq + Hash> Default for Interner<Item> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
