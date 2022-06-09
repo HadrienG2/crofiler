@@ -4,7 +4,7 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueLike,
+    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueKey,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -101,7 +101,7 @@ pub enum DeclOperator {
     Reference(Reference),
 
     /// Array declarator, with optional size
-    Array(Option<ValueLike>),
+    Array(Option<ValueKey>),
 
     /// Function declarator
     Function(FunctionSignature),

@@ -6,11 +6,22 @@ use self::literals::Literal;
 use crate::{
     names::{scopes::IdExpression, unqualified::UnqualifiedId},
     operators::{usage::NewExpression, Operator},
-    EntityParser, IResult,
+    Entities, EntityParser, IResult,
 };
+use asylum::lasso::{Key, Spur};
 use nom::Parser;
-use std::fmt::Debug;
 
+/// Interned C++ value key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// values as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a type by passing it to the
+/// value_like() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type ValueKey = Spur;
+//
 impl EntityParser {
     /// Parser recognizing values (and some types that are indistinguishable
     /// from values without extra source code context)
@@ -26,9 +37,9 @@ impl EntityParser {
         s: &'source str,
         allow_comma: bool,
         allow_greater: bool,
-    ) -> IResult<'source, ValueLike> {
+    ) -> IResult<'source, ValueKey> {
         use nom::{character::complete::space0, multi::many0, sequence::preceded};
-        (|s| self.parse_value_header(s, allow_comma, allow_greater))
+        let (rest, result) = (|s| self.parse_value_header(s, allow_comma, allow_greater))
             .and(
                 many0(preceded(space0, |s| {
                     self.parse_after_value(s, allow_comma, allow_greater)
@@ -36,7 +47,16 @@ impl EntityParser {
                 .map(|v| v.into_boxed_slice()),
             )
             .map(|(header, trailer)| ValueLike { header, trailer })
-            .parse(s)
+            .parse(s)?;
+
+        // Intern the value and return the result
+        let key = self.values.borrow_mut().intern(result);
+        Ok((rest, ValueKey::try_from_usize(key).unwrap()))
+    }
+
+    /// Tell how many unique types have been parsed so far
+    pub fn num_values(&self) -> usize {
+        self.values.borrow().len()
     }
 
     /// Like value_like but excluding patterns that start with a value_like
@@ -61,21 +81,16 @@ impl EntityParser {
         let parenthesized_value_like = |s| self.parse_value_like(s, true, true);
         let parenthesized = delimited(
             char('(').and(space0),
-            parenthesized_value_like.map(Box::new),
+            parenthesized_value_like,
             space0.and(char(')')),
         )
         .map(ValueHeader::Parenthesized);
 
         let curr_value_like = |s| self.parse_value_like(s, allow_comma, allow_greater);
-        let unary_op = separated_pair(
-            |s| self.parse_unary_expr_prefix(s),
-            space0,
-            curr_value_like.map(Box::new),
-        )
-        .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
+        let unary_op = separated_pair(|s| self.parse_unary_expr_prefix(s), space0, curr_value_like)
+            .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
-        let new_expression =
-            (|s| self.parse_new_expression(s)).map(|e| ValueHeader::NewExpression(Box::new(e)));
+        let new_expression = (|s| self.parse_new_expression(s)).map(ValueHeader::NewExpression);
 
         let id_expression = (|s| self.parse_id_expression(s)).map(ValueHeader::IdExpression);
 
@@ -151,9 +166,16 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Retrieve a value previously parsed by parse_value_like
+    pub fn value_like(&self, key: ValueKey) -> &ValueLike {
+        self.values.get(key.into_usize())
+    }
+}
 
 /// A value, or something that looks close enough to it
-// FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
+// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ValueLike {
     /// Initial value-like entity
@@ -180,13 +202,13 @@ pub enum ValueHeader {
     Literal(Literal),
 
     /// Value with parentheses around it
-    Parenthesized(Box<ValueLike>),
+    Parenthesized(ValueKey),
 
     /// Unary operator applied to a value
-    UnaryOp(Operator, Box<ValueLike>),
+    UnaryOp(Operator, ValueKey),
 
     /// New-expression
-    NewExpression(Box<NewExpression>),
+    NewExpression(NewExpression),
 
     /// Named value
     IdExpression(IdExpression),
@@ -200,7 +222,7 @@ impl From<Literal> for ValueHeader {
 //
 impl From<NewExpression> for ValueHeader {
     fn from(n: NewExpression) -> Self {
-        Self::NewExpression(Box::new(n))
+        Self::NewExpression(n)
     }
 }
 //
@@ -215,16 +237,16 @@ impl From<IdExpression> for ValueHeader {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AfterValue {
     /// Array indexing
-    ArrayIndex(ValueLike),
+    ArrayIndex(ValueKey),
 
     /// Function call
-    FunctionCall(Box<[ValueLike]>),
+    FunctionCall(Box<[ValueKey]>),
 
     /// Binary operator (OP x)
-    BinaryOp(Operator, ValueLike),
+    BinaryOp(Operator, ValueKey),
 
     /// Ternary operator (? x : y)
-    TernaryOp(ValueLike, ValueLike),
+    TernaryOp(ValueKey, ValueKey),
 
     /// Member access (. stuff)
     MemberAccess(UnqualifiedId),

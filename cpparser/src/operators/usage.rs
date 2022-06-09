@@ -1,7 +1,7 @@
 //! Operator-related grammar that is only used when parsing expressions
 
 use super::{Operator, Symbol};
-use crate::{types::TypeLike, values::ValueLike, EntityParser, IResult};
+use crate::{types::TypeKey, values::ValueKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -39,7 +39,7 @@ impl EntityParser {
             |s| self.parse_type_like(s),
             space0.and(char(')')),
         )
-        .map(|ty| Operator::Conversion(Box::new(ty)));
+        .map(Operator::Conversion);
 
         // Must parse inc/dec before unary_symbol to prevent under-parsing
         ((cast.or(Self::parse_increment_decrement).or(unary_symbol)).terminated(space0))
@@ -138,21 +138,20 @@ impl EntityParser {
 }
 
 /// New expression, i.e. usage of the new operator
-// FIXME: This type appears in Box<T>, intern that once data is owned
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NewExpression {
     /// Whether this new expression is rooted (starts with ::), which means that
     /// class-specific replacements will be ignored
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<Box<[ValueLike]>>,
+    placement: Option<Box<[ValueKey]>>,
 
     /// Type of values being created
-    ty: TypeLike,
+    ty: TypeKey,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<Box<[ValueLike]>>,
+    constructor: Option<Box<[ValueKey]>>,
 }
 
 #[cfg(test)]

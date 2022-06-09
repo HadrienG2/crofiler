@@ -10,10 +10,17 @@ pub mod templates;
 pub mod types;
 pub mod values;
 
-use crate::types::specifiers::legacy::{self, LegacyName};
+use crate::{
+    types::{
+        specifiers::legacy::{self, LegacyName},
+        TypeKey, TypeLike,
+    },
+    values::ValueLike,
+};
 use asylum::{
     lasso::{Rodeo, RodeoResolver},
     path::{InternedPath, InternedPaths, PathInterner, PathKey},
+    Interned, Interner,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -36,23 +43,31 @@ pub type Error<I> = nom::error::Error<I>;
 // - Retrieval methods and unique entry count (for Entities)
 //
 pub struct EntityParser {
-    /// Interned identifiers
-    identifiers: RefCell<Rodeo>,
-
     /// Legacy name parser
     legacy_name_parser: Box<dyn Fn(&str) -> IResult<LegacyName>>,
 
+    /// Interned identifiers
+    identifiers: RefCell<Rodeo>,
+
     /// Interned file paths
     paths: RefCell<PathInterner>,
+
+    /// Interned types
+    types: RefCell<Interner<TypeLike>>,
+
+    /// Interned values
+    values: RefCell<Interner<ValueLike>>,
 }
 //
 impl EntityParser {
     /// Set up the parser
     pub fn new() -> Self {
         Self {
+            legacy_name_parser: Box::new(legacy::legacy_name_parser()),
             identifiers: Default::default(),
             paths: Default::default(),
-            legacy_name_parser: Box::new(legacy::legacy_name_parser()),
+            types: Default::default(),
+            values: Default::default(),
         }
     }
 
@@ -80,10 +95,7 @@ impl EntityParser {
     }
 
     /// Parse a C++ entity
-    pub fn parse_entity<'source>(
-        &self,
-        s: &'source str,
-    ) -> IResult<'source, Option<types::TypeLike>> {
+    pub fn parse_entity<'source>(&self, s: &'source str) -> IResult<'source, Option<TypeKey>> {
         use nom::combinator::eof;
         let type_like = (|s| self.parse_type_like(s)).map(Some);
         let unknown = Self::parse_unknown_entity.value(None);
@@ -95,6 +107,8 @@ impl EntityParser {
         Entities {
             identifiers: self.identifiers.into_inner().into_resolver(),
             paths: self.paths.into_inner().finalize(),
+            types: self.types.into_inner().finalize(),
+            values: self.values.into_inner().finalize(),
         }
     }
 }
@@ -113,6 +127,12 @@ pub struct Entities {
 
     /// Paths
     paths: InternedPaths,
+
+    /// Types
+    types: Interned<TypeLike>,
+
+    /// Values
+    values: Interned<ValueLike>,
 }
 //
 impl Entities {

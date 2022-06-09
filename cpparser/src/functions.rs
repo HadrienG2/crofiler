@@ -3,9 +3,9 @@
 use crate::{
     types::{
         qualifiers::{ConstVolatile, Reference},
-        TypeLike,
+        TypeKey,
     },
-    values::ValueLike,
+    values::ValueKey,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -17,7 +17,7 @@ impl EntityParser {
     pub fn parse_function_call<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, Box<[ValueLike]>> {
+    ) -> IResult<'source, Box<[ValueKey]>> {
         function_parameters(s, |s| self.parse_value_like(s, false, true))
     }
 
@@ -58,7 +58,7 @@ impl EntityParser {
     }
 
     /// Parser recognizing the noexcept qualifier and its optional argument
-    fn parse_noexcept<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueLike>> {
+    fn parse_noexcept<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueKey>> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -80,7 +80,7 @@ impl EntityParser {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct FunctionSignature {
     /// Parameter types
-    parameters: Box<[TypeLike]>,
+    parameters: Box<[TypeKey]>,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -93,13 +93,13 @@ pub struct FunctionSignature {
     /// The first layer of Option represents presence or absence of the
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
-    noexcept: Option<Option<ValueLike>>,
+    noexcept: Option<Option<ValueKey>>,
 
     /// Trailing return type
-    trailing_return: Option<TypeLike>,
+    trailing_return: Option<TypeKey>,
 }
 //
-impl<T: Into<Box<[TypeLike]>>> From<T> for FunctionSignature {
+impl<T: Into<Box<[TypeKey]>>> From<T> for FunctionSignature {
     fn from(parameters: T) -> Self {
         Self {
             parameters: parameters.into(),

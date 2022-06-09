@@ -3,13 +3,13 @@
 pub mod overloads;
 pub mod usage;
 
-use crate::{names::atoms::IdentifierKey, types::TypeLike, EntityParser, IResult};
+use crate::{names::atoms::IdentifierKey, types::TypeKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
 
 /// C++ operators that can be overloaded
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Operator {
     /// Basic grammar followed by most operators: a symbol that can appear
     /// twice, optionally followed by an equality sign.
@@ -55,7 +55,7 @@ pub enum Operator {
     CoAwait,
 
     /// Type conversion operator ("operator <type>")
-    Conversion(Box<TypeLike>),
+    Conversion(TypeKey),
 }
 //
 impl From<Symbol> for Operator {
@@ -68,9 +68,9 @@ impl From<Symbol> for Operator {
     }
 }
 //
-impl From<TypeLike> for Operator {
-    fn from(t: TypeLike) -> Self {
-        Self::Conversion(Box::new(t))
+impl From<TypeKey> for Operator {
+    fn from(t: TypeKey) -> Self {
+        Self::Conversion(t)
     }
 }
 

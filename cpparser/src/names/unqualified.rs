@@ -5,7 +5,7 @@ use crate::{
     names::atoms::IdentifierKey,
     operators::Operator,
     templates::TemplateParameters,
-    values::ValueLike,
+    values::ValueKey,
     EntityParser, IResult,
 };
 use nom::Parser;
@@ -49,7 +49,6 @@ impl EntityParser {
             |s| self.parse_value_like(s, false, true),
             space0.and(char(')')),
         )
-        .map(Box::new)
         .map(UnqualifiedId::Decltype);
 
         // Anonymous entities to which clang gives a name
@@ -104,7 +103,7 @@ pub enum UnqualifiedId {
     },
 
     /// A decltype(<value>) expression
-    Decltype(Box<ValueLike>),
+    Decltype(ValueKey),
 
     /// A lambda function, with source location information
     Lambda(Lambda),

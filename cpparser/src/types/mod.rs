@@ -5,15 +5,26 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{values::ValueLike, EntityParser, IResult};
+use crate::{values::ValueKey, Entities, EntityParser, IResult};
+use asylum::lasso::{Key, Spur};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
 
+/// Interned C++ type key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// types as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a type by passing it to the
+/// type_like() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type TypeKey = Spur;
+//
 impl EntityParser {
     /// Parser recognizing types (and some values that are indistinguishable from
     /// types without extra context).
-    pub fn parse_type_like<'source>(&self, s: &'source str) -> IResult<'source, TypeLike> {
+    pub fn parse_type_like<'source>(&self, s: &'source str) -> IResult<'source, TypeKey> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -30,7 +41,7 @@ impl EntityParser {
         .map(Option::unwrap_or_default);
 
         // Then come the type specifier and declarator
-        tuple((
+        let (rest, result) = tuple((
             attributes.terminated(space0),
             (|s| self.parse_type_specifier(s)).terminated(space0),
             |s| self.parse_declarator(s),
@@ -40,16 +51,32 @@ impl EntityParser {
             type_specifier,
             declarator,
         })
-        .parse(s)
+        .parse(s)?;
+
+        // Intern the type and return the result
+        let key = self.types.borrow_mut().intern(result);
+        Ok((rest, TypeKey::try_from_usize(key).unwrap()))
+    }
+
+    /// Tell how many unique types have been parsed so far
+    pub fn num_types(&self) -> usize {
+        self.types.borrow().len()
+    }
+}
+//
+impl Entities {
+    /// Retrieve a type previously parsed by parse_type_like
+    pub fn type_like(&self, key: TypeKey) -> &TypeLike {
+        self.types.get(key.into_usize())
     }
 }
 
 /// A type name, or something looking close enough to it
-// FIXME: This type appears in Box<T> and Box<[T]>, intern those once data is owned
+// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
-    attributes: Box<[ValueLike]>,
+    attributes: Box<[ValueKey]>,
 
     /// Type specifier
     type_specifier: TypeSpecifier,

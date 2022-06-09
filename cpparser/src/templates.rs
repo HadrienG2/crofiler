@@ -1,6 +1,6 @@
 //! Things that could be templates
 
-use crate::{types::TypeLike, values::ValueLike, EntityParser, IResult};
+use crate::{types::TypeKey, values::ValueKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
@@ -58,25 +58,13 @@ pub type TemplateParameters = Option<Box<[TemplateParameter]>>;
 
 /// Template parameter
 // FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TemplateParameter {
     /// Type or value looking close enough to a type
-    TypeLike(TypeLike),
+    TypeLike(TypeKey),
 
     /// Value
-    ValueLike(ValueLike),
-}
-//
-impl From<ValueLike> for TemplateParameter {
-    fn from(v: ValueLike) -> Self {
-        Self::ValueLike(v)
-    }
-}
-//
-impl From<TypeLike> for TemplateParameter {
-    fn from(t: TypeLike) -> Self {
-        Self::TypeLike(t)
-    }
+    ValueLike(ValueKey),
 }
 
 #[cfg(test)]
