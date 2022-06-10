@@ -91,7 +91,7 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
 
     /// Truth that no sequence has been interned yet
     pub fn is_empty(&self) -> bool {
-        self.sequences.is_empty()
+        self.len() == 0
     }
 
     /// Query number of interned sequences
@@ -149,7 +149,7 @@ pub(crate) mod tests {
     fn initial() {
         let interner = TestedInterner::new();
         assert_eq!(interner.num_items(), 0);
-        assert!(interner.sequences.is_empty());
+        assert!(interner.is_empty());
         test_final_state(&[], interner);
     }
 
