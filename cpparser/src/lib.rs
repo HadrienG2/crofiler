@@ -8,6 +8,7 @@ pub mod names;
 pub mod operators;
 pub mod templates;
 pub mod types;
+mod utilities;
 pub mod values;
 
 use crate::{
@@ -15,16 +16,19 @@ use crate::{
         specifiers::legacy::{self, LegacyName},
         TypeKey, TypeLike,
     },
+    utilities::RecursiveSequenceInterner,
     values::{ValueKey, ValueLike},
 };
 use asylum::{
     lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
     path::{self, InternedPath, InternedPaths, PathInterner},
+    sequence::InternedSequences,
     Interned, Interner,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::{cell::RefCell, fmt::Debug};
+use templates::{TemplateParameter, TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS};
 
 /// Re-export asylum version in use
 pub use asylum;
@@ -83,6 +87,13 @@ pub struct EntityParser {
 
     /// Interned values
     values: RefCell<Interner<ValueLike, ValueKey>>,
+
+    /// Interned template parameter sets
+    template_parameter_sets: RecursiveSequenceInterner<
+        TemplateParameter,
+        TemplateParametersKeyImpl,
+        TEMPLATE_PARAMETERS_LEN_BITS,
+    >,
 }
 //
 impl EntityParser {
@@ -94,6 +105,7 @@ impl EntityParser {
             paths: Default::default(),
             types: Default::default(),
             values: Default::default(),
+            template_parameter_sets: Default::default(),
         }
     }
 
@@ -140,6 +152,7 @@ impl EntityParser {
             paths: self.paths.into_inner().finalize(),
             types: self.types.into_inner().finalize(),
             values: self.values.into_inner().finalize(),
+            template_parameter_sets: self.template_parameter_sets.into_inner().finalize(),
         }
     }
 }
@@ -164,6 +177,13 @@ pub struct Entities {
 
     /// Values
     values: Interned<ValueLike, ValueKey>,
+
+    /// Interned template parameter sets
+    template_parameter_sets: InternedSequences<
+        TemplateParameter,
+        TemplateParametersKeyImpl,
+        TEMPLATE_PARAMETERS_LEN_BITS,
+    >,
 }
 //
 impl Entities {

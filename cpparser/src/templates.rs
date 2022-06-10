@@ -1,10 +1,26 @@
 //! Things that could be templates
 
-use crate::{types::TypeKey, values::ValueKey, EntityParser, IResult};
+use crate::{types::TypeKey, values::ValueKey, Entities, EntityParser, IResult};
+use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
 
+/// Interned template parameter set key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// template parameter sets as long as both keys were produced by the same
+/// EntityParser.
+///
+/// After parsing, you can retrieve a template parameter set by passing this key
+/// to the template_parameters() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type TemplateParametersKey =
+    SequenceKey<TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS>;
+pub(crate) type TemplateParametersKeyImpl = Spur;
+pub(crate) const TEMPLATE_PARAMETERS_LEN_BITS: u32 = 8;
+//
 impl EntityParser {
     /// Parser for unqualified id-expressions
     pub fn parse_template_parameters<'source>(
@@ -13,17 +29,40 @@ impl EntityParser {
     ) -> IResult<'source, TemplateParameters> {
         use nom::{
             character::complete::{char, space0},
-            multi::separated_list0,
-            sequence::delimited,
+            sequence::preceded,
         };
-        use nom_supreme::tag::complete::tag;
-        let arguments = separated_list0(space0.and(char(',')).and(space0), |s| {
-            self.parse_template_parameter(s)
-        });
-        (delimited(char('<').and(space0), arguments, space0.and(char('>')))
-            .map(|v| Some(v.into_boxed_slice())))
-        .or(tag("<, void>").value(None))
-        .parse(s)
+        use nom_supreme::{multi::parse_separated_terminated, tag::complete::tag};
+
+        let non_empty_arguments = preceded(
+            char('<').and(space0),
+            parse_separated_terminated(
+                |s| self.parse_template_parameter(s),
+                space0.and(char(',')).and(space0),
+                space0.and(char('>')),
+                || self.template_parameter_sets.entry(),
+                |mut entry, item| {
+                    entry.push(item);
+                    entry
+                },
+            ),
+        )
+        .map(|entry| entry.intern());
+
+        let empty_arguments = tag("<>").map(|_| self.template_parameter_sets.entry().intern());
+
+        ((non_empty_arguments.or(empty_arguments)).map(Some))
+            .or(tag("<, void>").value(None))
+            .parse(s)
+    }
+
+    /// Total number of template parameters across all interned template parameter sets so far
+    pub fn num_template_parameters(&self) -> usize {
+        self.template_parameter_sets.borrow().num_items()
+    }
+
+    /// Maximal number of template parameters
+    pub fn max_template_parameter_set_len(&self) -> Option<usize> {
+        self.template_parameter_sets.borrow().max_sequence_len()
     }
 
     /// Parser recognizing a single template parameter/argument
@@ -48,16 +87,22 @@ impl EntityParser {
         type_like.or(value_like).parse(s)
     }
 }
+//
+impl Entities {
+    /// Retrieve a previously interned template parameter set
+    pub fn template_parameters(&self, key: TemplateParametersKey) -> &[TemplateParameter] {
+        self.template_parameter_sets.get(key)
+    }
+}
 
 /// Set of template parameters
 ///
 /// None means that a known invalid template parameter set printout from clang,
 /// such as "<, void>", was encountered.
 ///
-pub type TemplateParameters = Option<Box<[TemplateParameter]>>;
+pub type TemplateParameters = Option<TemplateParametersKey>;
 
 /// Template parameter
-// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TemplateParameter {
     /// Type or value looking close enough to a type
