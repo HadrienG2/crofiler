@@ -48,7 +48,8 @@ impl EntityParser {
         )
         .map(|entry| entry.intern());
 
-        let empty_arguments = tag("<>").map(|_| self.template_parameter_sets.entry().intern());
+        let empty_arguments = (char('<').and(space0).and(char('>')))
+            .map(|_| self.template_parameter_sets.entry().intern());
 
         ((non_empty_arguments.or(empty_arguments)).map(Some))
             .or(tag("<, void>").value(None))
