@@ -1,7 +1,7 @@
 //! Utilities for handling file paths
 
-use crate::sequence::{InternedSequences, SequenceInterner};
-use lasso::{MiniSpur, Rodeo, RodeoResolver};
+use crate::sequence::{InternedSequences, SequenceInterner, SequenceKey};
+use lasso::{Key, MiniSpur, Rodeo, RodeoResolver};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -10,22 +10,20 @@ use thiserror::Error;
 
 /// Space- and allocation-efficient collection of file paths
 #[derive(Debug, PartialEq)]
-pub struct InternedPaths {
+pub struct InternedPaths<KeyImpl: Key, const LEN_BITS: u32> {
     /// Interned path components
     components: RodeoResolver<ComponentKey>,
 
     /// Concatened sequence of all interned paths
-    sequences: InternedSequences<ComponentKey>,
+    sequences: InternedSequences<ComponentKey, KeyImpl, LEN_BITS>,
 }
 //
-impl InternedPaths {
+impl<KeyImpl: Key, const LEN_BITS: u32> InternedPaths<KeyImpl, LEN_BITS> {
     /// Retrieve a path, panics if the key is invalid
-    pub fn get(&self, key: PathKey) -> InternedPath {
-        let base = (key & (2u32.pow(24) - 1)) as usize;
-        let len = (key >> 24) as usize;
+    pub fn get(&self, key: PathKey<KeyImpl, LEN_BITS>) -> InternedPath {
         InternedPath {
             components: &self.components,
-            sequence: self.sequences.get(base..base + len),
+            sequence: self.sequences.get(key),
         }
     }
 }
@@ -49,15 +47,8 @@ pub type ComponentKey = MiniSpur;
 /// You can also use it to compare paths more efficiently than via direct string
 /// comparison, as it is guaranteed that if two keys differ, the corresponding
 /// paths differ as well.
-//
-// This is actually a bit-packed SequenceKey. The 8 high-order bits represent
-// the length of the sequence and the 24 low-order bits represent its base.
-// This should work because I'm expecting no more than 2^16 paths, each no
-// longer than 2^8 components long. So the concatenation will be no more than
-// 2^16 * 2^8 = 2^24 components, making the base fit in 24 bits. Adding a 8-bit
-// length to that, everything should fit in 24 + 8 = 32 bits.
-//
-pub type PathKey = u32;
+///
+pub type PathKey<KeyImpl, const LEN_BITS: u32> = SequenceKey<KeyImpl, LEN_BITS>;
 
 /// Accessor to an interned path
 #[derive(Debug, PartialEq)]
@@ -110,6 +101,7 @@ impl<'parent> InternedComponent<'parent> {
     ///
     /// Keys are cheaper to compare than path components, and it is guaranteed
     /// that two path components are equal if an only if a.key() == b.key().
+    ///
     pub fn key(&self) -> ComponentKey {
         self.key
     }
@@ -134,18 +126,18 @@ impl AsRef<Path> for InternedComponent<'_> {
 }
 
 /// Writable collection of file paths, meant to ultimately become InternedPaths
-pub struct PathInterner {
+pub struct PathInterner<KeyImpl: Key, const LEN_BITS: u32> {
     /// Interner for individual path components
     components: Rodeo<ComponentKey>,
 
     /// Interner for the sequences of interned components that make up a path
-    sequences: SequenceInterner<ComponentKey>,
+    sequences: SequenceInterner<ComponentKey, KeyImpl, LEN_BITS>,
 
     /// Cached allocation for the current sequence
     current_sequence: Vec<ComponentKey>,
 }
 //
-impl PathInterner {
+impl<KeyImpl: Key, const LEN_BITS: u32> PathInterner<KeyImpl, LEN_BITS> {
     /// Set up a path interner
     pub fn new() -> Self {
         Self {
@@ -156,7 +148,7 @@ impl PathInterner {
     }
 
     /// Record a new file path, return an error if the path is relative
-    pub fn intern(&mut self, path: &str) -> Result<PathKey, PathError> {
+    pub fn intern(&mut self, path: &str) -> Result<PathKey<KeyImpl, LEN_BITS>, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);
 
@@ -192,17 +184,8 @@ impl PathInterner {
             }
         }
 
-        // Intern the sequence that makes up the path, and compress the key
-        // according to our expectations.
-        let sequence_key = self.sequences.intern(&self.current_sequence[..]);
-        assert!(
-            sequence_key.start < 2usize.pow(24),
-            "Unexpected number of interned path components"
-        );
-        let path_len = sequence_key.end - sequence_key.start;
-        assert!(path_len < 2usize.pow(8), "Unexpected path length");
-        let key = sequence_key.start as u32 | ((path_len as u32) << 24);
-        Ok(key)
+        // Intern the sequence that makes up the path
+        Ok(self.sequences.intern(&self.current_sequence[..]))
     }
 
     /// Truth that no path has been interned yet
@@ -220,8 +203,13 @@ impl PathInterner {
         self.sequences.num_items()
     }
 
+    /// Query maximal inner sequence length
+    pub fn max_path_len(&self) -> Option<usize> {
+        self.sequences.max_sequence_len()
+    }
+
     /// Finalize the collection of paths, keeping all keys valid
-    pub fn finalize(self) -> InternedPaths {
+    pub fn finalize(self) -> InternedPaths<KeyImpl, LEN_BITS> {
         InternedPaths {
             components: self.components.into_resolver(),
             sequences: self.sequences.finalize(),
@@ -229,7 +217,7 @@ impl PathInterner {
     }
 }
 //
-impl Default for PathInterner {
+impl<KeyImpl: Key, const LEN_BITS: u32> Default for PathInterner<KeyImpl, LEN_BITS> {
     fn default() -> Self {
         Self::new()
     }
@@ -254,7 +242,10 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_ne};
     use std::collections::{HashMap, HashSet};
 
-    fn extract_components(interner: &PathInterner) -> HashMap<ComponentKey, String> {
+    type TestedKey = PathKey<lasso::Spur, 8>;
+    type TestedInterner = PathInterner<lasso::Spur, 8>;
+
+    fn extract_components(interner: &TestedInterner) -> HashMap<ComponentKey, String> {
         interner
             .components
             .iter()
@@ -264,7 +255,7 @@ mod tests {
 
     // Assuming an interner has a good starting state, check that finalization
     // and access to the interned paths works well.
-    fn finalize_and_check(interner: PathInterner, inputs: &[(Vec<&OsStr>, PathKey)]) {
+    fn finalize_and_check(interner: TestedInterner, inputs: &[(Vec<&OsStr>, TestedKey)]) {
         // Save interner contents, then finalize interned paths
         let expected_components = extract_components(&interner);
         let interned_paths = interner.finalize();
@@ -305,7 +296,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let interner = PathInterner::new();
+        let interner = TestedInterner::new();
         assert!(interner.components.is_empty());
         assert!(interner.sequences.is_empty());
         finalize_and_check(interner, &[]);
@@ -319,7 +310,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Intern the path
-        let mut interner = PathInterner::new();
+        let mut interner = TestedInterner::new();
         let key = interner.intern(path).unwrap();
 
         // Check basic interner state
@@ -356,7 +347,7 @@ mod tests {
         let components2 = components(path2);
 
         // Intern the first path
-        let mut interner = PathInterner::new();
+        let mut interner = TestedInterner::new();
         let key1 = interner.intern(path1).unwrap();
 
         // Back up the interner state

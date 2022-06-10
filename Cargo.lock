@@ -117,7 +117,7 @@ name = "clang-time-trace"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
- "asylum",
+ "cpparser",
  "maplit",
  "more-asserts",
  "pretty_assertions",

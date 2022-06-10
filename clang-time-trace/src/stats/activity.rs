@@ -2,8 +2,11 @@
 //! be doing at a point in time
 
 use super::ArgParseError;
-use crate::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
-use asylum::path::{PathError, PathInterner, PathKey};
+use crate::{
+    ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent},
+    PathError, PathKey,
+};
+use cpparser::EntityParser;
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
@@ -32,10 +35,7 @@ impl ActivityStat {
     }
 
     /// Decode a TraceEvent which is expected to contain a timed activity
-    pub fn parse(
-        t: TraceEvent,
-        path_interner: &mut PathInterner,
-    ) -> Result<Self, ActivityStatParseError> {
+    pub fn parse(t: TraceEvent, parser: &EntityParser) -> Result<Self, ActivityStatParseError> {
         match t {
             TraceEvent::X {
                 duration_event:
@@ -53,7 +53,7 @@ impl ActivityStat {
                 tdur: None,
                 end_stack_trace: None,
             } => {
-                let activity = Activity::parse(name, args, path_interner)?;
+                let activity = Activity::parse(name, args, parser)?;
                 Ok(Self {
                     activity,
                     start: ts,
@@ -228,7 +228,7 @@ impl Activity {
     fn parse(
         name: Box<str>,
         args: Option<HashMap<Box<str>, json::Value>>,
-        path_interner: &mut PathInterner,
+        parser: &EntityParser,
     ) -> Result<Self, ActivityParseError> {
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
@@ -249,10 +249,10 @@ impl Activity {
                 Ok(constructor(detail_arg()?))
             };
         //
-        let mut fill_path_arg =
+        let fill_path_arg =
             |constructor: fn(PathKey) -> Activity| -> Result<Activity, ActivityParseError> {
                 let path: &str = &detail_arg()?;
-                Ok(constructor(path_interner.intern(path)?))
+                Ok(constructor(parser.path_to_key(path)))
             };
 
         // Parse the activity name and parse arguments accordingly
@@ -398,7 +398,7 @@ mod tests {
         args: Option<HashMap<Box<str>, json::Value>>,
         expected: &Activity,
         expected_arg: &ActivityArgument,
-        path_interner: &mut PathInterner,
+        parser: &EntityParser,
     ) {
         // Check name and argument accessors
         assert_eq!(expected.name(), name);
@@ -407,7 +407,7 @@ mod tests {
         // Check direct Activity parsing
         let name = Box::<str>::from(name);
         assert_eq!(
-            Activity::parse(name.clone(), args.clone(), path_interner),
+            Activity::parse(name.clone(), args.clone(), parser),
             Ok(expected.clone())
         );
 
@@ -440,10 +440,7 @@ mod tests {
 
         // Valid ActivityStat input
         assert_eq!(
-            ActivityStat::parse(
-                make_event(true, 1, 0, None, None, None, None, None),
-                path_interner
-            ),
+            ActivityStat::parse(make_event(true, 1, 0, None, None, None, None, None), parser),
             Ok(ActivityStat {
                 activity: expected.clone(),
                 start,
@@ -452,9 +449,9 @@ mod tests {
         );
 
         // Invalid inputs
-        let mut test_bad_input = |input: TraceEvent| {
+        let test_bad_input = |input: TraceEvent| {
             assert_eq!(
-                ActivityStat::parse(input.clone(), path_interner),
+                ActivityStat::parse(input.clone(), parser),
                 Err(ActivityStatParseError::UnexpectedInput(input))
             )
         };
@@ -506,36 +503,30 @@ mod tests {
 
     #[test]
     fn unknown_activity() {
-        let mut path_interner = PathInterner::new();
+        let parser = EntityParser::new();
         let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
-            Activity::parse(activity.clone(), None, &mut path_interner),
+            Activity::parse(activity.clone(), None, &parser),
             Err(ActivityParseError::UnknownActivity(activity))
         );
     }
 
     fn nullary_test(name: &str, a: Activity) {
         // Test two different ways of passing no arguments
-        let mut path_interner = PathInterner::new();
-        test_valid_activity(
-            name,
-            None,
-            &a,
-            &ActivityArgument::Nothing,
-            &mut path_interner,
-        );
+        let parser = EntityParser::new();
+        test_valid_activity(name, None, &a, &ActivityArgument::Nothing, &parser);
         test_valid_activity(
             name,
             Some(HashMap::new()),
             &a,
             &ActivityArgument::Nothing,
-            &mut path_interner,
+            &parser,
         );
 
         // Add an undesired detail argument
         let args = maplit::hashmap! { "detail".into() => json::json!("") };
         assert_eq!(
-            Activity::parse(name.into(), Some(args.clone()), &mut path_interner),
+            Activity::parse(name.into(), Some(args.clone()), &parser),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(args)
             ))
@@ -585,7 +576,7 @@ mod tests {
         arg: &str,
         expected: Activity,
         expected_argument: ActivityArgument,
-        mut path_interner: PathInterner,
+        parser: EntityParser,
     ) {
         // Test happy path
         let name = Box::<str>::from(name);
@@ -595,7 +586,7 @@ mod tests {
             Some(good_args.clone()),
             &expected,
             &expected_argument,
-            &mut path_interner,
+            &parser,
         );
 
         // Try not providing the requested argument
@@ -603,11 +594,11 @@ mod tests {
             "detail",
         )));
         assert_eq!(
-            Activity::parse(name.clone(), None, &mut path_interner),
+            Activity::parse(name.clone(), None, &parser),
             missing_arg_error
         );
         assert_eq!(
-            Activity::parse(name.clone(), Some(HashMap::new()), &mut path_interner),
+            Activity::parse(name.clone(), Some(HashMap::new()), &parser),
             missing_arg_error
         );
 
@@ -615,7 +606,7 @@ mod tests {
         let bad_value = json::json!(42usize);
         let bad_arg_value = maplit::hashmap! { "detail".into() => bad_value.clone() };
         assert_eq!(
-            Activity::parse(name.clone(), Some(bad_arg_value), &mut path_interner),
+            Activity::parse(name.clone(), Some(bad_arg_value), &parser),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedValue("detail", bad_value)
             ))
@@ -625,7 +616,7 @@ mod tests {
         let mut bad_arg = good_args.clone();
         bad_arg.insert("wat".into(), json::json!(""));
         assert_eq!(
-            Activity::parse(name, Some(bad_arg.clone()), &mut path_interner),
+            Activity::parse(name, Some(bad_arg.clone()), &parser),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
             ))
@@ -636,14 +627,14 @@ mod tests {
     fn source() {
         const PATH: &'static str =
             "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
-        let mut path_interner = PathInterner::new();
-        let key = path_interner.intern(PATH).unwrap();
+        let parser = EntityParser::new();
+        let key = parser.path_to_key(PATH);
         unary_test(
             "Source",
             PATH,
             Activity::Source(key.clone()),
             ActivityArgument::FilePath(key),
-            path_interner,
+            parser,
         );
     }
 
@@ -655,7 +646,7 @@ mod tests {
             CLASS,
             Activity::ParseClass(CLASS.into()),
             ActivityArgument::CppEntity(CLASS.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -667,7 +658,7 @@ mod tests {
             CLASS,
             Activity::InstantiateClass(CLASS.into()),
             ActivityArgument::CppEntity(CLASS.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -679,7 +670,7 @@ mod tests {
             TEMPLATE,
             Activity::ParseTemplate(TEMPLATE.into()),
             ActivityArgument::CppEntity(TEMPLATE.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -691,7 +682,7 @@ mod tests {
             FUNCTION,
             Activity::InstantiateFunction(FUNCTION.into()),
             ActivityArgument::CppEntity(FUNCTION.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -703,7 +694,7 @@ mod tests {
             TYPE,
             Activity::DebugType(TYPE.into()),
             ActivityArgument::CppEntity(TYPE.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -715,7 +706,7 @@ mod tests {
             VAR,
             Activity::DebugGlobalVariable(VAR.into()),
             ActivityArgument::CppEntity(VAR.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -728,7 +719,7 @@ mod tests {
             FUNCTION,
             Activity::CodeGenFunction(FUNCTION.into()),
             ActivityArgument::CppEntity(FUNCTION.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -740,7 +731,7 @@ mod tests {
             FUNCTION,
             Activity::DebugFunction(FUNCTION.into()),
             ActivityArgument::CppEntity(FUNCTION.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -752,7 +743,7 @@ mod tests {
             PASS,
             Activity::RunPass(PASS.into()),
             ActivityArgument::String(PASS.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -764,7 +755,7 @@ mod tests {
             FUNCTION,
             Activity::OptFunction(FUNCTION.into()),
             ActivityArgument::MangledSymbol(FUNCTION.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -776,7 +767,7 @@ mod tests {
             PASS,
             Activity::RunLoopPass(PASS.into()),
             ActivityArgument::String(PASS.into()),
-            PathInterner::new(),
+            EntityParser::new(),
         );
     }
 
@@ -784,14 +775,14 @@ mod tests {
     fn opt_module() {
         const MODULE: &'static str =
             "/mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp";
-        let mut path_interner = PathInterner::new();
-        let key = path_interner.intern(MODULE).unwrap();
+        let parser = EntityParser::new();
+        let key = parser.path_to_key(MODULE);
         unary_test(
             "OptModule",
             MODULE,
             Activity::OptModule(key.clone()),
             ActivityArgument::FilePath(key),
-            path_interner,
+            parser,
         );
     }
 }

@@ -15,7 +15,7 @@ use nom_supreme::ParserExt;
 /// You can compare two keys as a cheaper alternative to comparing two
 /// types as long as both keys were produced by the same EntityParser.
 ///
-/// After parsing, you can retrieve a type by passing it to the
+/// After parsing, you can retrieve a type by passing this key to the
 /// type_like() method of the Entities struct.
 ///
 // TODO: Adjust key size based on observed entry count

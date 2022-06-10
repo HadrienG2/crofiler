@@ -18,19 +18,35 @@ use crate::{
     values::{ValueKey, ValueLike},
 };
 use asylum::{
-    lasso::{Rodeo, RodeoResolver},
-    path::{InternedPath, InternedPaths, PathInterner, PathKey},
+    lasso::{Rodeo, RodeoResolver, Spur},
+    path::{self, InternedPath, InternedPaths, PathInterner},
     Interned, Interner,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::{cell::RefCell, fmt::Debug};
 
+/// Re-export asylum version in use
+pub use asylum;
+
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
 /// Error type used by C++ syntax parsers
 pub type Error<I> = nom::error::Error<I>;
+
+/// Interned file path key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// identifiers as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a path by passing this key to the
+/// path() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
+type PathKeyImpl = Spur;
+const PATH_LEN_BITS: u32 = 8;
 
 /// Parser for C++ entities
 //
@@ -50,7 +66,7 @@ pub struct EntityParser {
     identifiers: RefCell<Rodeo>,
 
     /// Interned file paths
-    paths: RefCell<PathInterner>,
+    paths: RefCell<PathInterner<PathKeyImpl, PATH_LEN_BITS>>,
 
     /// Interned types
     types: RefCell<Interner<TypeLike, TypeKey>>,
@@ -94,6 +110,11 @@ impl EntityParser {
         self.paths.borrow().num_components()
     }
 
+    /// Query maximal path length
+    pub fn max_path_len(&self) -> Option<usize> {
+        self.paths.borrow().max_path_len()
+    }
+
     /// Parse a C++ entity
     pub fn parse_entity<'source>(&self, s: &'source str) -> IResult<'source, Option<TypeKey>> {
         use nom::combinator::eof;
@@ -126,7 +147,7 @@ pub struct Entities {
     identifiers: RodeoResolver,
 
     /// Paths
-    paths: InternedPaths,
+    paths: InternedPaths<PathKeyImpl, PATH_LEN_BITS>,
 
     /// Types
     types: Interned<TypeLike, TypeKey>,

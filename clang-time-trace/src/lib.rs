@@ -13,7 +13,7 @@ use self::{
     stats::activity::ActivityStat,
     tree::{ActivityTree, ActivityTreeBuilder},
 };
-use asylum::path::{InternedPaths, PathInterner};
+use cpparser::{Entities, EntityParser};
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -35,7 +35,10 @@ pub use self::{
     },
     tree::{ActivityTrace, ActivityTreeError},
 };
-pub use asylum::path::{ComponentKey, InternedComponent, InternedPath, PathError, PathKey};
+pub use cpparser::{
+    asylum::path::{ComponentKey, InternedComponent, InternedPath, PathError},
+    PathKey,
+};
 pub use json::Error as CtfParseError;
 
 /// Simplified -ftime-trace profile from a clang execution
@@ -44,8 +47,8 @@ pub struct ClangTrace {
     /// Clang activities recorded by -ftime-trace
     activities: ActivityTree,
 
-    /// Interned file paths within activities
-    paths: InternedPaths,
+    /// Interned C++ entities and file paths within activities
+    entities: Entities,
 
     /// Global statistics
     global_stats: HashMap<Box<str>, GlobalStat>,
@@ -104,7 +107,7 @@ impl ClangTrace {
 
     /// Access a file path using a PathKey
     pub fn file_path(&self, key: PathKey) -> InternedPath {
-        self.paths.get(key)
+        self.entities.path(key)
     }
 }
 //
@@ -129,7 +132,7 @@ impl FromStr for ClangTrace {
 
         // Process the trace events
         let mut activities = ActivityTreeBuilder::with_capacity(profile_ctf.traceEvents.len() - 1);
-        let mut paths = PathInterner::new();
+        let entities = EntityParser::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
         //
@@ -142,7 +145,7 @@ impl FromStr for ClangTrace {
                 } => {
                     // Parse activity statistics and insert the new activity
                     // into the activity tree
-                    activities.insert(ActivityStat::parse(t, &mut paths)?)?;
+                    activities.insert(ActivityStat::parse(t, &entities)?)?;
                 }
 
                 // Durations associated with a nonzero tid are global stats
@@ -176,7 +179,7 @@ impl FromStr for ClangTrace {
         if let Some(process_name) = process_name {
             Ok(Self {
                 activities: activities.build(),
-                paths: paths.finalize(),
+                entities: entities.finalize(),
                 global_stats,
                 process_name,
             })
