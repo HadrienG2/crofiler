@@ -15,7 +15,7 @@ use crate::{
         specifiers::legacy::{self, LegacyName},
         TypeKey, TypeLike,
     },
-    values::ValueLike,
+    values::{ValueKey, ValueLike},
 };
 use asylum::{
     lasso::{Rodeo, RodeoResolver},
@@ -53,10 +53,10 @@ pub struct EntityParser {
     paths: RefCell<PathInterner>,
 
     /// Interned types
-    types: RefCell<Interner<TypeLike>>,
+    types: RefCell<Interner<TypeLike, TypeKey>>,
 
     /// Interned values
-    values: RefCell<Interner<ValueLike>>,
+    values: RefCell<Interner<ValueLike, ValueKey>>,
 }
 //
 impl EntityParser {
@@ -129,10 +129,10 @@ pub struct Entities {
     paths: InternedPaths,
 
     /// Types
-    types: Interned<TypeLike>,
+    types: Interned<TypeLike, TypeKey>,
 
     /// Values
-    values: Interned<ValueLike>,
+    values: Interned<ValueLike, ValueKey>,
 }
 //
 impl Entities {

@@ -8,7 +8,7 @@ use crate::{
     operators::{usage::NewExpression, Operator},
     Entities, EntityParser, IResult,
 };
-use asylum::lasso::{Key, Spur};
+use asylum::lasso::Spur;
 use nom::Parser;
 
 /// Interned C++ value key
@@ -39,19 +39,19 @@ impl EntityParser {
         allow_greater: bool,
     ) -> IResult<'source, ValueKey> {
         use nom::{character::complete::space0, multi::many0, sequence::preceded};
-        let (rest, result) = (|s| self.parse_value_header(s, allow_comma, allow_greater))
+        (|s| self.parse_value_header(s, allow_comma, allow_greater))
             .and(
                 many0(preceded(space0, |s| {
                     self.parse_after_value(s, allow_comma, allow_greater)
                 }))
                 .map(|v| v.into_boxed_slice()),
             )
-            .map(|(header, trailer)| ValueLike { header, trailer })
-            .parse(s)?;
-
-        // Intern the value and return the result
-        let key = self.values.borrow_mut().intern(result);
-        Ok((rest, ValueKey::try_from_usize(key).unwrap()))
+            .map(|(header, trailer)| {
+                self.values
+                    .borrow_mut()
+                    .intern(ValueLike { header, trailer })
+            })
+            .parse(s)
     }
 
     /// Tell how many unique types have been parsed so far
@@ -170,7 +170,7 @@ impl EntityParser {
 impl Entities {
     /// Retrieve a value previously parsed by parse_value_like
     pub fn value_like(&self, key: ValueKey) -> &ValueLike {
-        self.values.get(key.into_usize())
+        self.values.get(key)
     }
 }
 

@@ -3,7 +3,8 @@
 #![deny(missing_docs)]
 
 use hashbrown::HashMap;
-use std::hash::Hash;
+use lasso::{Key, Spur};
+use std::{hash::Hash, marker::PhantomData};
 
 pub mod path;
 pub mod sequence;
@@ -13,46 +14,41 @@ pub use lasso;
 
 /// Interned things
 #[derive(Clone, Debug, PartialEq)]
-pub struct Interned<Item>(Box<[Item]>);
+pub struct Interned<Item, K: Key>(Box<[Item]>, PhantomData<*const K>);
 //
-impl<Item> Interned<Item> {
+impl<Item, K: Key> Interned<Item, K> {
     /// Retrieve a previously interned thing
-    pub fn get(&self, key: Key) -> &Item {
-        &self.0[key]
+    pub fn get(&self, key: K) -> &Item {
+        &self.0[key.into_usize()]
     }
 }
-
-/// Key to retrieve a previously interned item
-///
-/// You can pass this key to Interned::get() to access the item.
-///
-/// You can also use it to compare items more efficiently than via direct
-/// comparison, as it is guaranteed that two keys are the same if and only if
-/// the underlying items are the same.
-///
-/// Depending on your concrete use case, you may be able to get away with a
-/// smaller item key type. For example, if you're expecting no more than
-/// 65536 interned items, you can convert this into a u16, then convert that
-/// back to usize at access time, for 75% space savings.
-///
-pub type Key = usize;
 
 /// Interner for arbitrary things
 //
 // Holds unique items received so far, along with interning order
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Interner<Item: Clone + Eq + Hash>(HashMap<Item, usize>);
+pub struct Interner<Item: Clone + Eq + Hash, K: Key = Spur>(
+    HashMap<Item, usize>,
+    PhantomData<*const K>,
+);
 //
-impl<Item: Clone + Eq + Hash> Interner<Item> {
+impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
     /// Set up an interner
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(HashMap::new(), PhantomData)
     }
 
     /// Intern a new item
-    pub fn intern(&mut self, item: Item) -> Key {
+    ///
+    /// You can pass the resulting key to Interned::get() to access the item.
+    ///
+    /// You can also use it to compare items more efficiently than via direct
+    /// comparison, as it is guaranteed that two keys are the same if and only
+    /// if the underlying items are the same.
+    ///
+    pub fn intern(&mut self, item: Item) -> K {
         let new_key = self.0.len();
-        *self.0.entry(item).or_insert(new_key)
+        K::try_from_usize(*self.0.entry(item).or_insert(new_key)).unwrap()
     }
 
     /// Truth that no sequence has been interned yet
@@ -66,7 +62,7 @@ impl<Item: Clone + Eq + Hash> Interner<Item> {
     }
 
     /// Finalize the collection of sequences, keeping all keys valid
-    pub fn finalize(self) -> Interned<Item> {
+    pub fn finalize(self) -> Interned<Item, K> {
         // Retrieve interned items, put them in interning order
         let mut items_and_keys = self.0.into_iter().collect::<Vec<_>>();
         items_and_keys.sort_unstable_by_key(|(_item, key)| *key);
@@ -78,7 +74,7 @@ impl<Item: Clone + Eq + Hash> Interner<Item> {
             .collect();
 
         // ...and we're done
-        Interned(items)
+        Interned(items, PhantomData)
     }
 }
 //
@@ -99,7 +95,7 @@ pub(crate) mod tests {
         let sequences = interner.finalize();
         assert_eq!(sequences.0, inputs.into());
         for (idx, item) in inputs.iter().enumerate() {
-            assert_eq!(sequences.get(idx), item);
+            assert_eq!(sequences.get(Spur::try_from_usize(idx).unwrap()), item);
         }
     }
 
@@ -115,13 +111,13 @@ pub(crate) mod tests {
         let test_intern = |input: bool| {
             let mut interner = TestedInterner::new();
 
-            assert_eq!(interner.intern(input), 0);
+            assert_eq!(interner.intern(input).into_usize(), 0);
             let mut expected_data = HashMap::new();
             expected_data.insert(input, 0);
             assert_eq!(interner.0, expected_data);
 
             let old_interner = interner.clone();
-            assert_eq!(interner.intern(input), 0);
+            assert_eq!(interner.intern(input).into_usize(), 0);
             assert_eq!(interner, old_interner);
 
             test_final_state(&[input], interner);
@@ -139,15 +135,15 @@ pub(crate) mod tests {
             interner.intern(input1);
             let interner1 = interner.clone();
 
-            assert_eq!(interner.intern(input2), 1);
+            assert_eq!(interner.intern(input2).into_usize(), 1);
             let mut expected_items = interner1.0.clone();
             expected_items.insert(input2, 1);
             assert_eq!(interner.0, expected_items);
 
             let interner2 = interner.clone();
-            assert_eq!(interner.intern(input1), 0);
+            assert_eq!(interner.intern(input1).into_usize(), 0);
             assert_eq!(interner, interner2);
-            assert_eq!(interner.intern(input2), 1);
+            assert_eq!(interner.intern(input2).into_usize(), 1);
             assert_eq!(interner, interner2);
 
             test_final_state(&[input1, input2], interner);

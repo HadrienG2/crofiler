@@ -6,7 +6,7 @@ pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
 use crate::{values::ValueKey, Entities, EntityParser, IResult};
-use asylum::lasso::{Key, Spur};
+use asylum::lasso::Spur;
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -41,21 +41,19 @@ impl EntityParser {
         .map(Option::unwrap_or_default);
 
         // Then come the type specifier and declarator
-        let (rest, result) = tuple((
+        tuple((
             attributes.terminated(space0),
             (|s| self.parse_type_specifier(s)).terminated(space0),
             |s| self.parse_declarator(s),
         ))
-        .map(|(attributes, type_specifier, declarator)| TypeLike {
-            attributes,
-            type_specifier,
-            declarator,
+        .map(|(attributes, type_specifier, declarator)| {
+            self.types.borrow_mut().intern(TypeLike {
+                attributes,
+                type_specifier,
+                declarator,
+            })
         })
-        .parse(s)?;
-
-        // Intern the type and return the result
-        let key = self.types.borrow_mut().intern(result);
-        Ok((rest, TypeKey::try_from_usize(key).unwrap()))
+        .parse(s)
     }
 
     /// Tell how many unique types have been parsed so far
@@ -67,7 +65,7 @@ impl EntityParser {
 impl Entities {
     /// Retrieve a type previously parsed by parse_type_like
     pub fn type_like(&self, key: TypeKey) -> &TypeLike {
-        self.types.get(key.into_usize())
+        self.types.get(key)
     }
 }
 
