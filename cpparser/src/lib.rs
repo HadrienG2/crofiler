@@ -18,7 +18,7 @@ use crate::{
     values::{ValueKey, ValueLike},
 };
 use asylum::{
-    lasso::{Rodeo, RodeoResolver, Spur},
+    lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
     path::{self, InternedPath, InternedPaths, PathInterner},
     Interned, Interner,
 };
@@ -34,6 +34,16 @@ pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
 /// Error type used by C++ syntax parsers
 pub type Error<I> = nom::error::Error<I>;
+
+/// Key to retrieve an interned path component
+///
+/// You can use this to compare path components more efficiently than via direct
+/// string comparison, as it is guaranteed that if two keys differ, the
+/// corresponding values differ as well.
+///
+// Using MiniSpur here as I'm expecting no more than 2^16 unique path components.
+//
+pub type PathComponentKey = MiniSpur;
 
 /// Interned file path key
 ///
@@ -66,7 +76,7 @@ pub struct EntityParser {
     identifiers: RefCell<Rodeo>,
 
     /// Interned file paths
-    paths: RefCell<PathInterner<PathKeyImpl, PATH_LEN_BITS>>,
+    paths: RefCell<PathInterner<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>>,
 
     /// Interned types
     types: RefCell<Interner<TypeLike, TypeKey>>,
@@ -147,7 +157,7 @@ pub struct Entities {
     identifiers: RodeoResolver,
 
     /// Paths
-    paths: InternedPaths<PathKeyImpl, PATH_LEN_BITS>,
+    paths: InternedPaths<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>,
 
     /// Types
     types: Interned<TypeLike, TypeKey>,
@@ -158,7 +168,7 @@ pub struct Entities {
 //
 impl Entities {
     /// Retrieve a previously interned path
-    pub fn path(&self, key: PathKey) -> InternedPath {
+    pub fn path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
         self.paths.get(key)
     }
 }

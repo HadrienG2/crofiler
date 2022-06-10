@@ -1,44 +1,35 @@
 //! Utilities for handling file paths
 
 use crate::sequence::{InternedSequences, SequenceInterner, SequenceKey};
-use lasso::{Key, MiniSpur, Rodeo, RodeoResolver};
+use lasso::{Key, Rodeo, RodeoResolver};
 use std::{
     ffi::OsStr,
+    hash::Hash,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 
 /// Space- and allocation-efficient collection of file paths
 #[derive(Debug, PartialEq)]
-pub struct InternedPaths<KeyImpl: Key, const LEN_BITS: u32> {
+pub struct InternedPaths<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32> {
     /// Interned path components
     components: RodeoResolver<ComponentKey>,
 
     /// Concatened sequence of all interned paths
-    sequences: InternedSequences<ComponentKey, KeyImpl, LEN_BITS>,
+    sequences: InternedSequences<ComponentKey, PathKeyImpl, LEN_BITS>,
 }
 //
-impl<KeyImpl: Key, const LEN_BITS: u32> InternedPaths<KeyImpl, LEN_BITS> {
+impl<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32>
+    InternedPaths<ComponentKey, PathKeyImpl, LEN_BITS>
+{
     /// Retrieve a path, panics if the key is invalid
-    pub fn get(&self, key: PathKey<KeyImpl, LEN_BITS>) -> InternedPath {
+    pub fn get(&self, key: PathKey<PathKeyImpl, LEN_BITS>) -> InternedPath<ComponentKey> {
         InternedPath {
             components: &self.components,
             sequence: self.sequences.get(key),
         }
     }
 }
-
-/// Key to retrieve an interned path component
-///
-/// You can use this to compare path components more efficiently than via direct
-/// string comparison, as it is guaranteed that if two keys differ, the
-/// corresponding values differ as well.
-//
-// Using MiniSpur here because for what this crate is designed to do
-// (compilation profile analysis), I'm expecting no more than 2^16 unique path
-// components. If there is demand, I can late make this generic.
-//
-pub type ComponentKey = MiniSpur;
 
 /// Key to retrieve an interned file path
 ///
@@ -52,7 +43,7 @@ pub type PathKey<KeyImpl, const LEN_BITS: u32> = SequenceKey<KeyImpl, LEN_BITS>;
 
 /// Accessor to an interned path
 #[derive(Debug, PartialEq)]
-pub struct InternedPath<'parent> {
+pub struct InternedPath<'parent, ComponentKey: Key> {
     /// Access to interned path components
     components: &'parent RodeoResolver<ComponentKey>,
 
@@ -60,11 +51,12 @@ pub struct InternedPath<'parent> {
     sequence: &'parent [ComponentKey],
 }
 //
-impl<'parent> InternedPath<'parent> {
+impl<'parent, ComponentKey: Key> InternedPath<'parent, ComponentKey> {
     /// Iterate over path components
     pub fn components(
         &self,
-    ) -> impl Iterator<Item = InternedComponent<'parent>> + DoubleEndedIterator + Clone {
+    ) -> impl Iterator<Item = InternedComponent<'parent, ComponentKey>> + DoubleEndedIterator + Clone
+    {
         self.sequence.iter().map(|&key| InternedComponent {
             key,
             value: self.components.resolve(&key),
@@ -83,7 +75,7 @@ impl<'parent> InternedPath<'parent> {
 
 /// Accessor to an interned path component
 #[derive(Debug, PartialEq)]
-pub struct InternedComponent<'parent> {
+pub struct InternedComponent<'parent, ComponentKey: Key> {
     /// Key used to extract the path component
     key: ComponentKey,
 
@@ -91,7 +83,7 @@ pub struct InternedComponent<'parent> {
     value: &'parent str,
 }
 //
-impl<'parent> InternedComponent<'parent> {
+impl<'parent, ComponentKey: Key> InternedComponent<'parent, ComponentKey> {
     /// Interned path component
     pub fn value(&self) -> &'parent str {
         self.value
@@ -107,37 +99,39 @@ impl<'parent> InternedComponent<'parent> {
     }
 }
 //
-impl AsRef<str> for InternedComponent<'_> {
+impl<ComponentKey: Key> AsRef<str> for InternedComponent<'_, ComponentKey> {
     fn as_ref(&self) -> &str {
         self.value()
     }
 }
 //
-impl AsRef<OsStr> for InternedComponent<'_> {
+impl<ComponentKey: Key> AsRef<OsStr> for InternedComponent<'_, ComponentKey> {
     fn as_ref(&self) -> &OsStr {
         self.value().as_ref()
     }
 }
 //
-impl AsRef<Path> for InternedComponent<'_> {
+impl<ComponentKey: Key> AsRef<Path> for InternedComponent<'_, ComponentKey> {
     fn as_ref(&self) -> &Path {
         self.value().as_ref()
     }
 }
 
 /// Writable collection of file paths, meant to ultimately become InternedPaths
-pub struct PathInterner<KeyImpl: Key, const LEN_BITS: u32> {
+pub struct PathInterner<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32> {
     /// Interner for individual path components
     components: Rodeo<ComponentKey>,
 
     /// Interner for the sequences of interned components that make up a path
-    sequences: SequenceInterner<ComponentKey, KeyImpl, LEN_BITS>,
+    sequences: SequenceInterner<ComponentKey, PathKeyImpl, LEN_BITS>,
 
     /// Cached allocation for the current sequence
     current_sequence: Vec<ComponentKey>,
 }
 //
-impl<KeyImpl: Key, const LEN_BITS: u32> PathInterner<KeyImpl, LEN_BITS> {
+impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
+    PathInterner<ComponentKey, PathKeyImpl, LEN_BITS>
+{
     /// Set up a path interner
     pub fn new() -> Self {
         Self {
@@ -148,7 +142,7 @@ impl<KeyImpl: Key, const LEN_BITS: u32> PathInterner<KeyImpl, LEN_BITS> {
     }
 
     /// Record a new file path, return an error if the path is relative
-    pub fn intern(&mut self, path: &str) -> Result<PathKey<KeyImpl, LEN_BITS>, PathError> {
+    pub fn intern(&mut self, path: &str) -> Result<PathKey<PathKeyImpl, LEN_BITS>, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);
 
@@ -209,7 +203,7 @@ impl<KeyImpl: Key, const LEN_BITS: u32> PathInterner<KeyImpl, LEN_BITS> {
     }
 
     /// Finalize the collection of paths, keeping all keys valid
-    pub fn finalize(self) -> InternedPaths<KeyImpl, LEN_BITS> {
+    pub fn finalize(self) -> InternedPaths<ComponentKey, PathKeyImpl, LEN_BITS> {
         InternedPaths {
             components: self.components.into_resolver(),
             sequences: self.sequences.finalize(),
@@ -217,7 +211,9 @@ impl<KeyImpl: Key, const LEN_BITS: u32> PathInterner<KeyImpl, LEN_BITS> {
     }
 }
 //
-impl<KeyImpl: Key, const LEN_BITS: u32> Default for PathInterner<KeyImpl, LEN_BITS> {
+impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32> Default
+    for PathInterner<ComponentKey, PathKeyImpl, LEN_BITS>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -238,14 +234,16 @@ pub enum PathError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lasso::{MiniSpur, Spur};
     use more_asserts::*;
     use pretty_assertions::{assert_eq, assert_ne};
     use std::collections::{HashMap, HashSet};
 
-    type TestedKey = PathKey<lasso::Spur, 8>;
-    type TestedInterner = PathInterner<lasso::Spur, 8>;
+    type TestedComponentKey = MiniSpur;
+    type TestedPathKey = PathKey<Spur, 8>;
+    type TestedInterner = PathInterner<TestedComponentKey, Spur, 8>;
 
-    fn extract_components(interner: &TestedInterner) -> HashMap<ComponentKey, String> {
+    fn extract_components(interner: &TestedInterner) -> HashMap<TestedComponentKey, String> {
         interner
             .components
             .iter()
@@ -255,7 +253,7 @@ mod tests {
 
     // Assuming an interner has a good starting state, check that finalization
     // and access to the interned paths works well.
-    fn finalize_and_check(interner: TestedInterner, inputs: &[(Vec<&OsStr>, TestedKey)]) {
+    fn finalize_and_check(interner: TestedInterner, inputs: &[(Vec<&OsStr>, TestedPathKey)]) {
         // Save interner contents, then finalize interned paths
         let expected_components = extract_components(&interner);
         let interned_paths = interner.finalize();

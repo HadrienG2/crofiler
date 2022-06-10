@@ -36,8 +36,8 @@ pub use self::{
     tree::{ActivityTrace, ActivityTreeError},
 };
 pub use cpparser::{
-    asylum::path::{ComponentKey, InternedComponent, InternedPath, PathError},
-    PathKey,
+    asylum::path::{InternedComponent, InternedPath, PathError},
+    PathComponentKey, PathKey,
 };
 pub use json::Error as CtfParseError;
 
@@ -106,7 +106,7 @@ impl ClangTrace {
     }
 
     /// Access a file path using a PathKey
-    pub fn file_path(&self, key: PathKey) -> InternedPath {
+    pub fn file_path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
         self.entities.path(key)
     }
 }
