@@ -100,35 +100,63 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
         }
     }
 
-    /// Intern a new sequence
-    pub fn intern(&mut self, sequence: &[Item]) -> SequenceKey<KeyImpl, LEN_BITS> {
-        // Hash the input sequence
-        let hash = |seq: &[Item]| {
-            let mut hasher = self.random_state.build_hasher();
-            seq.hash(&mut hasher);
-            hasher.finish()
-        };
-        let sequence_hash = hash(sequence);
-
-        // If this sequence was interned before, return the same key
+    /// Retrieve a previously interned input sequence's key, if it exists
+    fn get_sequence_key(
+        &self,
+        sequence_hash: u64,
+        sequence: &[Item],
+    ) -> Option<SequenceKey<KeyImpl, LEN_BITS>> {
         self.sequences
             .get(sequence_hash, |key| {
                 &self.concatenated[key.into_range_usize()] == sequence
             })
             .cloned()
-            .unwrap_or_else(|| {
-                // Otherwise intern the sequence
-                let start = self.concatenated.len();
-                let key = SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(
-                    start..start + sequence.len(),
-                )
-                .unwrap();
-                self.concatenated.extend_from_slice(sequence);
-                self.sequences.insert(sequence_hash, key.clone(), |key| {
-                    hash(&self.concatenated[key.into_range_usize()])
-                });
-                key
-            })
+    }
+
+    /// Record a previously keyed/stored sequence into the sequence interner
+    ///
+    /// This assumes that the sequence has not been interned before, and that
+    /// self.concatenated has been set up as the key suggests.
+    ///
+    fn insert_sequence_key(
+        &mut self,
+        sequence_hash: u64,
+        sequence_key: SequenceKey<KeyImpl, LEN_BITS>,
+    ) {
+        self.sequences.insert(sequence_hash, sequence_key, |key| {
+            hash(
+                &self.random_state,
+                &self.concatenated[key.into_range_usize()],
+            )
+        });
+    }
+
+    /// Prepare to intern a sequence in an iterative fashion, item by item
+    pub fn entry(&mut self) -> SequenceEntry<Item, KeyImpl, LEN_BITS> {
+        let initial_concatenated_len = self.concatenated.len();
+        SequenceEntry {
+            interner: self,
+            initial_concatenated_len,
+        }
+    }
+
+    /// Intern a new sequence
+    pub fn intern(&mut self, sequence: &[Item]) -> SequenceKey<KeyImpl, LEN_BITS> {
+        // Hash the input sequence
+        let hash = hash(&self.random_state, sequence);
+
+        // If this sequence was interned before, return the same key
+        self.get_sequence_key(hash, sequence).unwrap_or_else(|| {
+            // Otherwise intern the sequence
+            let start = self.concatenated.len();
+            let key = SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(
+                start..start + sequence.len(),
+            )
+            .unwrap();
+            self.concatenated.extend_from_slice(sequence);
+            self.insert_sequence_key(hash, key);
+            key
+        })
     }
 
     /// Truth that no sequence has been interned yet
@@ -168,11 +196,83 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 }
 //
-impl<Item: Copy + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
+impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
     for SequenceInterner<Item, KeyImpl, LEN_BITS>
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+//
+/// Hash an input sequence
+fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, sequence: &[Item]) -> u64 {
+    let mut hasher = random_state.build_hasher();
+    sequence.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Mechanism to gradually intern a sequence element by element
+pub struct SequenceEntry<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> {
+    /// Underlying sequence interner
+    interner: &'interner mut SequenceInterner<Item, KeyImpl, LEN_BITS>,
+
+    /// Initial length of interner.concatenated
+    initial_concatenated_len: usize,
+}
+//
+impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
+    SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+{
+    /// Add an item to the sequence that is being interned
+    pub fn push(&mut self, item: Item) {
+        self.interner.concatenated.push(item);
+    }
+
+    /// Remove the last item from the sequence
+    pub fn pop(&mut self) -> Option<Item> {
+        if self.interner.concatenated.len() > self.initial_concatenated_len {
+            self.interner.concatenated.pop()
+        } else {
+            None
+        }
+    }
+
+    /// Number of items that were added to the sequence
+    pub fn len(&self) -> usize {
+        self.interner.concatenated.len() - self.initial_concatenated_len
+    }
+
+    /// Finish the interning transaction
+    pub fn intern(self) -> SequenceKey<KeyImpl, LEN_BITS> {
+        // Hash the input sequence and figure what its interning key would be
+        let sequence = &self.interner.concatenated[self.initial_concatenated_len..];
+        let hash = hash(&self.interner.random_state, sequence);
+        let start = self.initial_concatenated_len;
+        let new_key =
+            SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(start..start + sequence.len())
+                .unwrap();
+
+        // If this sequence was interned before, return the same key
+        if let Some(old_key) = self.interner.get_sequence_key(hash, sequence) {
+            old_key
+        } else {
+            // Otherwise, intern the sequence, and inhibit drop so that the
+            // items that we just interned are not discarded
+            self.interner.insert_sequence_key(hash, new_key);
+            std::mem::forget(self);
+            new_key
+        }
+    }
+}
+//
+impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
+    for SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+{
+    fn drop(&mut self) {
+        // Undo any previous interning work
+        self.interner
+            .concatenated
+            .truncate(self.initial_concatenated_len);
     }
 }
 

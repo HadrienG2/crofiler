@@ -124,9 +124,6 @@ pub struct PathInterner<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BI
 
     /// Interner for the sequences of interned components that make up a path
     sequences: SequenceInterner<ComponentKey, PathKeyImpl, LEN_BITS>,
-
-    /// Cached allocation for the current sequence
-    current_sequence: Vec<ComponentKey>,
 }
 //
 impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
@@ -137,7 +134,6 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         Self {
             components: Rodeo::new(),
             sequences: SequenceInterner::new(),
-            current_sequence: Vec::new(),
         }
     }
 
@@ -156,7 +152,7 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         // Turn the path into a form that is as normalized as possible without
         // having access to the filesystem on which the clang trace was taken:
         // can process . and .. sequences, but not follow symlinks.
-        self.current_sequence.clear();
+        let mut sequence = self.sequences.entry();
         for component in path.components() {
             use std::path::Component::*;
             match component {
@@ -165,13 +161,12 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
                         .as_os_str()
                         .to_str()
                         .expect("Since this path comes from an &str, it must be valid Unicode");
-                    self.current_sequence
-                        .push(self.components.get_or_intern(component_str))
+                    sequence.push(self.components.get_or_intern(component_str))
                 }
                 ParentDir => {
                     // Do not erase root when resolving parents
-                    if self.current_sequence.len() > 1 {
-                        self.current_sequence.pop();
+                    if sequence.len() > 1 {
+                        sequence.pop();
                     }
                 }
                 CurDir => {}
@@ -179,7 +174,7 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         }
 
         // Intern the sequence that makes up the path
-        Ok(self.sequences.intern(&self.current_sequence[..]))
+        Ok(sequence.intern())
     }
 
     /// Truth that no path has been interned yet
