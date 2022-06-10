@@ -134,7 +134,6 @@ impl AsRef<Path> for InternedComponent<'_> {
 }
 
 /// Writable collection of file paths, meant to ultimately become InternedPaths
-#[derive(Debug, PartialEq)]
 pub struct PathInterner {
     /// Interner for individual path components
     components: Rodeo<ComponentKey>,
@@ -308,7 +307,7 @@ mod tests {
     fn empty() {
         let interner = PathInterner::new();
         assert!(interner.components.is_empty());
-        assert_eq!(interner.sequences, SequenceInterner::new());
+        assert!(interner.sequences.is_empty());
         finalize_and_check(interner, &[]);
     }
 
@@ -372,7 +371,10 @@ mod tests {
             // If so, the interner should stay the same and return the same key
             assert_eq!(key2, key1);
             assert_eq!(extract_components(&interner), old_components);
-            assert_eq!(interner.sequences, old_sequences);
+            assert_eq!(
+                interner.sequences.clone().finalize(),
+                old_sequences.clone().finalize()
+            );
         } else {
             // Otherwise, different keys are returned and the state changes
             assert_ne!(key2, key1);

@@ -1,10 +1,14 @@
 //! Interning sequences of things
 
-use hashbrown::HashMap;
-use std::{hash::Hash, ops::Range};
+use ahash::RandomState;
+use hashbrown::raw::RawTable;
+use std::{
+    hash::{BuildHasher, Hash, Hasher},
+    ops::Range,
+};
 
 /// Interned sequence of things
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InternedSequences<Item> {
     /// Concatened sequence of all interned sequences
     concatenated: Box<[Item]>,
@@ -35,33 +39,54 @@ impl<Item> InternedSequences<Item> {
 pub type SequenceKey = Range<usize>;
 
 /// Interner for sequence of things
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SequenceInterner<Item: Copy + Eq + Hash> {
-    /// Number of items that was interned so far
-    num_items: usize,
+#[derive(Clone)]
+pub struct SequenceInterner<Item: Clone + Eq + Hash> {
+    /// Concatenated interned sequences
+    concatenated: Vec<Item>,
 
-    /// Unique sequences received so far, along with associated position in the
-    /// overall sequence of all interned sequences.
-    sequences: HashMap<Box<[Item]>, usize>,
+    /// Hasher factory used by the sequence RawTable
+    random_state: RandomState,
+
+    /// Keys to sequences interned so far in `concatenated`
+    sequences: RawTable<SequenceKey>,
 }
 //
-impl<Item: Copy + Eq + Hash> SequenceInterner<Item> {
+impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
     /// Set up a sequence interner
     pub fn new() -> Self {
         Self {
-            num_items: 0,
-            sequences: HashMap::new(),
+            concatenated: Vec::new(),
+            random_state: RandomState::new(),
+            sequences: RawTable::new(),
         }
     }
 
     /// Intern a new sequence
     pub fn intern(&mut self, sequence: &[Item]) -> SequenceKey {
-        // If the sequence was interned before, return the associated key
-        let offset = *self.sequences.entry_ref(sequence).or_insert_with(|| {
-            self.num_items += sequence.len();
-            self.num_items - sequence.len()
-        });
-        offset..offset + sequence.len()
+        // Hash the input sequence
+        let hash = |seq: &[Item]| {
+            let mut hasher = self.random_state.build_hasher();
+            seq.hash(&mut hasher);
+            hasher.finish()
+        };
+        let sequence_hash = hash(sequence);
+
+        // If this sequence was interned before, return the same key
+        self.sequences
+            .get(sequence_hash, |key| {
+                &self.concatenated[key.clone()] == sequence
+            })
+            .cloned()
+            .unwrap_or_else(|| {
+                // Otherwise intern the sequence
+                let start = self.concatenated.len();
+                let key = start..start + sequence.len();
+                self.concatenated.extend_from_slice(sequence);
+                self.sequences.insert(sequence_hash, key.clone(), |key| {
+                    hash(&self.concatenated[key.clone()])
+                });
+                key
+            })
     }
 
     /// Truth that no sequence has been interned yet
@@ -76,24 +101,13 @@ impl<Item: Copy + Eq + Hash> SequenceInterner<Item> {
 
     /// Query total number of interned items across all interned sequences
     pub fn num_items(&self) -> usize {
-        self.num_items
+        self.concatenated.len()
     }
 
     /// Finalize the collection of sequences, keeping all keys valid
     pub fn finalize(self) -> InternedSequences<Item> {
-        // Retrieve interned sequences, put them in interning order
-        let mut sequences_and_starts = self.sequences.into_iter().collect::<Vec<_>>();
-        sequences_and_starts.sort_unstable_by_key(|(_seq, start)| *start);
-
-        // Concatenate them
-        let mut concatenated = Vec::with_capacity(self.num_items);
-        for (seq, _start) in sequences_and_starts {
-            concatenated.extend(Vec::from(seq));
-        }
-
-        // ...and we're done
         InternedSequences {
-            concatenated: concatenated.into_boxed_slice(),
+            concatenated: self.concatenated.into_boxed_slice(),
         }
     }
 }
@@ -134,7 +148,7 @@ pub(crate) mod tests {
     #[test]
     fn initial() {
         let interner = TestedInterner::new();
-        assert_eq!(interner.num_items, 0);
+        assert_eq!(interner.num_items(), 0);
         assert!(interner.sequences.is_empty());
         test_final_state(&[], interner);
     }
@@ -146,15 +160,15 @@ pub(crate) mod tests {
 
             let expected_key = 0..input.len();
             assert_eq!(interner.intern(input), expected_key);
-            assert_eq!(interner.num_items, input.len());
-            let mut expected_data = HashMap::new();
-            expected_data.insert(input.into(), 0);
-            assert_eq!(interner.sequences, expected_data);
+            assert_eq!(interner.concatenated, input);
+            assert_eq!(interner.len(), 1);
+            assert_eq!(interner.num_items(), input.len());
+            test_final_state(&[input], interner.clone());
 
-            let old_interner = interner.clone();
             assert_eq!(interner.intern(input), expected_key);
-            assert_eq!(interner, old_interner);
-
+            assert_eq!(interner.concatenated, input);
+            assert_eq!(interner.len(), 1);
+            assert_eq!(interner.num_items(), input.len());
             test_final_state(&[input], interner);
         };
 
@@ -170,19 +184,20 @@ pub(crate) mod tests {
             let key1 = interner.intern(input1);
             let interner1 = interner.clone();
 
-            let key2 = interner.num_items..interner.num_items + input2.len();
+            let key2 = interner.num_items()..interner.num_items() + input2.len();
             assert_eq!(interner.intern(input2), key2);
-            assert_eq!(interner.num_items, interner1.num_items + input2.len());
-            let mut expected_sequences = interner1.sequences.clone();
-            expected_sequences.insert(input2.into(), interner1.num_items);
-            assert_eq!(interner.sequences, expected_sequences);
+            assert_eq!(interner.len(), 2);
+            assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
+            test_final_state(&[input1, input2], interner.clone());
 
-            let interner2 = interner.clone();
             assert_eq!(interner.intern(input1), key1);
-            assert_eq!(interner, interner2);
-            assert_eq!(interner.intern(input2), key2);
-            assert_eq!(interner, interner2);
+            assert_eq!(interner.len(), 2);
+            assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
+            test_final_state(&[input1, input2], interner.clone());
 
+            assert_eq!(interner.intern(input2), key2);
+            assert_eq!(interner.len(), 2);
+            assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
             test_final_state(&[input1, input2], interner);
         };
 
