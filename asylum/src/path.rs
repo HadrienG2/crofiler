@@ -187,17 +187,22 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         self.sequences.is_empty()
     }
 
-    /// Query number of interned paths
+    /// Number of interned paths
     pub fn len(&self) -> usize {
         self.sequences.len()
     }
 
-    /// Query total number of interned components across all interned paths
+    /// Total number of path components across all interned paths
     pub fn num_components(&self) -> usize {
         self.sequences.num_items()
     }
 
-    /// Query maximal inner sequence length
+    /// Total number of unique (interned) path components
+    pub fn num_unique_components(&self) -> usize {
+        self.components.len()
+    }
+
+    /// Maximal path length
     pub fn max_path_len(&self) -> Option<usize> {
         self.sequences.max_sequence_len()
     }
@@ -313,9 +318,9 @@ mod tests {
 
         // Check basic interner state
         if path == normalized {
-            assert_eq!(interner.components.len(), components.len());
+            assert_eq!(interner.num_unique_components(), components.len());
         } else {
-            assert_ge!(interner.components.len(), components.len());
+            assert_ge!(interner.num_unique_components(), components.len());
         }
         assert_eq!(interner.sequences.num_items(), components.len());
         assert_eq!(interner.sequences.len(), 1);
@@ -372,7 +377,7 @@ mod tests {
             // path components associated with both paths
             let set1 = components1.iter().cloned().collect::<HashSet<&OsStr>>();
             let set2 = components2.iter().cloned().collect::<HashSet<&OsStr>>();
-            assert_eq!(interner.components.len(), (&set2 | &set1).len());
+            assert_eq!(interner.num_unique_components(), (&set2 | &set1).len());
 
             // Old path components remain available with the same key
             for (k, v) in old_components {

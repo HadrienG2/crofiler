@@ -110,17 +110,17 @@ impl EntityParser {
             .expect("Encountered relative (and thus non-interpretable) file path")
     }
 
-    /// Number of unique paths that have been interned so far
-    pub fn num_paths(&self) -> usize {
-        self.paths.borrow().len()
-    }
-
-    /// Total number of interned components across all interned paths so far
+    /// Total number of path components across all interned paths so far
     pub fn num_path_components(&self) -> usize {
         self.paths.borrow().num_components()
     }
 
-    /// Query maximal path length
+    /// Total number of unique (interned) path components
+    pub fn num_unique_path_components(&self) -> usize {
+        self.paths.borrow().num_unique_components()
+    }
+
+    /// Maximal path length
     pub fn max_path_len(&self) -> Option<usize> {
         self.paths.borrow().max_path_len()
     }
