@@ -2,7 +2,8 @@
 
 #![deny(missing_docs)]
 
-use std::{collections::HashMap, hash::Hash};
+use hashbrown::HashMap;
+use std::hash::Hash;
 
 pub mod path;
 pub mod sequence;
@@ -50,15 +51,8 @@ impl<Item: Clone + Eq + Hash> Interner<Item> {
 
     /// Intern a new item
     pub fn intern(&mut self, item: Item) -> Key {
-        // If the item was interned before, return the associated key
-        if let Some(&key) = self.0.get(&item) {
-            key
-        } else {
-            // Otherwise, record the new item
-            let key = self.0.len();
-            self.0.insert(item, key);
-            key
-        }
+        let new_key = self.0.len();
+        *self.0.entry(item).or_insert(new_key)
     }
 
     /// Truth that no sequence has been interned yet
@@ -122,12 +116,9 @@ pub(crate) mod tests {
             let mut interner = TestedInterner::new();
 
             assert_eq!(interner.intern(input), 0);
-            assert_eq!(
-                interner.0,
-                maplit::hashmap! {
-                    input => 0,
-                }
-            );
+            let mut expected_data = HashMap::new();
+            expected_data.insert(input, 0);
+            assert_eq!(interner.0, expected_data);
 
             let old_interner = interner.clone();
             assert_eq!(interner.intern(input), 0);

@@ -1,6 +1,7 @@
 //! Interning sequences of things
 
-use std::{collections::HashMap, hash::Hash, ops::Range};
+use hashbrown::HashMap;
+use std::{hash::Hash, ops::Range};
 
 /// Interned sequence of things
 #[derive(Clone, Debug, PartialEq)]
@@ -35,7 +36,7 @@ pub type SequenceKey = Range<usize>;
 
 /// Interner for sequence of things
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SequenceInterner<Item: Clone + Eq + Hash> {
+pub struct SequenceInterner<Item: Copy + Eq + Hash> {
     /// Number of items that was interned so far
     num_items: usize,
 
@@ -44,7 +45,7 @@ pub struct SequenceInterner<Item: Clone + Eq + Hash> {
     sequences: HashMap<Box<[Item]>, usize>,
 }
 //
-impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
+impl<Item: Copy + Eq + Hash> SequenceInterner<Item> {
     /// Set up a sequence interner
     pub fn new() -> Self {
         Self {
@@ -56,16 +57,11 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
     /// Intern a new sequence
     pub fn intern(&mut self, sequence: &[Item]) -> SequenceKey {
         // If the sequence was interned before, return the associated key
-        if let Some(&key) = self.sequences.get(sequence) {
-            key..key + sequence.len()
-        } else {
-            // Otherwise, record the new sequence
-            self.sequences
-                .insert(sequence.to_vec().into_boxed_slice(), self.num_items);
-            let key = self.num_items..self.num_items + sequence.len();
+        let offset = *self.sequences.entry_ref(sequence).or_insert_with(|| {
             self.num_items += sequence.len();
-            key
-        }
+            self.num_items - sequence.len()
+        });
+        offset..offset + sequence.len()
     }
 
     /// Truth that no sequence has been interned yet
@@ -102,7 +98,7 @@ impl<Item: Clone + Eq + Hash> SequenceInterner<Item> {
     }
 }
 //
-impl<Item: Clone + Eq + Hash> Default for SequenceInterner<Item> {
+impl<Item: Copy + Eq + Hash> Default for SequenceInterner<Item> {
     fn default() -> Self {
         Self::new()
     }
@@ -151,12 +147,9 @@ pub(crate) mod tests {
             let expected_key = 0..input.len();
             assert_eq!(interner.intern(input), expected_key);
             assert_eq!(interner.num_items, input.len());
-            assert_eq!(
-                interner.sequences,
-                maplit::hashmap! {
-                    input.into() => 0,
-                }
-            );
+            let mut expected_data = HashMap::new();
+            expected_data.insert(input.into(), 0);
+            assert_eq!(interner.sequences, expected_data);
 
             let old_interner = interner.clone();
             assert_eq!(interner.intern(input), expected_key);
