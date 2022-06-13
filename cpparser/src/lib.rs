@@ -18,7 +18,7 @@ use crate::{
         TypeKey, TypeLike,
     },
     utilities::RecursiveSequenceInterner,
-    values::{ValueKey, ValueLike},
+    values::{AfterValue, ValueKey, ValueLike, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS},
 };
 use asylum::{
     lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
@@ -94,6 +94,10 @@ pub struct EntityParser {
         TemplateParametersKeyImpl,
         TEMPLATE_PARAMETERS_LEN_BITS,
     >,
+
+    /// Interned AfterValue sequences
+    value_trailers:
+        RecursiveSequenceInterner<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
 }
 //
 impl EntityParser {
@@ -106,6 +110,7 @@ impl EntityParser {
             types: Default::default(),
             values: Default::default(),
             template_parameter_sets: Default::default(),
+            value_trailers: Default::default(),
         }
     }
 
@@ -161,6 +166,7 @@ impl EntityParser {
             types: self.types.into_inner().finalize(),
             values: self.values.into_inner().finalize(),
             template_parameter_sets: self.template_parameter_sets.into_inner().finalize(),
+            value_trailers: self.value_trailers.into_inner().finalize(),
         }
     }
 }
@@ -192,6 +198,9 @@ pub struct Entities {
         TemplateParametersKeyImpl,
         TEMPLATE_PARAMETERS_LEN_BITS,
     >,
+
+    /// Interned AfterValue sequences
+    value_trailers: InternedSequences<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
 }
 //
 impl Entities {

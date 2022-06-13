@@ -8,7 +8,7 @@ use crate::{
     operators::{usage::NewExpression, Operator},
     Entities, EntityParser, IResult,
 };
-use asylum::lasso::Spur;
+use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 
 /// Interned C++ value key
@@ -21,6 +21,19 @@ use nom::Parser;
 ///
 // TODO: Adjust key size based on observed entry count
 pub type ValueKey = Spur;
+//
+/// Interned value trailer key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// ValueTrailers as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a value trailer by passing this key to the
+/// value_trailer() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type ValueTrailerKey = SequenceKey<ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>;
+pub(crate) type ValueTrailerKeyImpl = Spur;
+pub(crate) const VALUE_TRAILER_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser recognizing values (and some types that are indistinguishable
@@ -38,14 +51,22 @@ impl EntityParser {
         allow_comma: bool,
         allow_greater: bool,
     ) -> IResult<'source, ValueKey> {
-        use nom::{character::complete::space0, multi::many0, sequence::preceded};
+        use nom::{character::complete::space0, multi::fold_many0, sequence::preceded};
+
+        let value_trailer = fold_many0(
+            preceded(space0, |s| {
+                self.parse_after_value(s, allow_comma, allow_greater)
+            }),
+            || self.value_trailers.entry(),
+            |mut entry, item| {
+                entry.push(item);
+                entry
+            },
+        )
+        .map(|entry| entry.intern());
+
         (|s| self.parse_value_header(s, allow_comma, allow_greater))
-            .and(
-                many0(preceded(space0, |s| {
-                    self.parse_after_value(s, allow_comma, allow_greater)
-                }))
-                .map(|v| v.into_boxed_slice()),
-            )
+            .and(value_trailer)
             .map(|(header, trailer)| {
                 self.values
                     .borrow_mut()
@@ -65,6 +86,29 @@ impl EntityParser {
     /// Tell how many unique types have been parsed so far
     pub fn num_values(&self) -> usize {
         self.values.borrow().len()
+    }
+
+    /// Retrieve a value trailer previously parsed by parse_value_like
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<ValueTrailer> {
+        self.value_trailers
+            .borrow()
+            .get(key)
+            // TODO: Switch to into() once AfterValue is Copy
+            .to_owned()
+            .into_boxed_slice()
+    }
+
+    /// Total number of AfterValues across all interned ValueTrailers
+    pub fn num_after_value(&self) -> usize {
+        self.value_trailers.borrow().num_items()
+    }
+
+    /// Maximal number of template parameters
+    pub fn max_value_trailer_len(&self) -> Option<usize> {
+        self.value_trailers.borrow().max_sequence_len()
     }
 
     /// Like value_like but excluding patterns that start with a value_like
@@ -180,6 +224,11 @@ impl Entities {
     pub fn value_like(&self, key: ValueKey) -> &ValueLike {
         self.values.get(key)
     }
+
+    /// Retrieve a value trailer previously parsed by parse_value_like
+    pub fn value_trailer(&self, key: ValueTrailerKey) -> &ValueTrailer {
+        self.value_trailers.get(key)
+    }
 }
 
 /// A value, or something that looks close enough to it
@@ -191,16 +240,7 @@ pub struct ValueLike {
 
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
-    trailer: Box<[AfterValue]>,
-}
-//
-impl<T: Into<ValueHeader>> From<T> for ValueLike {
-    fn from(header: T) -> Self {
-        Self {
-            header: header.into(),
-            trailer: Box::default(),
-        }
-    }
+    trailer: ValueTrailerKey,
 }
 
 /// Values that are not expressions starting with a value
@@ -240,8 +280,10 @@ impl From<IdExpression> for ValueHeader {
     }
 }
 
+/// Things that can come after a ValueHeader in the value grammar
+pub type ValueTrailer = [AfterValue];
+
 /// Things that can come up after a value to form a more complex value
-// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AfterValue {
     /// Array indexing
