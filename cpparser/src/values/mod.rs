@@ -4,6 +4,7 @@ pub mod literals;
 
 use self::literals::Literal;
 use crate::{
+    functions::FunctionCallKey,
     names::{scopes::IdExpression, unqualified::UnqualifiedId},
     operators::{usage::NewExpression, Operator},
     Entities, EntityParser, IResult,
@@ -232,7 +233,6 @@ impl Entities {
 }
 
 /// A value, or something that looks close enough to it
-// FIXME: This type appears in Box<[T]>, intern that once data is owned
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ValueLike {
     /// Initial value-like entity
@@ -284,13 +284,13 @@ impl From<IdExpression> for ValueHeader {
 pub type ValueTrailer = [AfterValue];
 
 /// Things that can come up after a value to form a more complex value
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AfterValue {
     /// Array indexing
     ArrayIndex(ValueKey),
 
     /// Function call
-    FunctionCall(Box<[ValueKey]>),
+    FunctionCall(FunctionCallKey),
 
     /// Binary operator (OP x)
     BinaryOp(Operator, ValueKey),

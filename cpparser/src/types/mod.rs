@@ -5,7 +5,7 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::Declarator, specifiers::TypeSpecifier};
-use crate::{values::ValueKey, Entities, EntityParser, IResult};
+use crate::{functions::FunctionCallKey, Entities, EntityParser, IResult};
 use asylum::lasso::Spur;
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -38,7 +38,7 @@ impl EntityParser {
             |s| self.parse_function_call(s),
             char(')'),
         ))
-        .map(Option::unwrap_or_default);
+        .map(|opt| opt.unwrap_or_else(|| self.function_calls.entry().intern()));
 
         // Then come the type specifier and declarator
         tuple((
@@ -78,26 +78,16 @@ impl Entities {
 }
 
 /// A type name, or something looking close enough to it
-// FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
-    attributes: Box<[ValueKey]>,
+    attributes: FunctionCallKey,
 
     /// Type specifier
     type_specifier: TypeSpecifier,
 
     /// Declarator
     declarator: Declarator,
-}
-//
-impl<T: Into<TypeSpecifier>> From<T> for TypeLike {
-    fn from(type_specifier: T) -> Self {
-        Self {
-            type_specifier: type_specifier.into(),
-            ..Default::default()
-        }
-    }
 }
 
 #[cfg(test)]

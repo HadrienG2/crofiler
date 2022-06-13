@@ -1,7 +1,7 @@
 //! Operator-related grammar that is only used when parsing expressions
 
 use super::{Operator, Symbol};
-use crate::{types::TypeKey, values::ValueKey, EntityParser, IResult};
+use crate::{functions::FunctionCallKey, types::TypeKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -138,20 +138,20 @@ impl EntityParser {
 }
 
 /// New expression, i.e. usage of the new operator
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NewExpression {
     /// Whether this new expression is rooted (starts with ::), which means that
     /// class-specific replacements will be ignored
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<Box<[ValueKey]>>,
+    placement: Option<FunctionCallKey>,
 
     /// Type of values being created
     ty: TypeKey,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<Box<[ValueKey]>>,
+    constructor: Option<FunctionCallKey>,
 }
 
 #[cfg(test)]
