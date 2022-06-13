@@ -51,6 +51,18 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
         K::try_from_usize(*self.0.entry(item).or_insert(new_key)).unwrap()
     }
 
+    /// Retrieve a previously interned thing
+    ///
+    /// May not be optimal, meant for validation use only
+    ///
+    pub fn get(&self, key: K) -> &Item {
+        self.0
+            .iter()
+            .find(|(_item, idx)| **idx == key.into_usize())
+            .map(|(item, _idx)| item)
+            .expect("Key not found")
+    }
+
     /// Truth that no sequence has been interned yet
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()

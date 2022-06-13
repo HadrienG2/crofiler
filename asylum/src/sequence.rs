@@ -159,6 +159,14 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
         })
     }
 
+    /// Retrieve a previously interned thing
+    ///
+    /// May not be optimal, meant for validation use only
+    ///
+    pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> &[Item] {
+        &self.concatenated[key.into_range_usize()]
+    }
+
     /// Truth that no sequence has been interned yet
     pub fn is_empty(&self) -> bool {
         self.len() == 0

@@ -43,15 +43,21 @@ pub type PathKey<KeyImpl, const LEN_BITS: u32> = SequenceKey<KeyImpl, LEN_BITS>;
 
 /// Accessor to an interned path
 #[derive(Debug, PartialEq)]
-pub struct InternedPath<'parent, ComponentKey: Key> {
+pub struct InternedPath<
+    'parent,
+    ComponentKey: Key,
+    Resolver: lasso::Resolver<ComponentKey> = RodeoResolver<ComponentKey>,
+> {
     /// Access to interned path components
-    components: &'parent RodeoResolver<ComponentKey>,
+    components: &'parent Resolver,
 
     /// Sequence of path components
     sequence: &'parent [ComponentKey],
 }
 //
-impl<'parent, ComponentKey: Key> InternedPath<'parent, ComponentKey> {
+impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>>
+    InternedPath<'parent, ComponentKey, Resolver>
+{
     /// Iterate over path components
     pub fn components(
         &self,
@@ -175,6 +181,20 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
 
         // Intern the sequence that makes up the path
         Ok(sequence.intern())
+    }
+
+    /// Retrieve a previously interned thing
+    ///
+    /// May not be optimal, meant for validation use only
+    ///
+    pub fn get(
+        &self,
+        key: PathKey<PathKeyImpl, LEN_BITS>,
+    ) -> InternedPath<ComponentKey, Rodeo<ComponentKey>> {
+        InternedPath {
+            components: &self.components,
+            sequence: self.sequences.get(key),
+        }
     }
 
     /// Truth that no path has been interned yet
