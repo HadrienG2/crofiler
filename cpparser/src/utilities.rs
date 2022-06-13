@@ -111,3 +111,5 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
             .push(std::mem::take(&mut self.sequence))
     }
 }
+
+// FIXME: Add tests
