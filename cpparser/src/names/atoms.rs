@@ -64,6 +64,14 @@ impl EntityParser {
         Ok((rest, id_key))
     }
 
+    /// Retrieve an identifier previously parsed by parse_identifier
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn identifier(&self, key: IdentifierKey) -> Box<str> {
+        self.identifiers.borrow().resolve(&key).into()
+    }
+
     /// Tell how many unique identifiers have been parsed so far
     pub fn num_identifiers(&self) -> usize {
         self.identifiers.borrow().len()

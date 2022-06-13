@@ -54,6 +54,14 @@ impl EntityParser {
             .parse(s)
     }
 
+    /// Retrieve a value previously parsed by parse_value_like
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn value_like(&self, key: ValueKey) -> ValueLike {
+        self.values.borrow().get(key).clone()
+    }
+
     /// Tell how many unique types have been parsed so far
     pub fn num_values(&self) -> usize {
         self.values.borrow().len()

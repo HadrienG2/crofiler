@@ -56,6 +56,14 @@ impl EntityParser {
         .parse(s)
     }
 
+    /// Retrieve a type previously parsed by parse_type_like
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn type_like(&self, key: TypeKey) -> TypeLike {
+        self.types.borrow().get(key).clone()
+    }
+
     /// Tell how many unique types have been parsed so far
     pub fn num_types(&self) -> usize {
         self.types.borrow().len()

@@ -58,6 +58,17 @@ impl EntityParser {
         .parse(s)
     }
 
+    /// Retrieve a value previously parsed by parse_value_like
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn template_parameters(
+        &self,
+        key: TemplateParametersKey,
+    ) -> Box<[TemplateParameter]> {
+        self.template_parameter_sets.borrow().get(key).into()
+    }
+
     /// Total number of template parameters across all interned template parameter sets so far
     pub fn num_template_parameters(&self) -> usize {
         self.template_parameter_sets.borrow().num_items()
