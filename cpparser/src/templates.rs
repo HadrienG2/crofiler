@@ -33,27 +33,29 @@ impl EntityParser {
         };
         use nom_supreme::{multi::parse_separated_terminated, tag::complete::tag};
 
-        let non_empty_arguments = preceded(
-            char('<').and(space0),
-            parse_separated_terminated(
-                |s| self.parse_template_parameter(s),
-                space0.and(char(',')).and(space0),
-                space0.and(char('>')),
-                || self.template_parameter_sets.entry(),
-                |mut entry, item| {
-                    entry.push(item);
-                    entry
-                },
-            ),
+        let arguments_header = char('<').and(space0);
+
+        let non_empty_arguments = parse_separated_terminated(
+            |s| self.parse_template_parameter(s),
+            space0.and(char(',')).and(space0),
+            space0.and(char('>')),
+            || self.template_parameter_sets.entry(),
+            |mut entry, item| {
+                entry.push(item);
+                entry
+            },
         )
         .map(|entry| entry.intern());
 
-        let empty_arguments = (char('<').and(space0).and(char('>')))
-            .map(|_| self.template_parameter_sets.entry().intern());
+        let empty_arguments = char('>').map(|_| self.template_parameter_sets.entry().intern());
 
-        ((non_empty_arguments.or(empty_arguments)).map(Some))
-            .or(tag("<, void>").value(None))
-            .parse(s)
+        let invalid_arguments = tag(", void>");
+
+        preceded(
+            arguments_header,
+            ((non_empty_arguments.or(empty_arguments)).map(Some)).or(invalid_arguments.value(None)),
+        )
+        .parse(s)
     }
 
     /// Total number of template parameters across all interned template parameter sets so far
