@@ -94,12 +94,7 @@ impl EntityParser {
     /// May not perform optimally, meant for validation purposes only
     ///
     pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<ValueTrailer> {
-        self.value_trailers
-            .borrow()
-            .get(key)
-            // TODO: Switch to into() once AfterValue is Copy
-            .to_owned()
-            .into_boxed_slice()
+        self.value_trailers.borrow().get(key).into()
     }
 
     /// Total number of AfterValues across all interned ValueTrailers

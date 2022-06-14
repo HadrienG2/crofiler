@@ -188,7 +188,6 @@ pub struct FunctionSignature {
 /// With a type grammar, this parses function signatures, and with a value
 /// grammar, this parses function calls.
 ///
-// FIXME: Use call and parameter interner
 fn function_parameters<
     'source,
     T: Clone + Eq + Hash + 'source,
