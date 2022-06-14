@@ -26,8 +26,8 @@ pub struct SequenceKey<Inner: Key = Spur, const LEN_BITS: u32 = 8>(Inner);
 impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
     /// Check that the configuration is sensible
     const fn check_configuration() {
-        let inner_bits = std::mem::size_of::<usize>() * 8;
-        assert!(LEN_BITS < inner_bits as u32);
+        let usize_bits = std::mem::size_of::<usize>() * 8;
+        assert!(LEN_BITS < usize_bits as u32);
     }
 
     /// Returns the `Range<usize>` that represents the current key
