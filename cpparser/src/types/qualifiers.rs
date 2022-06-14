@@ -6,6 +6,7 @@ use std::ops::BitOr;
 
 impl EntityParser {
     /// Parser recognizing CV qualifiers
+    #[inline]
     pub fn parse_cv(s: &str) -> IResult<ConstVolatile> {
         use nom::{character::complete::space0, multi::fold_many0};
         let keyword = Self::keywords_parser([

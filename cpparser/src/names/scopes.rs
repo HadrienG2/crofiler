@@ -120,6 +120,7 @@ impl EntityParser {
 
     /// This parses either the Scope syntax or the UnqualifiedId syntax, in a manner
     /// that avoids parsing the shared UnqualifiedId syntax twice.
+    #[inline]
     fn parse_scope_or_unqualified_id<'source>(
         &self,
         s: &'source str,

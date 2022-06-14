@@ -14,6 +14,7 @@ use std::fmt::Debug;
 impl EntityParser {
     /// Parser recognizing type specifiers, as defined by
     /// <https://en.cppreference.com/w/cpp/language/declarations>
+    #[inline]
     pub fn parse_type_specifier<'source>(
         &self,
         s: &'source str,

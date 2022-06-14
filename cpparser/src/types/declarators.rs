@@ -60,6 +60,7 @@ impl EntityParser {
     }
 
     /// Parser for a declarator component
+    #[inline]
     fn parse_decl_operator<'source>(&self, s: &'source str) -> IResult<'source, DeclOperator> {
         use nom::{
             character::complete::{char, space0},
