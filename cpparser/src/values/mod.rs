@@ -263,6 +263,12 @@ impl From<Literal> for ValueHeader {
     }
 }
 //
+impl From<ValueKey> for ValueHeader {
+    fn from(v: ValueKey) -> Self {
+        Self::Parenthesized(v)
+    }
+}
+//
 impl From<NewExpression> for ValueHeader {
     fn from(n: NewExpression) -> Self {
         Self::NewExpression(n)
@@ -298,6 +304,12 @@ pub enum AfterValue {
 
     /// Postfix operator (++ and -- only in current C++)
     PostfixOp(Operator),
+}
+//
+impl From<FunctionCallKey> for AfterValue {
+    fn from(f: FunctionCallKey) -> Self {
+        AfterValue::FunctionCall(f)
+    }
 }
 
 #[cfg(test)]

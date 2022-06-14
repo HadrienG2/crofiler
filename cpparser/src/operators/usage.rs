@@ -153,6 +153,17 @@ pub struct NewExpression {
     /// Parameters to the values' constructor (if any)
     constructor: Option<FunctionCallKey>,
 }
+//
+impl From<TypeKey> for NewExpression {
+    fn from(ty: TypeKey) -> Self {
+        Self {
+            rooted: false,
+            placement: None,
+            ty,
+            constructor: None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

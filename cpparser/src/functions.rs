@@ -182,6 +182,18 @@ pub struct FunctionSignature {
     /// Trailing return type
     trailing_return: Option<TypeKey>,
 }
+//
+impl From<FunctionParametersKey> for FunctionSignature {
+    fn from(parameters: FunctionParametersKey) -> Self {
+        Self {
+            parameters,
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: None,
+        }
+    }
+}
 
 /// Parser recognizing a set of function parameters, given a parameter grammar
 ///
