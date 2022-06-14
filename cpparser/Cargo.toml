@@ -10,6 +10,7 @@ nom-supreme = "0.8"
 unicode-xid = { version = "0.2", optional = true }
 
 [dev-dependencies]
+assert_matches = "1.5"
 criterion = "0.3"
 pretty_assertions = "1.2"
 

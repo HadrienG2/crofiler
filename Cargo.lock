@@ -141,6 +141,7 @@ dependencies = [
 name = "cpparser"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "asylum",
  "criterion",
  "nom",

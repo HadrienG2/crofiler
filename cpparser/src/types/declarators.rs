@@ -178,6 +178,7 @@ impl From<DeclaratorKey> for DeclOperator {
 mod tests {
     use super::*;
     use crate::tests::unwrap_parse;
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -264,30 +265,24 @@ mod tests {
     fn declarator() {
         let parser = EntityParser::new();
 
+        let test_case = |declarator: &str, expected_operators: &[&str]| {
+            assert_matches!(parser.parse_declarator(""), Ok(("", key)) => {
+                let declarator = parser.declarator(key);
+                assert_eq!(declarator.len(), expected_operators.len());
+                for (expected, actual) in expected_operators.iter().zip(declarator.to_vec()) {
+                    let expected = unwrap_parse(parser.parse_decl_operator(*expected));
+                    assert_eq!(expected, actual);
+                }
+            })
+        };
+
         // Empty declarator
-        assert_eq!(parser.parse_declarator(""), Ok(("", Declarator::default())));
+        test_case("", &[]);
 
         // Single operator
-        assert_eq!(
-            parser.parse_declarator("&"),
-            Ok(("", vec![Reference::LValue.into()].into()))
-        );
+        test_case("&", &["&"]);
 
         // Multiple operators
-        assert_eq!(
-            parser.parse_declarator("&&*const()"),
-            Ok((
-                "",
-                vec![
-                    Reference::RValue.into(),
-                    DeclOperator::Pointer {
-                        path: NestedNameSpecifier::default(),
-                        cv: ConstVolatile::CONST,
-                    },
-                    FunctionSignature::default().into()
-                ]
-                .into()
-            ))
-        );
+        test_case("&&*const()", &["&&", "*const", "()"]);
     }
 }
