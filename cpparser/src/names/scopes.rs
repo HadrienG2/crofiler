@@ -1,10 +1,26 @@
 //! Handling of hierarchical scopes
 
 use super::unqualified::UnqualifiedId;
-use crate::{functions::FunctionSignature, EntityParser, IResult};
+use crate::{
+    functions::FunctionSignature, utilities::SequenceEntry, Entities, EntityParser, IResult,
+};
+use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
+/// Interned Scope sequence key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// Scope sequences as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a scope sequence by passing this key
+/// to the scopes() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type ScopesKey = SequenceKey<ScopesKeyImpl, SCOPES_LEN_BITS>;
+pub(crate) type ScopesKeyImpl = Spur;
+pub(crate) const SCOPES_LEN_BITS: u32 = 8;
+//
 impl EntityParser {
     /// Parser for id-expressions (= nested name-specifier + UnqualifiedId)
     pub fn parse_id_expression<'source>(&self, s: &'source str) -> IResult<'source, IdExpression> {
@@ -52,12 +68,12 @@ impl EntityParser {
         };
 
         // Parse sequence of scope_or_unqualified_id, accumulating scopes
-        let mut scopes = Vec::new();
-        let make_output = |scopes: Vec<Scope>, id_opt| {
+        let mut scopes = self.scopes.entry();
+        let make_output = |scopes: SequenceEntry<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>, id_opt| {
             (
                 NestedNameSpecifier {
                     rooted,
-                    scopes: scopes.into_boxed_slice(),
+                    scopes: scopes.intern(),
                 },
                 id_opt,
             )
@@ -82,6 +98,24 @@ impl EntityParser {
         // If control reaches this point, no trailing unqualified-id was found, the
         // scope list ended on its own
         Ok((input, make_output(scopes, None)))
+    }
+
+    /// Retrieve a scope sequence previously parsed by parse_proto_id_expression
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn scope_sequence(&self, key: ScopesKey) -> Box<[Scope]> {
+        self.scopes.borrow().get(key).into()
+    }
+
+    /// Total number of scopes across all interned nested name specifiers so far
+    pub fn num_scopes(&self) -> usize {
+        self.scopes.borrow().num_items()
+    }
+
+    /// Maximal number of scopes in a nested name specifier
+    pub fn max_scope_sequence_len(&self) -> Option<usize> {
+        self.scopes.borrow().max_sequence_len()
     }
 
     /// This parses either the Scope syntax or the UnqualifiedId syntax, in a manner
@@ -119,9 +153,16 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Retrieve a previously interned scope sequence
+    pub fn scope_sequence(&self, key: ScopesKey) -> &[Scope] {
+        self.scopes.get(key)
+    }
+}
 
 /// C++ id-expression
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IdExpression {
     /// Hierarchical scope
     path: NestedNameSpecifier,
@@ -129,36 +170,27 @@ pub struct IdExpression {
     /// Unqualified id-expression
     id: UnqualifiedId,
 }
-//
-impl<T: Into<UnqualifiedId>> From<T> for IdExpression {
-    fn from(id: T) -> Self {
-        Self {
-            id: id.into(),
-            ..Default::default()
-        }
-    }
-}
 
 /// A nested name specifier
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NestedNameSpecifier {
     /// Truth that the path starts at the root scope (leading ::)
     rooted: bool,
 
     /// Sequence of inner scopes
-    scopes: Box<[Scope]>,
+    scopes: ScopesKey,
 }
 //
-impl<T: Into<Box<[Scope]>>> From<T> for NestedNameSpecifier {
-    fn from(scopes: T) -> Self {
+impl From<ScopesKey> for NestedNameSpecifier {
+    fn from(scopes: ScopesKey) -> Self {
         Self {
-            scopes: scopes.into(),
-            ..Default::default()
+            rooted: false,
+            scopes,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 enum ScopeOrUnqualifiedId {
     Scope(Scope),
@@ -167,8 +199,7 @@ enum ScopeOrUnqualifiedId {
 
 /// Scope (namespaces, classes, and anything else to which inner identifiers
 /// could possibly belong) without recursion (that's NestedNameSpecifier).
-// FIXME: This type appears in Box<[T]>, intern that once data is owned
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Scope {
     /// What identifies the scope
     id: UnqualifiedId,

@@ -16,6 +16,7 @@ use crate::{
         FunctionCallKeyImpl, FunctionParametersKeyImpl, FUNCTION_CALL_LEN_BITS,
         FUNCTION_PARAMETERS_LEN_BITS,
     },
+    names::scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
     templates::{TemplateParameter, TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS},
     types::{
         specifiers::legacy::{self, LegacyName},
@@ -110,6 +111,9 @@ pub struct EntityParser {
     /// Interned function parameter sets (sequences of types)
     function_parameters:
         RecursiveSequenceInterner<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
+
+    /// Interned sequences of scopes
+    scopes: RecursiveSequenceInterner<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
 }
 //
 impl EntityParser {
@@ -125,6 +129,7 @@ impl EntityParser {
             value_trailers: Default::default(),
             function_calls: Default::default(),
             function_parameters: Default::default(),
+            scopes: Default::default(),
         }
     }
 
@@ -183,6 +188,7 @@ impl EntityParser {
             value_trailers: self.value_trailers.into_inner().finalize(),
             function_calls: self.function_calls.into_inner().finalize(),
             function_parameters: self.function_parameters.into_inner().finalize(),
+            scopes: self.scopes.into_inner().finalize(),
         }
     }
 }
@@ -224,6 +230,9 @@ pub struct Entities {
     /// Interned function parameter sets (sequences of types)
     function_parameters:
         InternedSequences<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
+
+    /// Interned sequences of scopes
+    scopes: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
 }
 //
 impl Entities {

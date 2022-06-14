@@ -34,7 +34,7 @@ impl EntityParser {
         // Basic pointer declarator
         let mut basic_pointer =
             preceded(char('*').and(space0), Self::parse_cv).map(|cv| DeclOperator::Pointer {
-                path: Default::default(),
+                path: self.scopes.entry().intern().into(),
                 cv,
             });
 

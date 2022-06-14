@@ -228,7 +228,7 @@ impl Entities {
 }
 
 /// A value, or something that looks close enough to it
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ValueLike {
     /// Initial value-like entity
     header: ValueHeader,
@@ -239,7 +239,7 @@ pub struct ValueLike {
 }
 
 /// Values that are not expressions starting with a value
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ValueHeader {
     /// Literal
     Literal(Literal),

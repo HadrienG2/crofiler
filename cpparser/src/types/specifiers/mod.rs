@@ -56,7 +56,7 @@ impl EntityParser {
 }
 
 /// Type specifier
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypeSpecifier {
     /// CV qualifiers applying to the simple type
     cv: ConstVolatile,
@@ -75,19 +75,13 @@ impl<T: Into<SimpleType>> From<T> for TypeSpecifier {
 }
 
 /// Inner simple type specifiers that TypeSpecifier can wrap
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SimpleType {
     /// Id-expressions
     IdExpression(IdExpression),
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
-}
-//
-impl Default for SimpleType {
-    fn default() -> Self {
-        Self::IdExpression(IdExpression::default())
-    }
 }
 //
 impl From<IdExpression> for SimpleType {
