@@ -382,38 +382,132 @@ pub(crate) mod tests {
     #[test]
     fn initial() {
         let interner = TestedInterner::new();
-        assert_eq!(interner.num_items(), 0);
+        assert_eq!(interner.len(), 0);
         assert!(interner.is_empty());
+        assert_eq!(interner.num_items(), 0);
+        assert_eq!(interner.max_sequence_len(), None);
         test_final_state(&[], interner);
+    }
+
+    fn intern_via_entry(interner: &mut TestedInterner, input: &[bool]) -> TestedKey {
+        // Prepare to check interner state across operations
+        let old_interner = interner.clone();
+        let check_same = |expected: &TestedInterner, actual: &TestedInterner| {
+            assert_eq!(expected.concatenated, actual.concatenated);
+            assert_eq!(expected.len(), actual.len());
+            assert_eq!(expected.is_empty(), actual.is_empty());
+            assert_eq!(expected.num_items(), actual.num_items());
+            assert_eq!(expected.max_sequence_len(), actual.max_sequence_len());
+        };
+
+        // Check newly created entry
+        let interner_ptr = &*interner as *const TestedInterner;
+        let initial_concatenated_len = interner.concatenated.len();
+        {
+            // Create the entry
+            let mut entry = interner.entry();
+            assert_eq!(&*entry.interner as *const TestedInterner, interner_ptr);
+            assert_eq!(entry.initial_concatenated_len, initial_concatenated_len);
+            check_same(&*entry.interner, &old_interner);
+
+            // Check empty entry length
+            assert_eq!(entry.len(), 0);
+            check_same(&*entry.interner, &old_interner);
+
+            // Check empty entry popping
+            assert_eq!(entry.pop(), None);
+            assert_eq!(entry.initial_concatenated_len, initial_concatenated_len);
+            check_same(&*entry.interner, &old_interner);
+        }
+
+        // Make sure dropping the entry without interning has no side effect
+        check_same(&old_interner, &*interner);
+
+        // Play with push and pop
+        {
+            let mut entry = interner.entry();
+            for (idx, &item) in input.iter().enumerate() {
+                // Push item
+                entry.push(item);
+                assert_eq!(entry.initial_concatenated_len, initial_concatenated_len);
+                assert_eq!(
+                    entry.interner.concatenated.len(),
+                    initial_concatenated_len + idx + 1
+                );
+                assert_eq!(
+                    &entry.interner.concatenated[initial_concatenated_len..],
+                    &input[..=idx]
+                );
+
+                // Pop it back
+                assert_eq!(entry.pop(), Some(item));
+                assert_eq!(entry.initial_concatenated_len, initial_concatenated_len);
+                assert_eq!(
+                    entry.interner.concatenated.len(),
+                    initial_concatenated_len + idx
+                );
+                assert_eq!(
+                    &entry.interner.concatenated[initial_concatenated_len..],
+                    &input[..idx]
+                );
+
+                // Push it again
+                entry.push(item);
+            }
+        }
+
+        // Again, make sure dropping the without interning has no side effect
+        check_same(&old_interner, &*interner);
+
+        // Now seriously make the entry we want
+        let mut entry = interner.entry();
+        for &item in input {
+            entry.push(item);
+        }
+        entry.intern()
     }
 
     #[test]
     fn intern_one() {
-        let test_intern = |input: &[bool]| {
+        fn test_intern(
+            input: &[bool],
+            mut intern: impl FnMut(&mut TestedInterner, &[bool]) -> TestedKey,
+        ) {
             let mut interner = TestedInterner::new();
 
             let expected_key = TestedKey::try_from_range_usize(0..input.len()).unwrap();
-            assert_eq!(interner.intern(input), expected_key);
+            assert_eq!(intern(&mut interner, input), expected_key);
             assert_eq!(interner.concatenated, input);
             assert_eq!(interner.len(), 1);
+            assert!(!interner.is_empty());
             assert_eq!(interner.num_items(), input.len());
+            assert_eq!(interner.max_sequence_len(), Some(input.len()));
+            assert_eq!(interner.get(expected_key), input);
             test_final_state(&[input], interner.clone());
 
-            assert_eq!(interner.intern(input), expected_key);
+            assert_eq!(intern(&mut interner, input), expected_key);
             assert_eq!(interner.concatenated, input);
             assert_eq!(interner.len(), 1);
+            assert!(!interner.is_empty());
             assert_eq!(interner.num_items(), input.len());
+            assert_eq!(interner.max_sequence_len(), Some(input.len()));
+            assert_eq!(interner.get(expected_key), input);
             test_final_state(&[input], interner);
-        };
+        }
 
         for input in [[].as_ref(), [false].as_ref(), [true, false].as_ref()] {
-            test_intern(input);
+            test_intern(input, |interner, input| interner.intern(input));
+            test_intern(input, intern_via_entry);
         }
     }
 
     #[test]
     fn intern_two() {
-        let test_intern = |input1: &[bool], input2: &[bool]| {
+        fn test_intern(
+            input1: &[bool],
+            input2: &[bool],
+            mut intern: impl FnMut(&mut TestedInterner, &[bool]) -> TestedKey,
+        ) {
             let mut interner = TestedInterner::new();
             let key1 = interner.intern(input1);
             let interner1 = interner.clone();
@@ -422,21 +516,42 @@ pub(crate) mod tests {
                 interner.num_items()..interner.num_items() + input2.len(),
             )
             .unwrap();
-            assert_eq!(interner.intern(input2), key2);
+            assert_eq!(intern(&mut interner, input2), key2);
             assert_eq!(interner.len(), 2);
+            assert!(!interner.is_empty());
             assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
+            assert_eq!(
+                interner.max_sequence_len(),
+                Some(input1.len().max(input2.len()))
+            );
+            assert_eq!(interner.get(key1), input1);
+            assert_eq!(interner.get(key2), input2);
             test_final_state(&[input1, input2], interner.clone());
 
-            assert_eq!(interner.intern(input1), key1);
+            assert_eq!(intern(&mut interner, input1), key1);
             assert_eq!(interner.len(), 2);
+            assert!(!interner.is_empty());
             assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
+            assert_eq!(
+                interner.max_sequence_len(),
+                Some(input1.len().max(input2.len()))
+            );
+            assert_eq!(interner.get(key1), input1);
+            assert_eq!(interner.get(key2), input2);
             test_final_state(&[input1, input2], interner.clone());
 
-            assert_eq!(interner.intern(input2), key2);
+            assert_eq!(intern(&mut interner, input2), key2);
             assert_eq!(interner.len(), 2);
+            assert!(!interner.is_empty());
             assert_eq!(interner.num_items(), interner1.num_items() + input2.len());
+            assert_eq!(
+                interner.max_sequence_len(),
+                Some(input1.len().max(input2.len()))
+            );
+            assert_eq!(interner.get(key1), input1);
+            assert_eq!(interner.get(key2), input2);
             test_final_state(&[input1, input2], interner);
-        };
+        }
 
         let test_dataset = [[].as_ref(), [false].as_ref(), [true, false].as_ref()];
         for input1 in test_dataset {
@@ -444,7 +559,8 @@ pub(crate) mod tests {
                 if input2 == input1 {
                     continue;
                 } else {
-                    test_intern(input1, input2);
+                    test_intern(input1, input2, |interner, input| interner.intern(input));
+                    test_intern(input1, input2, intern_via_entry);
                 }
             }
         }
