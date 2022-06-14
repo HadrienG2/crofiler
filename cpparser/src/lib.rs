@@ -220,27 +220,27 @@ pub struct Entities {
     /// Values
     values: Interned<ValueLike, ValueKey>,
 
-    /// Interned template parameter sets
+    /// Template parameter sets
     template_parameter_sets: InternedSequences<
         TemplateParameter,
         TemplateParametersKeyImpl,
         TEMPLATE_PARAMETERS_LEN_BITS,
     >,
 
-    /// Interned value trailers (part of ValueLike that comes after ValueHeader)
+    /// Value trailers (part of ValueLike that comes after ValueHeader)
     value_trailers: InternedSequences<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
 
-    /// Interned function calls (sequences of values)
+    /// Function calls (sequences of values)
     function_calls: InternedSequences<ValueKey, FunctionCallKeyImpl, FUNCTION_CALL_LEN_BITS>,
 
-    /// Interned function parameter sets (sequences of types)
+    /// Function parameter sets (sequences of types)
     function_parameters:
         InternedSequences<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
 
-    /// Interned sequences of scopes
+    /// Sequences of scopes
     scopes: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
 
-    /// Interned declarators
+    /// Declarators (sequences of DeclOperator)
     declarators: InternedSequences<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
 }
 //

@@ -108,7 +108,7 @@ impl EntityParser {
         self.scopes.borrow().get(key).into()
     }
 
-    /// Total number of scopes across all interned nested name specifiers so far
+    /// Total number of Scopes across all interned nested name specifiers so far
     pub fn num_scopes(&self) -> usize {
         self.scopes.borrow().num_items()
     }
