@@ -51,7 +51,7 @@ impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
 
         // Ensure that the range length fits in the bit budget
         let len = range.count();
-        if len > (1 << LEN_BITS) {
+        if len >= (1 << LEN_BITS) {
             return None;
         }
 
@@ -295,7 +295,63 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use lasso::{Key, LargeSpur, MicroSpur, Spur};
     use pretty_assertions::assert_eq;
+    use std::fmt::Debug;
+
+    const fn num_bits<T>() -> u32 {
+        (std::mem::size_of::<T>() * 8) as u32
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_sequence_key_bits() {
+        SequenceKey::<LargeSpur, { num_bits::<usize>() }>::check_configuration()
+    }
+
+    fn test_sequence_key<Inner: Key + Debug, const LEN_BITS: u32>() {
+        // Empty ranges should be supported
+        let test_round_trip = |input: Range<usize>| {
+            let key = SequenceKey::<Inner, LEN_BITS>::try_from_range_usize(input.clone());
+            assert_eq!(key.map(SequenceKey::into_range_usize), Some(input));
+        };
+        test_round_trip(0..0);
+
+        // In the middle of the range, maximal length should be supported
+        let offset_bits = num_bits::<Inner>() - LEN_BITS;
+        let max_offset = (1 << offset_bits) - 1;
+        let max_len = (1 << LEN_BITS) - 1;
+        test_round_trip((max_offset / 2)..(max_offset / 2 + max_len));
+
+        // At the end of the range, only max_len - 1 may be supported, due to
+        // the implementation of lasso Spurs using NonZero integers
+        if max_len >= 1 {
+            test_round_trip(max_offset..(max_offset + max_len - 1));
+        }
+
+        // An excessive length or offset should error out cleanly
+        let test_failed_conversion = |input: Range<usize>| {
+            assert_eq!(
+                SequenceKey::<Inner, LEN_BITS>::try_from_range_usize(input),
+                None
+            );
+        };
+        test_failed_conversion(0..(max_len + 1));
+        test_failed_conversion((max_offset + 1)..(max_offset + 2));
+    }
+
+    #[test]
+    fn sequence_key() {
+        test_sequence_key::<MicroSpur, 0>();
+        test_sequence_key::<MicroSpur, 1>();
+        test_sequence_key::<MicroSpur, 2>();
+        test_sequence_key::<MicroSpur, 3>();
+        test_sequence_key::<MicroSpur, 4>();
+        test_sequence_key::<MicroSpur, 5>();
+        test_sequence_key::<MicroSpur, 6>();
+        test_sequence_key::<MicroSpur, 7>();
+        test_sequence_key::<Spur, 8>();
+    }
 
     type TestedKey = SequenceKey<lasso::Spur, 8>;
     type TestedInterner = SequenceInterner<bool, lasso::Spur, 8>;
