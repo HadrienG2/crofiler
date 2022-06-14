@@ -14,7 +14,7 @@ pub use lasso;
 
 /// Interned things
 #[derive(Clone, Debug, PartialEq)]
-pub struct Interned<Item, K: Key>(Box<[Item]>, PhantomData<*const K>);
+pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<*const K>);
 //
 impl<Item, K: Key> Interned<Item, K> {
     /// Retrieve a previously interned thing
@@ -26,6 +26,7 @@ impl<Item, K: Key> Interned<Item, K> {
 /// Interner for arbitrary things
 //
 // Holds unique items received so far, along with interning order
+//
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Interner<Item: Clone + Eq + Hash, K: Key = Spur>(
     HashMap<Item, usize>,
@@ -116,6 +117,7 @@ pub(crate) mod tests {
     fn initial() {
         let interner = TestedInterner::new();
         assert!(interner.0.is_empty());
+        assert_eq!(interner.len(), 0);
         test_final_state(&[], interner);
     }
 
@@ -124,10 +126,14 @@ pub(crate) mod tests {
         let test_intern = |input: bool| {
             let mut interner = TestedInterner::new();
 
-            assert_eq!(interner.intern(input).into_usize(), 0);
+            let key1 = interner.intern(input);
+            assert_eq!(key1.into_usize(), 0);
             let mut expected_data = HashMap::new();
             expected_data.insert(input, 0);
             assert_eq!(interner.0, expected_data);
+            assert!(!interner.is_empty());
+            assert_eq!(interner.len(), 1);
+            assert_eq!(interner.get(key1), &input);
 
             let old_interner = interner.clone();
             assert_eq!(interner.intern(input).into_usize(), 0);
@@ -148,10 +154,14 @@ pub(crate) mod tests {
             interner.intern(input1);
             let interner1 = interner.clone();
 
-            assert_eq!(interner.intern(input2).into_usize(), 1);
+            let key2 = interner.intern(input2);
+            assert_eq!(key2.into_usize(), 1);
             let mut expected_items = interner1.0.clone();
             expected_items.insert(input2, 1);
             assert_eq!(interner.0, expected_items);
+            assert!(!interner.is_empty());
+            assert_eq!(interner.len(), 2);
+            assert_eq!(interner.get(key2), &input2);
 
             let interner2 = interner.clone();
             assert_eq!(interner.intern(input1).into_usize(), 0);

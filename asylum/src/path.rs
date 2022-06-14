@@ -1,7 +1,7 @@
 //! Utilities for handling file paths
 
 use crate::sequence::{InternedSequences, SequenceInterner, SequenceKey};
-use lasso::{Key, Rodeo, RodeoResolver};
+use lasso::{Key, Rodeo, RodeoResolver, Spur};
 use std::{
     ffi::OsStr,
     hash::Hash,
@@ -11,7 +11,7 @@ use thiserror::Error;
 
 /// Space- and allocation-efficient collection of file paths
 #[derive(Debug, PartialEq)]
-pub struct InternedPaths<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32> {
+pub struct InternedPaths<ComponentKey: Key, PathKeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
     /// Interned path components
     components: RodeoResolver<ComponentKey>,
 
@@ -39,13 +39,13 @@ impl<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32>
 /// comparison, as it is guaranteed that if two keys differ, the corresponding
 /// paths differ as well.
 ///
-pub type PathKey<KeyImpl, const LEN_BITS: u32> = SequenceKey<KeyImpl, LEN_BITS>;
+pub type PathKey<KeyImpl = Spur, const LEN_BITS: u32 = 8> = SequenceKey<KeyImpl, LEN_BITS>;
 
 /// Accessor to an interned path
 #[derive(Debug, PartialEq)]
 pub struct InternedPath<
     'parent,
-    ComponentKey: Key,
+    ComponentKey: Key = Spur,
     Resolver: lasso::Resolver<ComponentKey> = RodeoResolver<ComponentKey>,
 > {
     /// Access to interned path components
@@ -81,7 +81,7 @@ impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>>
 
 /// Accessor to an interned path component
 #[derive(Debug, PartialEq)]
-pub struct InternedComponent<'parent, ComponentKey: Key> {
+pub struct InternedComponent<'parent, ComponentKey: Key = Spur> {
     /// Key used to extract the path component
     key: ComponentKey,
 
@@ -123,8 +123,9 @@ impl<ComponentKey: Key> AsRef<Path> for InternedComponent<'_, ComponentKey> {
     }
 }
 
-/// Writable collection of file paths, meant to ultimately become InternedPaths
-pub struct PathInterner<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32> {
+/// Writable collection of absolute file paths, meant to ultimately become InternedPaths
+pub struct PathInterner<ComponentKey: Key + Hash, PathKeyImpl: Key = Spur, const LEN_BITS: u32 = 8>
+{
     /// Interner for individual path components
     components: Rodeo<ComponentKey>,
 
@@ -143,7 +144,15 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         }
     }
 
-    /// Record a new file path, return an error if the path is relative
+    /// Record a new absolute file path, return an error if the path is relative
+    ///
+    /// Basic path normalization is performed, handling . and .. as you would
+    /// expect, but symlinks are not traversed as access to the filesystem tree
+    /// where the data was taken cannot be assumed.
+    ///
+    /// Paths must all be absolute as otherwise, without working directory
+    /// information, there is no way to compare a relative path with another path
+    ///
     pub fn intern(&mut self, path: &str) -> Result<PathKey<PathKeyImpl, LEN_BITS>, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);

@@ -2,7 +2,7 @@
 
 use ahash::RandomState;
 use hashbrown::raw::RawTable;
-use lasso::Key;
+use lasso::{Key, Spur};
 use std::{
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
@@ -17,8 +17,11 @@ use std::{
 /// comparison, as it is guaranteed that two keys are the same if and only if
 /// the underlying sequences are the same.
 ///
+/// Internally, it is implemented as an extended version of lasso's Key that
+/// reserves some key bits for inline sequence length information.
+///
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SequenceKey<Inner: Key, const LEN_BITS: u32>(Inner);
+pub struct SequenceKey<Inner: Key = Spur, const LEN_BITS: u32 = 8>(Inner);
 //
 impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
     /// Check that the configuration is sensible
@@ -60,7 +63,7 @@ impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
 
 /// Interned sequence of things
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InternedSequences<Item, KeyImpl: Key, const LEN_BITS: u32> {
+pub struct InternedSequences<Item, KeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
     /// Concatened sequence of all interned sequences
     concatenated: Box<[Item]>,
 
@@ -77,7 +80,7 @@ impl<Item, KeyImpl: Key, const LEN_BITS: u32> InternedSequences<Item, KeyImpl, L
 
 /// Interner for sequence of things
 #[derive(Clone)]
-pub struct SequenceInterner<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> {
+pub struct SequenceInterner<Item: Clone + Eq + Hash, KeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
     /// Concatenated interned sequences
     concatenated: Vec<Item>,
 
@@ -220,7 +223,12 @@ fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, sequence: &[Item]) 
 }
 
 /// Mechanism to gradually intern a sequence element by element
-pub struct SequenceEntry<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> {
+pub struct SequenceEntry<
+    'interner,
+    Item: Clone + Eq + Hash,
+    KeyImpl: Key = Spur,
+    const LEN_BITS: u32 = 8,
+> {
     /// Underlying sequence interner
     interner: &'interner mut SequenceInterner<Item, KeyImpl, LEN_BITS>,
 
