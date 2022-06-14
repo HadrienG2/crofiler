@@ -20,7 +20,6 @@ use std::fmt::Debug;
 /// After parsing, you can retrieve a declarator by passing this key to the
 /// declarator() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type DeclaratorKey = SequenceKey<DeclaratorKeyImpl, DECLARATOR_LEN_BITS>;
 pub(crate) type DeclaratorKeyImpl = Spur;
 pub(crate) const DECLARATOR_LEN_BITS: u32 = 8;

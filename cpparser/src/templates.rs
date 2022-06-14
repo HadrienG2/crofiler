@@ -15,11 +15,10 @@ use std::fmt::Debug;
 /// After parsing, you can retrieve a template parameter set by passing this key
 /// to the template_parameters() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type TemplateParametersKey =
     SequenceKey<TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS>;
 pub(crate) type TemplateParametersKeyImpl = Spur;
-pub(crate) const TEMPLATE_PARAMETERS_LEN_BITS: u32 = 8;
+pub(crate) const TEMPLATE_PARAMETERS_LEN_BITS: u32 = 10;
 //
 impl EntityParser {
     /// Parser for unqualified id-expressions

@@ -16,7 +16,6 @@ use nom_supreme::ParserExt;
 /// After parsing, you can retrieve a scope sequence by passing this key
 /// to the scopes() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type ScopesKey = SequenceKey<ScopesKeyImpl, SCOPES_LEN_BITS>;
 pub(crate) type ScopesKeyImpl = Spur;
 pub(crate) const SCOPES_LEN_BITS: u32 = 8;

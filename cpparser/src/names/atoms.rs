@@ -1,7 +1,7 @@
 //! Atoms from the C++ entity grammar
 
 use crate::{Entities, EntityParser, Error, IResult};
-use asylum::lasso::Spur;
+use asylum::lasso::MiniSpur;
 use nom::{error::ErrorKind, Parser};
 use nom_supreme::ParserExt;
 
@@ -13,8 +13,7 @@ use nom_supreme::ParserExt;
 /// After parsing, you can retrieve an identifier by passing this key to the
 /// identifier() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
-pub type IdentifierKey = Spur;
+pub type IdentifierKey = MiniSpur;
 //
 impl EntityParser {
     /// Generate a parser recognizing a certain C++ keyword

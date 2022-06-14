@@ -1,7 +1,7 @@
 //! Operator-related grammar that is only used when parsing expressions
 
 use super::{Operator, Symbol};
-use crate::{functions::FunctionCallKey, types::TypeKey, EntityParser, IResult};
+use crate::{functions::FunctionArgumentsKey, types::TypeKey, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 
@@ -145,13 +145,13 @@ pub struct NewExpression {
     rooted: bool,
 
     /// Placement parameters
-    placement: Option<FunctionCallKey>,
+    placement: Option<FunctionArgumentsKey>,
 
     /// Type of values being created
     ty: TypeKey,
 
     /// Parameters to the values' constructor (if any)
-    constructor: Option<FunctionCallKey>,
+    constructor: Option<FunctionArgumentsKey>,
 }
 //
 impl From<TypeKey> for NewExpression {

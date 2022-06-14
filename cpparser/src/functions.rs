@@ -10,25 +10,24 @@ use crate::{
     Entities, EntityParser, IResult,
 };
 use asylum::{
-    lasso::{Key, Spur},
+    lasso::{Key, MiniSpur, Spur},
     sequence::SequenceKey,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::{fmt::Debug, hash::Hash};
 
-/// Interned function call (= list of parameter values) key
+/// Interned function arguments (= list of parameter values) key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
-/// parameters lists as long as both keys were produced by the same EntityParser.
+/// argument lists as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve the parameter list by passing this key to
-/// the function_call() method of the Entities struct.
+/// the function_arguments() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
-pub type FunctionCallKey = SequenceKey<FunctionCallKeyImpl, FUNCTION_CALL_LEN_BITS>;
-pub(crate) type FunctionCallKeyImpl = Spur;
-pub(crate) const FUNCTION_CALL_LEN_BITS: u32 = 8;
+pub type FunctionArgumentsKey = SequenceKey<FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>;
+pub(crate) type FunctionArgumentsKeyImpl = MiniSpur;
+pub(crate) const FUNCTION_ARGUMENTS_LEN_BITS: u32 = 6;
 //
 /// Interned function parameter sets (= list of parameter types) key
 ///
@@ -38,7 +37,6 @@ pub(crate) const FUNCTION_CALL_LEN_BITS: u32 = 8;
 /// After parsing, you can retrieve the parameter list by passing this key to
 /// the function_parameters() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type FunctionParametersKey =
     SequenceKey<FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>;
 pub(crate) type FunctionParametersKeyImpl = Spur;
@@ -49,11 +47,11 @@ impl EntityParser {
     pub fn parse_function_call<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, FunctionCallKey> {
+    ) -> IResult<'source, FunctionArgumentsKey> {
         function_parameters(
             s,
             |s| self.parse_value_like(s, false, true),
-            &self.function_calls,
+            &self.function_arguments,
         )
     }
 
@@ -61,18 +59,18 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
-    pub(crate) fn function_call(&self, key: FunctionCallKey) -> Box<[ValueKey]> {
-        self.function_calls.borrow().get(key).into()
+    pub(crate) fn function_arguments(&self, key: FunctionArgumentsKey) -> Box<[ValueKey]> {
+        self.function_arguments.borrow().get(key).into()
     }
 
-    /// Total number of function parameters across all interned function calls so far
-    pub fn num_function_call_parameters(&self) -> usize {
-        self.function_calls.borrow().num_items()
+    /// Total number of function arguments across all interned function calls so far
+    pub fn num_function_arguments(&self) -> usize {
+        self.function_arguments.borrow().num_items()
     }
 
-    /// Maximal number of function parameters in a single function call
-    pub fn max_function_call_parameters(&self) -> Option<usize> {
-        self.function_calls.borrow().max_sequence_len()
+    /// Maximal number of function arguments in a single function call
+    pub fn max_function_arguments_len(&self) -> Option<usize> {
+        self.function_arguments.borrow().max_sequence_len()
     }
 
     /// Parser recognizing a function signature (parameters + qualifiers)
@@ -125,7 +123,7 @@ impl EntityParser {
     }
 
     /// Maximal number of function parameters in a single function signature
-    pub fn max_function_parameters(&self) -> Option<usize> {
+    pub fn max_function_parameters_len(&self) -> Option<usize> {
         self.function_parameters.borrow().max_sequence_len()
     }
 
@@ -150,8 +148,8 @@ impl EntityParser {
 //
 impl Entities {
     /// Retrieve a function call previously parsed by parse_function_call
-    pub fn function_call(&self, key: FunctionCallKey) -> &[ValueKey] {
-        self.function_calls.get(key)
+    pub fn function_call(&self, key: FunctionArgumentsKey) -> &[ValueKey] {
+        self.function_arguments.get(key)
     }
 
     /// Retrieve a function parameter set previously parsed by parse_function_signature

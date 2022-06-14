@@ -5,7 +5,7 @@ pub mod qualifiers;
 pub mod specifiers;
 
 use self::{declarators::DeclaratorKey, specifiers::TypeSpecifier};
-use crate::{functions::FunctionCallKey, Entities, EntityParser, IResult};
+use crate::{functions::FunctionArgumentsKey, Entities, EntityParser, IResult};
 use asylum::lasso::Spur;
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -18,7 +18,6 @@ use nom_supreme::ParserExt;
 /// After parsing, you can retrieve a type by passing this key to the
 /// type_like() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type TypeKey = Spur;
 //
 impl EntityParser {
@@ -38,7 +37,7 @@ impl EntityParser {
             |s| self.parse_function_call(s),
             char(')'),
         ))
-        .map(|opt| opt.unwrap_or_else(|| self.function_calls.entry().intern()));
+        .map(|opt| opt.unwrap_or_else(|| self.function_arguments.entry().intern()));
 
         // Then come the type specifier and declarator
         tuple((
@@ -81,7 +80,7 @@ impl Entities {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
-    attributes: FunctionCallKey,
+    attributes: FunctionArgumentsKey,
 
     /// Type specifier
     type_specifier: TypeSpecifier,

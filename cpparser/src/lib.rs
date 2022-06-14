@@ -13,10 +13,13 @@ pub mod values;
 
 use crate::{
     functions::{
-        FunctionCallKeyImpl, FunctionParametersKeyImpl, FUNCTION_CALL_LEN_BITS,
+        FunctionArgumentsKeyImpl, FunctionParametersKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS,
         FUNCTION_PARAMETERS_LEN_BITS,
     },
-    names::scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
+    names::{
+        atoms::IdentifierKey,
+        scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
+    },
     templates::{TemplateParameter, TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS},
     types::{
         declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
@@ -51,8 +54,6 @@ pub type Error<I> = nom::error::Error<I>;
 /// string comparison, as it is guaranteed that if two keys differ, the
 /// corresponding values differ as well.
 ///
-// Using MiniSpur here as I'm expecting no more than 2^16 unique path components.
-//
 pub type PathComponentKey = MiniSpur;
 
 /// Interned file path key
@@ -63,7 +64,6 @@ pub type PathComponentKey = MiniSpur;
 /// After parsing, you can retrieve a path by passing this key to the
 /// path() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
 type PathKeyImpl = Spur;
 const PATH_LEN_BITS: u32 = 8;
@@ -83,7 +83,7 @@ pub struct EntityParser {
     legacy_name_parser: Box<dyn Fn(&str) -> IResult<LegacyName>>,
 
     /// Interned identifiers
-    identifiers: RefCell<Rodeo>,
+    identifiers: RefCell<Rodeo<IdentifierKey>>,
 
     /// Interned file paths
     paths: RefCell<PathInterner<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>>,
@@ -105,9 +105,9 @@ pub struct EntityParser {
     value_trailers:
         RecursiveSequenceInterner<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
 
-    /// Interned function calls (sequences of values)
-    function_calls:
-        RecursiveSequenceInterner<ValueKey, FunctionCallKeyImpl, FUNCTION_CALL_LEN_BITS>,
+    /// Interned function call arguments (sequences of values)
+    function_arguments:
+        RecursiveSequenceInterner<ValueKey, FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>,
 
     /// Interned function parameter sets (sequences of types)
     function_parameters:
@@ -125,13 +125,13 @@ impl EntityParser {
     pub fn new() -> Self {
         Self {
             legacy_name_parser: Box::new(legacy::legacy_name_parser()),
-            identifiers: Default::default(),
+            identifiers: RefCell::new(Rodeo::new()),
             paths: Default::default(),
             types: Default::default(),
-            values: Default::default(),
+            values: RefCell::new(Interner::new()),
             template_parameter_sets: Default::default(),
             value_trailers: Default::default(),
-            function_calls: Default::default(),
+            function_arguments: Default::default(),
             function_parameters: Default::default(),
             scopes: Default::default(),
             declarators: Default::default(),
@@ -191,7 +191,7 @@ impl EntityParser {
             values: self.values.into_inner().finalize(),
             template_parameter_sets: self.template_parameter_sets.into_inner().finalize(),
             value_trailers: self.value_trailers.into_inner().finalize(),
-            function_calls: self.function_calls.into_inner().finalize(),
+            function_arguments: self.function_arguments.into_inner().finalize(),
             function_parameters: self.function_parameters.into_inner().finalize(),
             scopes: self.scopes.into_inner().finalize(),
             declarators: self.declarators.into_inner().finalize(),
@@ -209,7 +209,7 @@ impl Default for EntityParser {
 #[derive(Debug, PartialEq)]
 pub struct Entities {
     /// Identifiers
-    identifiers: RodeoResolver,
+    identifiers: RodeoResolver<IdentifierKey>,
 
     /// Paths
     paths: InternedPaths<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>,
@@ -230,8 +230,9 @@ pub struct Entities {
     /// Value trailers (part of ValueLike that comes after ValueHeader)
     value_trailers: InternedSequences<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
 
-    /// Function calls (sequences of values)
-    function_calls: InternedSequences<ValueKey, FunctionCallKeyImpl, FUNCTION_CALL_LEN_BITS>,
+    /// Function call arguments (sequences of values)
+    function_arguments:
+        InternedSequences<ValueKey, FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>,
 
     /// Function parameter sets (sequences of types)
     function_parameters:

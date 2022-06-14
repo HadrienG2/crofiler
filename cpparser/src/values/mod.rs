@@ -4,12 +4,12 @@ pub mod literals;
 
 use self::literals::Literal;
 use crate::{
-    functions::FunctionCallKey,
+    functions::FunctionArgumentsKey,
     names::{scopes::IdExpression, unqualified::UnqualifiedId},
     operators::{usage::NewExpression, Operator},
     Entities, EntityParser, IResult,
 };
-use asylum::{lasso::Spur, sequence::SequenceKey};
+use asylum::{lasso::MiniSpur, sequence::SequenceKey};
 use nom::Parser;
 
 /// Interned C++ value key
@@ -20,8 +20,7 @@ use nom::Parser;
 /// After parsing, you can retrieve a value by passing this key to the
 /// value_like() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
-pub type ValueKey = Spur;
+pub type ValueKey = MiniSpur;
 //
 /// Interned value trailer key
 ///
@@ -31,10 +30,9 @@ pub type ValueKey = Spur;
 /// After parsing, you can retrieve a value trailer by passing this key to the
 /// value_trailer() method of the Entities struct.
 ///
-// TODO: Adjust key size based on observed entry count
 pub type ValueTrailerKey = SequenceKey<ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>;
-pub(crate) type ValueTrailerKeyImpl = Spur;
-pub(crate) const VALUE_TRAILER_LEN_BITS: u32 = 8;
+pub(crate) type ValueTrailerKeyImpl = MiniSpur;
+pub(crate) const VALUE_TRAILER_LEN_BITS: u32 = 6;
 //
 impl EntityParser {
     /// Parser recognizing values (and some types that are indistinguishable
@@ -291,7 +289,7 @@ pub enum AfterValue {
     ArrayIndex(ValueKey),
 
     /// Function call
-    FunctionCall(FunctionCallKey),
+    FunctionCall(FunctionArgumentsKey),
 
     /// Binary operator (OP x)
     BinaryOp(Operator, ValueKey),
@@ -306,8 +304,8 @@ pub enum AfterValue {
     PostfixOp(Operator),
 }
 //
-impl From<FunctionCallKey> for AfterValue {
-    fn from(f: FunctionCallKey) -> Self {
+impl From<FunctionArgumentsKey> for AfterValue {
+    fn from(f: FunctionArgumentsKey) -> Self {
         AfterValue::FunctionCall(f)
     }
 }

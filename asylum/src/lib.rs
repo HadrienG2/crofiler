@@ -48,7 +48,8 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
     ///
     pub fn intern(&mut self, item: Item) -> K {
         let new_key = self.0.len();
-        K::try_from_usize(*self.0.entry(item).or_insert(new_key)).unwrap()
+        K::try_from_usize(*self.0.entry(item).or_insert(new_key))
+            .expect("Went above key capacity, please use a bigger key")
     }
 
     /// Retrieve a previously interned thing

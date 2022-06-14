@@ -258,7 +258,7 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
         let start = self.initial_concatenated_len;
         let new_key =
             SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(start..start + sequence.len())
-                .unwrap();
+                .expect("Went above sequence key capacity, please use a bigger sequence key");
 
         // If this sequence was interned before, return the same key
         if let Some(old_key) = self.interner.get_sequence_key(hash, sequence) {
