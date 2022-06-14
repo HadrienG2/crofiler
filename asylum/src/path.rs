@@ -324,8 +324,16 @@ mod tests {
     #[test]
     fn empty() {
         let interner = TestedInterner::new();
+
         assert!(interner.components.is_empty());
         assert!(interner.sequences.is_empty());
+
+        assert_eq!(interner.num_components(), 0);
+        assert_eq!(interner.num_unique_components(), 0);
+        assert_eq!(interner.max_path_len(), None);
+        assert_eq!(interner.len(), 0);
+        assert!(interner.is_empty());
+
         finalize_and_check(interner, &[]);
     }
 
@@ -348,6 +356,13 @@ mod tests {
         }
         assert_eq!(interner.sequences.num_items(), components.len());
         assert_eq!(interner.sequences.len(), 1);
+
+        // Check accessors
+        assert_eq!(interner.num_components(), interner.sequences.num_items());
+        assert_eq!(interner.num_unique_components(), interner.components.len());
+        assert_eq!(interner.max_path_len(), Some(components.len()));
+        assert_eq!(interner.len(), 1);
+        assert!(!interner.is_empty());
 
         // Check final sequence
         finalize_and_check(interner, &[(components, key)]);
@@ -419,6 +434,16 @@ mod tests {
                 interner.sequences.num_items(),
                 old_sequences.num_items() + components2.len()
             );
+
+            // Check accessors
+            assert_eq!(interner.num_components(), interner.sequences.num_items());
+            assert_eq!(interner.num_unique_components(), interner.components.len());
+            assert_eq!(
+                interner.max_path_len(),
+                Some(components1.len().max(components2.len()))
+            );
+            assert_eq!(interner.len(), 2);
+            assert!(!interner.is_empty());
         }
 
         // Check interner finalization
