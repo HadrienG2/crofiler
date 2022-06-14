@@ -94,7 +94,7 @@ fn main() {
     println!("...all good!");
 
     // DEBUG
-    println!("Interner usage statistics:");
+    /*println!("Interner usage statistics:");
     println!("- Identifiers: {}", parser.num_identifiers());
     println!(
         "- Paths: {} interned components, {} total components, max {} components/path",
@@ -133,7 +133,7 @@ fn main() {
         "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
         parser.num_decl_operators(),
         parser.max_declarator_len().unwrap()
-    );
+    );*/
 
     // DEBUG
     /* use cpparser::values::*;
