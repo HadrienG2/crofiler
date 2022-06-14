@@ -44,6 +44,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn declarator(&self, key: DeclaratorKey) -> Box<Declarator> {
         self.declarators.borrow().get(key).into()
     }
@@ -183,12 +184,13 @@ mod tests {
         let parser = EntityParser::new();
 
         // Basic pointer syntax
+        let nested_name_specifier = |s| unwrap_parse(parser.parse_nested_name_specifier(s));
         assert_eq!(
             parser.parse_decl_operator("*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: NestedNameSpecifier::default(),
+                    path: nested_name_specifier(""),
                     cv: ConstVolatile::default(),
                 }
             ))
@@ -200,7 +202,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: NestedNameSpecifier::default(),
+                    path: nested_name_specifier(""),
                     cv: ConstVolatile::CONST,
                 }
             ))
@@ -212,7 +214,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: unwrap_parse(parser.parse_nested_name_specifier("A::B::")),
+                    path: nested_name_specifier("A::B::"),
                     cv: ConstVolatile::default(),
                 }
             ))
@@ -244,16 +246,16 @@ mod tests {
         // Function signature
         assert_eq!(
             parser.parse_decl_operator("()"),
-            Ok(("", FunctionSignature::default().into()))
+            Ok((
+                "",
+                unwrap_parse(parser.parse_function_signature("()")).into()
+            ))
         );
 
         // Parenthesized declarator
         assert_eq!(
             parser.parse_decl_operator("(&&)"),
-            Ok((
-                "",
-                DeclOperator::Parenthesized(vec![Reference::RValue.into()].into())
-            ))
+            Ok(("", unwrap_parse(parser.parse_declarator("&&")).into()))
         );
     }
 

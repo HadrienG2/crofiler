@@ -180,6 +180,7 @@ pub mod tests {
         );
 
         // Template with no parameters
+        let template_parameters = |s| unwrap_parse(parser.parse_template_parameters(s));
         assert_eq!(
             parser.parse_unqualified_id("no_parameters<>"),
             Ok((
@@ -187,7 +188,7 @@ pub mod tests {
                 UnqualifiedId::Named {
                     is_destructor: false,
                     id: identifier("no_parameters"),
-                    template_parameters: Some(Some(vec![].into())),
+                    template_parameters: Some(template_parameters("<>")),
                 }
             ))
         );
@@ -217,9 +218,7 @@ pub mod tests {
             parser.parse_unqualified_id("decltype(42)"),
             Ok((
                 "",
-                UnqualifiedId::Decltype(Box::new(unwrap_parse(
-                    parser.parse_value_like("42", true, true)
-                )))
+                UnqualifiedId::Decltype(unwrap_parse(parser.parse_value_like("42", true, true)))
             ))
         );
 

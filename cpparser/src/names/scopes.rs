@@ -103,6 +103,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn scope_sequence(&self, key: ScopesKey) -> Box<[Scope]> {
         self.scopes.borrow().get(key).into()
     }
@@ -244,7 +245,7 @@ pub mod tests {
                 "",
                 ScopeOrUnqualifiedId::Scope(Scope {
                     id: unqualified_id("my_function"),
-                    function_signature: Some(FunctionSignature::default()),
+                    function_signature: Some(unwrap_parse(parser.parse_function_signature("()"))),
                 })
             ))
         );
@@ -263,22 +264,49 @@ pub mod tests {
     fn proto_id_expression() {
         let parser = EntityParser::new();
         let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
-        let scopes = |ss: Vec<&str>| {
-            ss.into_iter()
-                .map(|s| unwrap_parse(parser.parse_unqualified_id(s)).into())
-                .collect()
+        let scopes = |ss: &[&str]| -> ScopesKey {
+            // Generate scope sequence
+            let mut entry = parser.scopes.entry();
+            let scopes: Vec<Scope> = ss
+                .iter()
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
+                .collect();
+
+            // Intern it
+            for &scope in scopes.iter() {
+                entry.push(scope);
+            }
+            let key = entry.intern();
+
+            // Make sure it can be correctly retrieved before returning it
+            for (input, result) in scopes.into_iter().zip(parser.scope_sequence(key).to_vec()) {
+                assert_eq!(input, result);
+            }
+            key
         };
 
         assert_eq!(
             parser.parse_proto_id_expression(""),
-            Ok(("", Default::default()))
+            Ok((
+                "",
+                (
+                    NestedNameSpecifier {
+                        rooted: false,
+                        scopes: scopes(&[]),
+                    },
+                    None
+                )
+            ))
         );
         assert_eq!(
             parser.parse_proto_id_expression("something"),
             Ok((
                 "",
                 (
-                    Default::default(),
+                    NestedNameSpecifier {
+                        rooted: false,
+                        scopes: scopes(&[]),
+                    },
                     Some(("something", unqualified_id("something")))
                 )
             ))
@@ -290,7 +318,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        ..Default::default()
+                        scopes: scopes(&[]),
                     },
                     None
                 )
@@ -303,7 +331,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        ..Default::default()
+                        scopes: scopes(&[]),
                     },
                     Some(("x", unqualified_id("x")))
                 )
@@ -315,8 +343,8 @@ pub mod tests {
                 "",
                 (
                     NestedNameSpecifier {
-                        scopes: scopes(vec!["boost"]),
-                        ..Default::default()
+                        rooted: false,
+                        scopes: scopes(&["boost"]),
                     },
                     None
                 )
@@ -328,8 +356,8 @@ pub mod tests {
                 "",
                 (
                     NestedNameSpecifier {
-                        scopes: scopes(vec!["boost"]),
-                        ..Default::default()
+                        rooted: false,
+                        scopes: scopes(&["boost"]),
                     },
                     Some(("y", unqualified_id("y")))
                 )
@@ -342,7 +370,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(vec!["std"])
+                        scopes: scopes(&["std"])
                     },
                     None
                 )
@@ -355,7 +383,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(vec!["std"])
+                        scopes: scopes(&["std"])
                     },
                     Some(("z 1", unqualified_id("z")))
                 )
@@ -367,8 +395,8 @@ pub mod tests {
                 "",
                 (
                     NestedNameSpecifier {
-                        scopes: scopes(vec!["boost", "hana"]),
-                        ..Default::default()
+                        rooted: false,
+                        scopes: scopes(&["boost", "hana"]),
                     },
                     None
                 )
@@ -380,8 +408,8 @@ pub mod tests {
                 "",
                 (
                     NestedNameSpecifier {
-                        scopes: scopes(vec!["boost", "hana"]),
-                        ..Default::default()
+                        rooted: false,
+                        scopes: scopes(&["boost", "hana"]),
                     },
                     Some(("stuff", unqualified_id("stuff")))
                 )
@@ -392,18 +420,24 @@ pub mod tests {
     #[test]
     fn nested_name_specifier() {
         let parser = EntityParser::new();
-        let scopes = |ss: Vec<&str>| {
-            ss.into_iter()
-                .map(|s| unwrap_parse(parser.parse_unqualified_id(s)).into())
-                .collect()
+        let scopes = |ss: &[&str]| -> ScopesKey {
+            let mut entry = parser.scopes.entry();
+            for scope in ss
+                .iter()
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
+            {
+                entry.push(scope);
+            }
+            entry.intern()
         };
+
         assert_eq!(
             parser.parse_nested_name_specifier("boost::hana::"),
             Ok((
                 "",
                 NestedNameSpecifier {
-                    scopes: scopes(vec!["boost", "hana"]),
-                    ..Default::default()
+                    rooted: false,
+                    scopes: scopes(&["boost", "hana"]),
                 }
             ))
         );
@@ -412,8 +446,8 @@ pub mod tests {
             Ok((
                 "stuff",
                 NestedNameSpecifier {
-                    scopes: scopes(vec!["boost", "hana"]),
-                    ..Default::default()
+                    rooted: false,
+                    scopes: scopes(&["boost", "hana"]),
                 }
             ))
         );
@@ -430,7 +464,10 @@ pub mod tests {
             Ok((
                 "",
                 IdExpression {
-                    path: NestedNameSpecifier::default(),
+                    path: NestedNameSpecifier {
+                        rooted: false,
+                        scopes: parser.scopes.entry().intern()
+                    },
                     id: unqualified_id("something")
                 }
             ))

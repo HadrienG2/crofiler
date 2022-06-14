@@ -59,6 +59,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn type_like(&self, key: TypeKey) -> TypeLike {
         self.types.borrow().get(key).clone()
     }

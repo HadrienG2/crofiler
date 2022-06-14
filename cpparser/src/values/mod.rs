@@ -78,6 +78,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn value_like(&self, key: ValueKey) -> ValueLike {
         self.values.borrow().get(key).clone()
     }
@@ -91,6 +92,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<ValueTrailer> {
         self.value_trailers.borrow().get(key).into()
     }
@@ -361,9 +363,7 @@ mod tests {
             parse_value_header("new TROOT"),
             Ok((
                 "",
-                ValueHeader::NewExpression(Box::new(unwrap_parse(
-                    parser.parse_new_expression("new TROOT")
-                ))),
+                ValueHeader::NewExpression(unwrap_parse(parser.parse_new_expression("new TROOT"))),
             ))
         );
 

@@ -61,6 +61,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn template_parameters(
         &self,
         key: TemplateParametersKey,
@@ -147,11 +148,14 @@ mod tests {
 
         let value_like = |s| unwrap_parse(parser.parse_value_like(s, true, true));
         let value_str = &(i64::MIN.to_string());
-        test_template_parameter(value_str, value_like(value_str).into());
+        test_template_parameter(
+            value_str,
+            TemplateParameter::ValueLike(value_like(value_str)),
+        );
 
         let test_type_parameter = |s: &str| {
             let type_like = unwrap_parse(parser.parse_type_like(s));
-            test_template_parameter(s, type_like.into());
+            test_template_parameter(s, TemplateParameter::TypeLike(type_like));
         };
         test_type_parameter("signed char*");
         test_type_parameter("charamel<lol>&");

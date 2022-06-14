@@ -59,6 +59,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn function_arguments(&self, key: FunctionArgumentsKey) -> Box<[ValueKey]> {
         self.function_arguments.borrow().get(key).into()
     }
@@ -113,6 +114,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn function_parameters(&self, key: FunctionParametersKey) -> Box<[TypeKey]> {
         self.function_parameters.borrow().get(key).into()
     }

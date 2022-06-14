@@ -67,6 +67,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
+    #[cfg(test)]
     pub(crate) fn identifier(&self, key: IdentifierKey) -> Box<str> {
         self.identifiers.borrow().resolve(&key).into()
     }
@@ -221,11 +222,13 @@ mod tests {
         let (rest, key) = parser.parse_identifier(ID).unwrap();
         assert_eq!(rest, "");
         assert_eq!(parser.num_identifiers(), 1);
+        assert_eq!(&*parser.identifier(key), ID);
 
         let mut id_str = ID.to_string();
         id_str.push('*');
         assert_eq!(parser.parse_identifier(&id_str), Ok(("*", key)));
         assert_eq!(parser.num_identifiers(), 1);
+        assert_eq!(&*parser.identifier(key), ID);
 
         let entities = parser.finalize();
         assert_eq!(entities.identifier(key), ID);

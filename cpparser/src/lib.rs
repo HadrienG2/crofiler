@@ -37,7 +37,7 @@ use asylum::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{cell::RefCell, fmt::Debug, path::Path};
+use std::{cell::RefCell, fmt::Debug};
 
 /// Re-export asylum version in use
 pub use asylum;
@@ -149,14 +149,6 @@ impl EntityParser {
             .borrow_mut()
             .intern(path)
             .expect("Encountered relative (and thus non-interpretable) file path")
-    }
-
-    /// Retrieve a previously interned path
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
-    pub(crate) fn path(&self, key: PathKey) -> Box<Path> {
-        self.paths.borrow().get(key).to_boxed_path()
     }
 
     /// Total number of path components across all interned paths so far

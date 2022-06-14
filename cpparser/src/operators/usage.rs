@@ -338,13 +338,7 @@ mod tests {
         // Basic form
         assert_eq!(
             parser.parse_new_expression("new int"),
-            Ok((
-                "",
-                NewExpression {
-                    ty: type_like("int"),
-                    ..Default::default()
-                }
-            ))
+            Ok(("", NewExpression::from(type_like("int"))))
         );
 
         // Rooted form
@@ -354,8 +348,9 @@ mod tests {
                 "",
                 NewExpression {
                     rooted: true,
+                    placement: None,
                     ty: type_like("double"),
-                    ..Default::default()
+                    constructor: None,
                 }
             ))
         );
@@ -367,9 +362,10 @@ mod tests {
             Ok((
                 "",
                 NewExpression {
+                    rooted: false,
                     placement: Some(function_call("(42)")),
                     ty: type_like("MyClass"),
-                    ..Default::default()
+                    constructor: None,
                 }
             ))
         );
@@ -380,9 +376,10 @@ mod tests {
             Ok((
                 "",
                 NewExpression {
+                    rooted: false,
+                    placement: None,
                     ty: type_like("MyClass"),
                     constructor: Some(function_call("('x')")),
-                    ..Default::default()
                 }
             ))
         );
