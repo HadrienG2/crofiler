@@ -1,7 +1,7 @@
 //! Miscellaneous tooling used as part of cpparser's implementation
 
 use asylum::{
-    lasso::Key,
+    lasso::{Key, Spur},
     sequence::{SequenceInterner, SequenceKey},
 };
 use std::{
@@ -13,9 +13,11 @@ use std::{
 /// Extension of SequenceInterner which provides an entry() API that can be
 /// called recursively using shared references
 #[derive(Clone)]
-pub struct RecursiveSequenceInterner<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>(
-    RefCell<(SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>,
-);
+pub struct RecursiveSequenceInterner<
+    Item: Clone + Eq + Hash,
+    KeyImpl: Key = Spur,
+    const LEN_BITS: u32 = 8,
+>(RefCell<(SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>);
 //
 impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     RecursiveSequenceInterner<Item, KeyImpl, LEN_BITS>
@@ -65,8 +67,8 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
 pub struct SequenceInternerRef<
     'interner,
     Item: Clone + Eq + Hash,
-    KeyImpl: Key,
-    const LEN_BITS: u32,
+    KeyImpl: Key = Spur,
+    const LEN_BITS: u32 = 8,
 >(Ref<'interner, (SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>);
 //
 impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Deref
@@ -79,7 +81,12 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Dere
 }
 
 /// Mechanism to gradually intern a sequence element by element
-pub struct SequenceEntry<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> {
+pub struct SequenceEntry<
+    'interner,
+    Item: Clone + Eq + Hash,
+    KeyImpl: Key = Spur,
+    const LEN_BITS: u32 = 8,
+> {
     /// Underlying sequence interner
     interner: &'interner RefCell<(SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>,
 
@@ -112,4 +119,74 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
     }
 }
 
-// FIXME: Add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type TestedInterner = RecursiveSequenceInterner<bool>;
+
+    #[test]
+    fn basic() {
+        for input in [[].as_slice(), [false].as_slice(), [true, false].as_slice()] {
+            // Check that the interner works
+            let interner = TestedInterner::new();
+            let (storage_ptr, storage_capacity) = {
+                // Set up an entry
+                let mut entry = interner.entry();
+                for &item in input {
+                    entry.push(item);
+                }
+
+                // Memorize storage properties
+                let storage_ptr = entry.sequence.as_ptr();
+                let storage_capacity = entry.sequence.capacity();
+
+                // Intern the entry and check it can be retrieved
+                let key = entry.intern();
+                assert_eq!(interner.borrow().get(key), input);
+                (storage_ptr, storage_capacity)
+            };
+
+            // Check that storage is reused
+            let state = interner.0.borrow();
+            let storage = &state.1;
+            assert_eq!(storage.len(), 1);
+            assert_eq!(storage[0].as_ptr(), storage_ptr);
+            assert_eq!(storage[0].capacity(), storage_capacity);
+        }
+    }
+
+    #[test]
+    fn recursive() {
+        let inputs = [[].as_slice(), [false].as_slice(), [true, false].as_slice()];
+        for input1 in inputs {
+            for input2 in inputs {
+                let interner = TestedInterner::new();
+
+                // Set up an entry for input1
+                let mut entry1 = interner.entry();
+                for &item in input1 {
+                    entry1.push(item);
+                }
+
+                // Set up an entry for input2
+                let mut entry2 = interner.entry();
+                for &item in input2 {
+                    entry2.push(item);
+                }
+
+                // Intern entry2 and check it can be retrieved
+                let key2 = entry2.intern();
+                assert_eq!(interner.borrow().get(key2), input2);
+
+                // Intern entry1 and check that both entries can be retrieved
+                let key1 = entry1.intern();
+                assert_eq!(interner.borrow().get(key1), input1);
+                assert_eq!(interner.borrow().get(key2), input2);
+
+                // Check that both vectors seem to be reused
+                assert_eq!(interner.0.borrow().1.len(), 2);
+            }
+        }
+    }
+}
