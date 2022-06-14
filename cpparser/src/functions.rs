@@ -115,7 +115,7 @@ impl EntityParser {
     ///
     /// May not perform optimally, meant for validation purposes only
     ///
-    pub(crate) fn function_parameters(&self, key: FunctionCallKey) -> Box<[TypeKey]> {
+    pub(crate) fn function_parameters(&self, key: FunctionParametersKey) -> Box<[TypeKey]> {
         self.function_parameters.borrow().get(key).into()
     }
 
