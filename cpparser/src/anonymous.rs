@@ -6,13 +6,13 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 
 impl EntityParser {
-    /// Parser for clang's <unknown> C++ entity, sometimes seen in ParseTemplate
+    /// Parser for clang's `<unknown>` C++ entity, sometimes seen in ParseTemplate
     pub fn parse_unknown_entity(s: &str) -> IResult<()> {
         use nom_supreme::tag::complete::tag;
         tag("<unknown>").value(()).parse(s)
     }
 
-    /// Parser for clang lambda types "(lambda at <file path>:<line>:<col>)"
+    /// Parser for clang lambda types `(lambda at <file path>:<line>:<col>)`
     ///
     /// This will fail if the file path contains a ':' sign other than a
     /// Windows-style disk designator at the start, because I have no idea how
@@ -37,7 +37,7 @@ impl EntityParser {
         delimited(tag("(lambda at "), lambda, char(')'))(s)
     }
 
-    /// Parser for other anonymous clang entities called "(anonymous <stuff>)"
+    /// Parser for other anonymous clang entities called `(anonymous <stuff>)`
     pub fn parse_anonymous<'source>(&self, s: &'source str) -> IResult<'source, AnonymousEntity> {
         use nom::{
             character::complete::char,
@@ -69,7 +69,7 @@ pub type Line = u32;
 /// Column number within a file
 pub type Column = u32;
 
-/// Anonymous clang entity (known as "(anonymous)" or "(anonymous <something>)")
+/// Anonymous clang entity (known as `(anonymous)` or `(anonymous <something>)`)
 ///
 /// So far, only anonymous classes and namespaces were seen, but for all I know
 /// there might be others... In any case, if the <something> is specified, it is

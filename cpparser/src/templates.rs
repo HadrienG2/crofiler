@@ -81,8 +81,8 @@ impl EntityParser {
 
     /// Parser recognizing a single template parameter/argument
     ///
-    /// Must look ahead to the next template parameter separator (, or >) in order
-    /// to resolve the type vs value ambiguity properly.
+    /// Must look ahead to the next template parameter separator (, or `>`) in
+    /// order to resolve the type vs value ambiguity properly.
     ///
     fn parse_template_parameter<'source>(
         &self,
@@ -112,7 +112,7 @@ impl Entities {
 /// Set of template parameters
 ///
 /// None means that a known invalid template parameter set printout from clang,
-/// such as "<, void>", was encountered.
+/// such as `<, void>`, was encountered.
 ///
 pub type TemplateParameters = Option<TemplateParametersKey>;
 

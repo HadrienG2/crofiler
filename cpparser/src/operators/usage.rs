@@ -51,8 +51,8 @@ impl EntityParser {
     ///
     /// We may sometimes not want to allow the comma , operator in order to avoid
     /// confusing comma-delimited parsers like function calls, and may sometimes not
-    /// want to allow the greater > and shr >> operators in order to avoid confusing
-    /// the template parameter parser.
+    /// want to allow the greater `>` and shr `>>` operators in order to avoid
+    /// confusing the template parameter parser.
     ///
     pub fn parse_binary_expr_middle(
         s: &str,

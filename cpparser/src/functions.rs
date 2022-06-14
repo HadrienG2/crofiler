@@ -177,6 +177,7 @@ pub struct FunctionSignature {
     /// The first layer of Option represents presence or absence of the
     /// "noexcept" keyword, the second layer represents the optional expression
     /// that can be passed as an argument to noexcept.
+    ///
     noexcept: Option<Option<ValueKey>>,
 
     /// Trailing return type

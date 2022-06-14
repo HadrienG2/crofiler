@@ -9,7 +9,7 @@ impl EntityParser {
     /// Parse any supported operator overload
     ///
     /// The following template parameter set must be parsed in the same go in order
-    /// to handle the syntaxically ambiguous nature of the < and > signs.
+    /// to handle the syntaxically ambiguous nature of the `<` and `>` signs.
     ///
     pub fn parse_operator_overload<'source>(
         &self,

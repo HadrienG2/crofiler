@@ -1,6 +1,6 @@
 //! Parsers for operator overloads
 
-pub mod overloads;
+mod overloads;
 pub mod usage;
 
 use crate::{names::atoms::IdentifierKey, types::TypeKey, EntityParser, IResult};
@@ -24,37 +24,37 @@ pub enum Operator {
         equal: bool,
     },
 
-    /// Dereference operators -> and ->*
+    /// Dereference operators `->` and `->*`
     Deref {
-        /// -> if this is false, ->* if this is true
+        /// `->` if this is false, `->*` if this is true
         star: bool,
     },
 
-    /// Spaceship operator <=>
+    /// Spaceship operator `<=>`
     Spaceship,
 
-    /// Bracketed operators () and []
+    /// Bracketed operators `()` and `[]`
     CallIndex {
-        /// () if this is false, [] if this is true
+        /// `()` if this is false, `[]` if this is true
         is_index: bool,
     },
 
-    /// Custom literal operator (operator "" <suffix-identifier>)
+    /// Custom literal operator (`operator "" <suffix-identifier>`)
     CustomLiteral(IdentifierKey),
 
     /// Allocation/deallocation functions
     NewDelete {
-        /// new if this is false, delete if this is true
+        /// `new` if this is false, `delete` if this is true
         is_delete: bool,
 
-        /// True if this targets arrays (e.g. "operator new[]")
+        /// True if this targets arrays (e.g. `operator new[]`)
         array: bool,
     },
 
-    /// Overloaded co_await operator
+    /// Overloaded `co_await` operator
     CoAwait,
 
-    /// Type conversion operator ("operator <type>")
+    /// Type conversion operator (`operator <type>`)
     Conversion(TypeKey),
 }
 //
@@ -76,9 +76,9 @@ impl From<TypeKey> for Operator {
 
 /// Parse arithmetic and comparison operators
 ///
-/// Unfortunately, the grammatically ambiguous nature of characters < and >
+/// Unfortunately, the grammatically ambiguous nature of characters `<` and `>`
 /// strikes here. If a template parameter list can be expected after this
-/// operator (as in "operator<<void>"), you will need to call this parser with
+/// operator (as in `operator<<void>`), you will need to call this parser with
 /// LEN varying from 1 to 3 in a context where the validity of the overall parse
 /// can be assessed.
 ///
