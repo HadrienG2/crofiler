@@ -39,7 +39,7 @@ impl EntityParser {
     /// from values without extra source code context)
     ///
     /// The allow_comma and allow_greater parameters enable preventing parsing
-    /// of operators based on the comma , and greater > sign in template and
+    /// of operators based on the comma , and greater `>` sign in template and
     /// function parameter parsing scenarios, where the simpler interpretation
     /// of these symbols as parameter separators and template parameter set
     /// terminator should take priority.
