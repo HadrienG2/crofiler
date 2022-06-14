@@ -58,7 +58,7 @@ impl EntityParser {
         .parse(s)
     }
 
-    /// Retrieve a value previously parsed by parse_value_like
+    /// Retrieve a previously interned template parameter set
     ///
     /// May not perform optimally, meant for validation purposes only
     ///

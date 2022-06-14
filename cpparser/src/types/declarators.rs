@@ -4,20 +4,59 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueKey,
+    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueKey, Entities,
     EntityParser, IResult,
 };
+use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::Debug;
 
+/// Interned declarator key
+///
+/// You can compare two keys as a cheaper alternative to comparing two
+/// declarators as long as both keys were produced by the same EntityParser.
+///
+/// After parsing, you can retrieve a declarator by passing this key to the
+/// declarator() method of the Entities struct.
+///
+// TODO: Adjust key size based on observed entry count
+pub type DeclaratorKey = SequenceKey<DeclaratorKeyImpl, DECLARATOR_LEN_BITS>;
+pub(crate) type DeclaratorKeyImpl = Spur;
+pub(crate) const DECLARATOR_LEN_BITS: u32 = 8;
+//
 impl EntityParser {
     /// Parser for declarators
-    pub fn parse_declarator<'source>(&self, s: &'source str) -> IResult<'source, Declarator> {
-        use nom::{character::complete::space0, multi::many0};
-        many0((|s| self.parse_decl_operator(s)).terminated(space0))
-            .map(Vec::into_boxed_slice)
-            .parse(s)
+    pub fn parse_declarator<'source>(&self, s: &'source str) -> IResult<'source, DeclaratorKey> {
+        use nom::{character::complete::space0, multi::fold_many0};
+        fold_many0(
+            (|s| self.parse_decl_operator(s)).terminated(space0),
+            || self.declarators.entry(),
+            |mut acc, item| {
+                acc.push(item);
+                acc
+            },
+        )
+        .map(|entry| entry.intern())
+        .parse(s)
+    }
+
+    /// Retrieve a previously interned declarator
+    ///
+    /// May not perform optimally, meant for validation purposes only
+    ///
+    pub(crate) fn declarator(&self, key: DeclaratorKey) -> Box<Declarator> {
+        self.declarators.borrow().get(key).into()
+    }
+
+    /// Total number of DeclOperators across all interned declarators so far
+    pub fn num_decl_operators(&self) -> usize {
+        self.declarators.borrow().num_items()
+    }
+
+    /// Maximal number of template parameters
+    pub fn max_declarator_len(&self) -> Option<usize> {
+        self.declarators.borrow().max_sequence_len()
     }
 
     /// Parser for a declarator component
@@ -58,7 +97,7 @@ impl EntityParser {
         // Parenthesized declarator (to override operator priorities)
         let parenthesized = delimited(
             char('(').and(space0),
-            (|s| self.parse_declarator(s)).verify(|d| d != &Declarator::default()),
+            (|s| self.parse_declarator(s)).verify(|d| d != &self.declarators.entry().intern()),
             space0.and(char(')')),
         )
         .map(DeclOperator::Parenthesized);
@@ -80,13 +119,20 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Retrieve a previously interned declarator
+    pub fn declarator(&self, key: DeclaratorKey) -> &Declarator {
+        self.declarators.get(key)
+    }
+}
 
 /// Declarator
-pub type Declarator = Box<[DeclOperator]>;
+pub type Declarator = [DeclOperator];
 
 /// Operators that can appear within a declarator
 // FIXME: This type appears in Box<[T]>, intern it once data is owned
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclOperator {
     /// Pointer declarator
     Pointer {
@@ -107,7 +153,7 @@ pub enum DeclOperator {
     Function(FunctionSignature),
 
     /// Parentheses, used to override operator priorities
-    Parenthesized(Declarator),
+    Parenthesized(DeclaratorKey),
 }
 //
 impl From<Reference> for DeclOperator {
@@ -122,8 +168,8 @@ impl From<FunctionSignature> for DeclOperator {
     }
 }
 //
-impl From<Declarator> for DeclOperator {
-    fn from(d: Declarator) -> Self {
+impl From<DeclaratorKey> for DeclOperator {
+    fn from(d: DeclaratorKey) -> Self {
         Self::Parenthesized(d)
     }
 }

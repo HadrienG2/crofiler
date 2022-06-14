@@ -19,6 +19,7 @@ use crate::{
     names::scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
     templates::{TemplateParameter, TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS},
     types::{
+        declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
         specifiers::legacy::{self, LegacyName},
         TypeKey, TypeLike,
     },
@@ -114,6 +115,9 @@ pub struct EntityParser {
 
     /// Interned sequences of scopes
     scopes: RecursiveSequenceInterner<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+
+    /// Interned declarators
+    declarators: RecursiveSequenceInterner<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
 }
 //
 impl EntityParser {
@@ -130,6 +134,7 @@ impl EntityParser {
             function_calls: Default::default(),
             function_parameters: Default::default(),
             scopes: Default::default(),
+            declarators: Default::default(),
         }
     }
 
@@ -189,6 +194,7 @@ impl EntityParser {
             function_calls: self.function_calls.into_inner().finalize(),
             function_parameters: self.function_parameters.into_inner().finalize(),
             scopes: self.scopes.into_inner().finalize(),
+            declarators: self.declarators.into_inner().finalize(),
         }
     }
 }
@@ -233,6 +239,9 @@ pub struct Entities {
 
     /// Interned sequences of scopes
     scopes: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+
+    /// Interned declarators
+    declarators: InternedSequences<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
 }
 //
 impl Entities {

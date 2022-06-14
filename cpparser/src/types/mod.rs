@@ -4,7 +4,7 @@ pub mod declarators;
 pub mod qualifiers;
 pub mod specifiers;
 
-use self::{declarators::Declarator, specifiers::TypeSpecifier};
+use self::{declarators::DeclaratorKey, specifiers::TypeSpecifier};
 use crate::{functions::FunctionCallKey, Entities, EntityParser, IResult};
 use asylum::lasso::Spur;
 use nom::Parser;
@@ -78,7 +78,7 @@ impl Entities {
 }
 
 /// A type name, or something looking close enough to it
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypeLike {
     /// GNU-style attributes __attribute__((...))
     attributes: FunctionCallKey,
@@ -87,7 +87,7 @@ pub struct TypeLike {
     type_specifier: TypeSpecifier,
 
     /// Declarator
-    declarator: Declarator,
+    declarator: DeclaratorKey,
 }
 
 #[cfg(test)]
