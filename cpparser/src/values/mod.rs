@@ -315,8 +315,8 @@ impl From<FunctionArgumentsKey> for AfterValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::operators::Symbol;
-    use crate::tests::unwrap_parse;
+    use crate::{operators::Symbol, tests::unwrap_parse};
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -324,8 +324,20 @@ mod tests {
         let parser = EntityParser::new();
         let parse_value_header = |s| parser.parse_value_header(s, true, true);
         let literal = |s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |s| {
+            let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            assert_eq!(
+                parser.value_like(key),
+                ValueLike {
+                    header: literal(s).into(),
+                    trailer: parser.value_trailers.entry().intern()
+                }
+            );
+            key
+        };
 
         // Literal
+        assert_eq!(parse_value_header("69"), Ok(("", literal("69").into())));
         assert_eq!(parse_value_header("'@'"), Ok(("", literal("'@'").into())));
 
         // Unary operators are supported...
@@ -333,7 +345,7 @@ mod tests {
             parse_value_header("&123"),
             Ok((
                 "",
-                ValueHeader::UnaryOp(Symbol::AndRef.into(), Box::new(literal("123").into()))
+                ValueHeader::UnaryOp(Symbol::AndRef.into(), literal_value("123"))
             ))
         );
 
@@ -344,7 +356,7 @@ mod tests {
                 "",
                 ValueHeader::UnaryOp(
                     unwrap_parse(parser.parse_type_like("T")).into(),
-                    Box::new(literal("666").into())
+                    literal_value("666")
                 )
             ))
         );
@@ -352,10 +364,7 @@ mod tests {
         // Parenthesized values are supported too
         assert_eq!(
             parse_value_header("(42)"),
-            Ok((
-                "",
-                ValueHeader::Parenthesized(Box::new(literal("42").into()))
-            ))
+            Ok(("", ValueHeader::Parenthesized(literal_value("42"))))
         );
 
         // New expressions too
@@ -382,11 +391,22 @@ mod tests {
         let parser = EntityParser::new();
         let parse_after_value = |s| parser.parse_after_value(s, true, true);
         let literal = |s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |s| {
+            let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            assert_eq!(
+                parser.value_like(key),
+                ValueLike {
+                    header: literal(s).into(),
+                    trailer: parser.value_trailers.entry().intern()
+                }
+            );
+            key
+        };
 
         // Array indexing
         assert_eq!(
             parse_after_value("[666]"),
-            Ok(("", AfterValue::ArrayIndex(literal("666").into()),))
+            Ok(("", AfterValue::ArrayIndex(literal_value("666"))))
         );
 
         // Function call
@@ -394,7 +414,7 @@ mod tests {
             parse_after_value("('c', -5)"),
             Ok((
                 "",
-                AfterValue::FunctionCall(vec![literal("'c'").into(), literal("-5").into()].into()),
+                AfterValue::FunctionCall(unwrap_parse(parser.parse_function_call("('c', -5)"))),
             ))
         );
 
@@ -403,7 +423,7 @@ mod tests {
             parse_after_value("+42"),
             Ok((
                 "",
-                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal("42").into())
+                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal_value("42"))
             ))
         );
 
@@ -412,7 +432,7 @@ mod tests {
             parse_after_value("? 123 : 456"),
             Ok((
                 "",
-                AfterValue::TernaryOp(literal("123").into(), literal("456").into())
+                AfterValue::TernaryOp(literal_value("123"), literal_value("456"))
             ))
         );
 
@@ -445,32 +465,43 @@ mod tests {
         let parse_value_like = |s| parser.parse_value_like(s, true, true);
         let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
         let literal = |s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |s| {
+            let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            assert_eq!(
+                parser.value_like(key),
+                ValueLike {
+                    header: literal(s).into(),
+                    trailer: parser.value_trailers.entry().intern()
+                }
+            );
+            key
+        };
 
-        assert_eq!(
+        assert_matches!(
             parse_value_like("array[666]"),
             Ok((
                 "",
-                ValueLike {
-                    header: ValueHeader::IdExpression(id_expression("array")),
-                    trailer: vec![AfterValue::ArrayIndex(literal("666").into())].into(),
-                }
-            ))
+                value_key
+            )) => {
+                let value = parser.value_like(value_key);
+                assert_eq!(value.header, ValueHeader::IdExpression(id_expression("array")));
+                assert_eq!(parser.value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value("666"))].into());
+            }
         );
-        assert_eq!(
+        assert_matches!(
             parse_value_like("func( 3,'x' )[666]"),
             Ok((
                 "",
-                ValueLike {
-                    header: ValueHeader::IdExpression(id_expression("func")),
-                    trailer: vec![
-                        AfterValue::FunctionCall(
-                            vec![literal("3").into(), literal("'x'").into()].into()
-                        ),
-                        AfterValue::ArrayIndex(literal("666").into())
+                value_key
+            )) => {
+                let value = parser.value_like(value_key);
+                assert_eq!(value.header, ValueHeader::IdExpression(id_expression("func")));
+                assert_eq!(parser.value_trailer(value.trailer), vec![
+                        unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
+                        AfterValue::ArrayIndex(literal_value("666"))
                     ]
-                    .into(),
-                }
-            ))
+                    .into());
+            }
         );
     }
 }
