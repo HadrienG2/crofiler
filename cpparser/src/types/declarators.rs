@@ -266,7 +266,7 @@ mod tests {
         let parser = EntityParser::new();
 
         let test_case = |declarator: &str, expected_operators: &[&str]| {
-            assert_matches!(parser.parse_declarator(""), Ok(("", key)) => {
+            assert_matches!(parser.parse_declarator(declarator), Ok(("", key)) => {
                 let declarator = parser.declarator(key);
                 assert_eq!(declarator.len(), expected_operators.len());
                 for (expected, actual) in expected_operators.iter().zip(declarator.to_vec()) {

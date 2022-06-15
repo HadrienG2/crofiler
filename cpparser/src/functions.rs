@@ -240,6 +240,7 @@ fn function_parameters<
 mod tests {
     use super::*;
     use crate::tests::unwrap_parse;
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -258,36 +259,77 @@ mod tests {
     #[test]
     fn function_parameters() {
         let parser = EntityParser::new();
-        let parse_type_parameters =
-            |s| super::function_parameters(s, &|s| parser.parse_type_like(s));
+        let parse_type_parameters = |s| {
+            super::function_parameters(
+                s,
+                &|s| parser.parse_type_like(s),
+                &parser.function_parameters,
+            )
+        };
         let type_like = |s| unwrap_parse(parser.parse_type_like(s));
-
-        assert_eq!(parse_type_parameters("()"), Ok(("", vec![].into())));
-        assert_eq!(
-            parse_type_parameters("(signed char*)"),
-            Ok(("", vec![type_like("signed char*")].into()))
-        );
-        assert_eq!(
-            parse_type_parameters("(charamel<lol>&, T)"),
-            Ok(("", vec![type_like("charamel<lol>&"), type_like("T")].into()))
-        );
+        let test_case = |parameters: &str, expected_types: &[&str]| {
+            assert_matches!(parse_type_parameters(parameters), Ok(("", key)) => {
+                let parameters = parser.function_parameters(key);
+                assert_eq!(parameters.len(), expected_types.len());
+                for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
+                    let expected = type_like(*expected);
+                    assert_eq!(expected, actual);
+                }
+            })
+        };
+        test_case("()", &[]);
+        test_case("(signed char*)", &["signed char*"]);
+        test_case("(charamel<lol>&, T)", &["charamel<lol>&", "T"]);
     }
 
     #[test]
     fn function_signature() {
         let parser = EntityParser::new();
+        let empty_parameters = parser.function_parameters.entry().intern();
+        let type_parameters = |s| {
+            unwrap_parse(super::function_parameters(
+                s,
+                &|s| parser.parse_type_like(s),
+                &parser.function_parameters,
+            ))
+        };
 
         assert_eq!(
             parser.parse_function_signature("()"),
-            Ok(("", FunctionSignature::default()))
+            Ok((
+                "",
+                FunctionSignature {
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
+                    reference: Reference::None,
+                    noexcept: None,
+                    trailing_return: None
+                }
+            ))
+        );
+        assert_eq!(
+            parser.parse_function_signature("(int)"),
+            Ok((
+                "",
+                FunctionSignature {
+                    parameters: type_parameters("int"),
+                    cv: ConstVolatile::default(),
+                    reference: Reference::None,
+                    noexcept: None,
+                    trailing_return: None
+                }
+            ))
         );
         assert_eq!(
             parser.parse_function_signature("() const"),
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
                     cv: ConstVolatile::CONST,
-                    ..Default::default()
+                    reference: Reference::None,
+                    noexcept: None,
+                    trailing_return: None
                 }
             ))
         );
@@ -296,8 +338,11 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
                     reference: Reference::RValue,
-                    ..Default::default()
+                    noexcept: None,
+                    trailing_return: None
                 }
             ))
         );
@@ -306,8 +351,11 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
+                    reference: Reference::None,
                     noexcept: Some(None),
-                    ..Default::default()
+                    trailing_return: None
                 }
             ))
         );
@@ -316,9 +364,11 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
                     cv: ConstVolatile::VOLATILE,
                     reference: Reference::LValue,
-                    ..Default::default()
+                    noexcept: None,
+                    trailing_return: None
                 }
             ))
         );
@@ -327,9 +377,11 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
+                    reference: Reference::None,
                     noexcept: Some(None),
-                    ..Default::default()
+                    trailing_return: None
                 }
             ))
         );
@@ -338,11 +390,13 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
                     reference: Reference::RValue,
                     noexcept: Some(Some(unwrap_parse(
                         parser.parse_value_like("456", true, true),
                     ))),
-                    ..Default::default()
+                    trailing_return: None
                 }
             ))
         );
@@ -351,8 +405,11 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
+                    reference: Reference::None,
+                    noexcept: None,
                     trailing_return: Some(unwrap_parse(parser.parse_type_like("int"))),
-                    ..Default::default()
                 }
             ))
         );
@@ -362,18 +419,18 @@ mod tests {
     fn function_call() {
         let parser = EntityParser::new();
         let value_like = |s| unwrap_parse(parser.parse_value_like(s, true, true));
-
-        assert_eq!(parser.parse_function_call("()"), Ok(("", vec![].into())));
-        assert_eq!(
-            parser.parse_function_call("(123)"),
-            Ok(("", vec![value_like("123").into()].into()))
-        );
-        assert_eq!(
-            parser.parse_function_call("(42, 'a')"),
-            Ok((
-                "",
-                vec![value_like("42").into(), value_like("'a'").into()].into()
-            ))
-        );
+        let test_case = |arguments: &str, expected_values: &[&str]| {
+            assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
+                let arguments = parser.function_arguments(key);
+                assert_eq!(arguments.len(), expected_values.len());
+                for (expected, actual) in expected_values.iter().zip(arguments.to_vec()) {
+                    let expected = value_like(*expected);
+                    assert_eq!(expected, actual);
+                }
+            })
+        };
+        test_case("()", &[]);
+        test_case("(123)", &["123"]);
+        test_case("(42, 'a')", &["42", "'a'"]);
     }
 }
