@@ -93,56 +93,69 @@ pub struct TypeLike {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{functions::FunctionSignature, tests::unwrap_parse};
+    use crate::tests::unwrap_parse;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn type_like() {
         let parser = EntityParser::new();
+        let parse_type_like = |s| {
+            parser
+                .parse_type_like(s)
+                .map(|(rest, key)| (rest, parser.type_like(key)))
+        };
+        let attributes = |s| unwrap_parse(parser.parse_function_call(s));
         let type_specifier = |s| unwrap_parse(parser.parse_type_specifier(s));
+        let declarator = |s| unwrap_parse(parser.parse_declarator(s));
 
         // Basic type specifier
         assert_eq!(
-            parser.parse_type_like("signed char"),
-            Ok(("", type_specifier("signed char").into()))
+            parse_type_like("signed char"),
+            Ok((
+                "",
+                TypeLike {
+                    attributes: attributes("()"),
+                    type_specifier: type_specifier("signed char"),
+                    declarator: declarator("")
+                }
+            ))
         );
 
         // GNU-style attributes before
         assert_eq!(
-            parser.parse_type_like("__attribute__((unused)) long long"),
+            parse_type_like("__attribute__((unused)) long long"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: unwrap_parse(parser.parse_function_call("(unused)")),
+                    attributes: attributes("(unused)"),
                     type_specifier: type_specifier("long long"),
-                    ..Default::default()
+                    declarator: declarator("")
                 }
             ))
         );
 
         // Basic function pointer
         assert_eq!(
-            parser.parse_type_like("something()"),
+            parse_type_like("something()"),
             Ok((
                 "",
                 TypeLike {
+                    attributes: attributes("()"),
                     type_specifier: type_specifier("something"),
-                    declarator: vec![FunctionSignature::default().into()].into(),
-                    ..Default::default()
+                    declarator: declarator("()"),
                 }
             ))
         );
 
         // Fun template/expression ambiguity found during testing
         assert_eq!(
-            parser.parse_type_like("T<1>(U)"),
+            parse_type_like("T<1>(U)"),
             Ok((
                 "",
                 TypeLike {
+                    attributes: attributes("()"),
                     type_specifier: type_specifier("T<1>"),
-                    declarator: vec![unwrap_parse(parser.parse_function_signature("(U)")).into()]
-                        .into(),
-                    ..Default::default()
+                    declarator: declarator("(U)"),
                 }
             ))
         );
