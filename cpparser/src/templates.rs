@@ -130,6 +130,7 @@ pub enum TemplateParameter {
 mod tests {
     use super::*;
     use crate::tests::unwrap_parse;
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -164,22 +165,23 @@ mod tests {
     #[test]
     fn template_parameters() {
         let parser = EntityParser::new();
-        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
-        assert_eq!(
-            parser.parse_template_parameters("<>"),
-            Ok(("", Some(vec![].into())))
-        );
-        assert_eq!(
-            parser.parse_template_parameters("<T>"),
-            Ok(("", Some(vec![type_like("T").into()].into())))
-        );
-        assert_eq!(
-            parser.parse_template_parameters("<char, stuff>"),
-            Ok((
-                "",
-                Some(vec![type_like("char").into(), type_like("stuff").into()].into())
-            ))
-        );
-        assert_eq!(parser.parse_template_parameters("<, void>"), Ok(("", None)));
+        let test_case = |input: &str, expected_types: Option<&[&str]>| {
+            if let Some(expected_types) = expected_types {
+                assert_matches!(parser.parse_template_parameters(input), Ok(("", Some(key))) => {
+                    let parameters = parser.template_parameters(key);
+                    assert_eq!(parameters.len(), expected_types.len());
+                    for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
+                        let expected = TemplateParameter::TypeLike(unwrap_parse(parser.parse_type_like(*expected)));
+                        assert_eq!(expected, actual);
+                    }
+                })
+            } else {
+                assert_eq!(parser.parse_template_parameters(input), Ok(("", None)));
+            }
+        };
+        test_case("<>", Some(&[]));
+        test_case("<T>", Some(&["T"]));
+        test_case("<char, stuff>", Some(&["char", "stuff"]));
+        test_case("<, void>", None);
     }
 }

@@ -259,20 +259,16 @@ mod tests {
     #[test]
     fn function_parameters() {
         let parser = EntityParser::new();
-        let parse_type_parameters = |s| {
-            super::function_parameters(
-                s,
+        let test_case = |parameters: &str, expected_types: &[&str]| {
+            assert_matches!(super::function_parameters(
+                parameters,
                 &|s| parser.parse_type_like(s),
                 &parser.function_parameters,
-            )
-        };
-        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
-        let test_case = |parameters: &str, expected_types: &[&str]| {
-            assert_matches!(parse_type_parameters(parameters), Ok(("", key)) => {
+            ), Ok(("", key)) => {
                 let parameters = parser.function_parameters(key);
                 assert_eq!(parameters.len(), expected_types.len());
                 for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
-                    let expected = type_like(*expected);
+                    let expected = unwrap_parse(parser.parse_type_like(*expected));
                     assert_eq!(expected, actual);
                 }
             })
@@ -312,7 +308,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
-                    parameters: type_parameters("int"),
+                    parameters: type_parameters("(int)"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -418,13 +414,12 @@ mod tests {
     #[test]
     fn function_call() {
         let parser = EntityParser::new();
-        let value_like = |s| unwrap_parse(parser.parse_value_like(s, true, true));
         let test_case = |arguments: &str, expected_values: &[&str]| {
             assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
                 let arguments = parser.function_arguments(key);
                 assert_eq!(arguments.len(), expected_values.len());
                 for (expected, actual) in expected_values.iter().zip(arguments.to_vec()) {
-                    let expected = value_like(*expected);
+                    let expected = unwrap_parse(parser.parse_value_like(*expected, true, true));
                     assert_eq!(expected, actual);
                 }
             })
