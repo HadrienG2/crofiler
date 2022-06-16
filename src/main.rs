@@ -78,16 +78,13 @@ fn main() {
     }
 
     // Print a list of C++ entities that the parser doesn't handle yet
-    println!("\nParsing C++ entities...");
-    let parser = cpparser::EntityParser::new();
+    println!("\nPrinting C++ entities...");
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
-            let parsed_entity = parser.parse_entity(&e);
-            assert!(
-                parsed_entity.is_ok(),
-                "Tried to parse C++ entity {}({}), but got error {parsed_entity:#?}",
+            println!(
+                "- {}({})",
                 activity_trace.activity().name(),
-                e
+                trace.entity(e)
             );
         }
     }

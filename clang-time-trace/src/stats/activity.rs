@@ -6,7 +6,7 @@ use crate::{
     ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent},
     PathError, PathKey,
 };
-use cpparser::EntityParser;
+use cpparser::{nom, EntityKey, EntityParser};
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
@@ -104,36 +104,28 @@ pub enum Activity {
     Source(PathKey),
 
     /// Parsing a class
-    // TODO: Switch to a namespace + AST representation
-    ParseClass(Box<str>),
+    ParseClass(EntityKey),
 
     /// Instantiating a class
-    // TODO: Switch to a namespace + AST representation
-    InstantiateClass(Box<str>),
+    InstantiateClass(EntityKey),
 
     /// Parsing a template
-    // TODO: Switch to a namespace + AST representation
-    ParseTemplate(Box<str>),
+    ParseTemplate(EntityKey),
 
     /// Instantiating a function
-    // TODO: Switch to a namespace + AST representation
-    InstantiateFunction(Box<str>),
+    InstantiateFunction(EntityKey),
 
     /// Generating debug info for a type
-    // TODO: Switch to a namespace + AST representation
-    DebugType(Box<str>),
+    DebugType(EntityKey),
 
     /// Generating debug info for a global variable
-    // TODO: Switch to a namespace + AST representation
-    DebugGlobalVariable(Box<str>),
+    DebugGlobalVariable(EntityKey),
 
     /// Generate a function's code
-    // TODO: Switch to a namespace + AST representation
-    CodeGenFunction(Box<str>),
+    CodeGenFunction(EntityKey),
 
     /// Generating debug info for a function
-    // TODO: Switch to a namespace + AST representation
-    DebugFunction(Box<str>),
+    DebugFunction(EntityKey),
 
     /// Perform pending instantiations (as the name suggests)
     PerformPendingInstantiations,
@@ -212,14 +204,14 @@ impl Activity {
             | ExecuteCompiler => Nothing,
             RunPass(s) | RunLoopPass(s) => String(s.clone()),
             Source(p) | OptModule(p) => FilePath(*p),
-            ParseClass(i)
-            | InstantiateClass(i)
-            | ParseTemplate(i)
-            | InstantiateFunction(i)
-            | DebugType(i)
-            | DebugGlobalVariable(i)
-            | CodeGenFunction(i)
-            | DebugFunction(i) => CppEntity(i.clone()),
+            ParseClass(e)
+            | InstantiateClass(e)
+            | ParseTemplate(e)
+            | InstantiateFunction(e)
+            | DebugType(e)
+            | DebugGlobalVariable(e)
+            | CodeGenFunction(e)
+            | DebugFunction(e) => CppEntity(e.clone()),
             OptFunction(m) => MangledSymbol(m.clone()),
         }
     }
@@ -254,6 +246,16 @@ impl Activity {
                 let path: &str = &detail_arg()?;
                 Ok(constructor(parser.path_to_key(path)))
             };
+        //
+        let fill_entity_arg =
+            |constructor: fn(EntityKey) -> Activity| -> Result<Activity, ActivityParseError> {
+                let entity: &str = &detail_arg()?;
+                let (rest, entity) = parser
+                    .parse_entity(entity)
+                    .map_err(|e| e.map_input(Box::<str>::from))?;
+                assert_eq!(rest, "");
+                Ok(constructor(entity))
+            };
 
         // Parse the activity name and parse arguments accordingly
         use Activity::*;
@@ -266,14 +268,14 @@ impl Activity {
             "Backend" => no_args(Backend),
             "ExecuteCompiler" => no_args(ExecuteCompiler),
             "Source" => fill_path_arg(Source),
-            "ParseClass" => fill_str_arg(ParseClass),
-            "InstantiateClass" => fill_str_arg(InstantiateClass),
-            "ParseTemplate" => fill_str_arg(ParseTemplate),
-            "InstantiateFunction" => fill_str_arg(InstantiateFunction),
-            "DebugType" => fill_str_arg(DebugType),
-            "DebugGlobalVariable" => fill_str_arg(DebugGlobalVariable),
-            "CodeGen Function" => fill_str_arg(CodeGenFunction),
-            "DebugFunction" => fill_str_arg(DebugFunction),
+            "ParseClass" => fill_entity_arg(ParseClass),
+            "InstantiateClass" => fill_entity_arg(InstantiateClass),
+            "ParseTemplate" => fill_entity_arg(ParseTemplate),
+            "InstantiateFunction" => fill_entity_arg(InstantiateFunction),
+            "DebugType" => fill_entity_arg(DebugType),
+            "DebugGlobalVariable" => fill_entity_arg(DebugGlobalVariable),
+            "CodeGen Function" => fill_entity_arg(CodeGenFunction),
+            "DebugFunction" => fill_entity_arg(DebugFunction),
             "RunPass" => fill_str_arg(RunPass),
             "OptFunction" => fill_str_arg(OptFunction),
             "RunLoopPass" => fill_str_arg(RunLoopPass),
@@ -347,8 +349,7 @@ pub enum ActivityArgument {
     FilePath(PathKey),
 
     /// A C++ entity (class, function, ...)
-    // TODO: Switch to a namespace + AST representation
-    CppEntity(Box<str>),
+    CppEntity(EntityKey),
 
     /// A C++ mangled symbol
     // TODO: Demangle, then switch to a namespace + AST representation, and if
@@ -370,6 +371,10 @@ pub enum ActivityParseError {
     /// Encountered an unexpected activity file path
     #[error("failed to parse activity file path ({0})")]
     BadFilePath(#[from] PathError),
+
+    /// Failed to parse a C++ entity name
+    #[error("failed to parse C++ entity ({0})")]
+    BadCppEntity(#[from] nom::Err<nom::error::Error<Box<str>>>),
 }
 
 #[cfg(test)]
@@ -632,20 +637,28 @@ mod tests {
         unary_test(
             "Source",
             PATH,
-            Activity::Source(key.clone()),
+            Activity::Source(key),
             ActivityArgument::FilePath(key),
             parser,
         );
     }
 
+    fn unwrap_entity(parser: &EntityParser, entity: &str) -> EntityKey {
+        let (rest, key) = parser.parse_entity(entity).unwrap();
+        assert_eq!(rest, "");
+        key
+    }
+
     #[test]
     fn parse_class() {
         const CLASS: &'static str = "Acts::Test::MeasurementCreator";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, CLASS);
         unary_test(
             "ParseClass",
             CLASS,
-            Activity::ParseClass(CLASS.into()),
-            ActivityArgument::CppEntity(CLASS.into()),
+            Activity::ParseClass(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -653,11 +666,13 @@ mod tests {
     #[test]
     fn instantiate_class() {
         const CLASS: &'static str = "std::invoke_result<(lambda at /mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp:354:40), Acts::detail_lt::TrackStateProxy<Acts::Test::ExtendedMinimalSourceLink, 6, 6, true> >";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, CLASS);
         unary_test(
             "InstantiateClass",
             CLASS,
-            Activity::InstantiateClass(CLASS.into()),
-            ActivityArgument::CppEntity(CLASS.into()),
+            Activity::InstantiateClass(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -665,11 +680,13 @@ mod tests {
     #[test]
     fn parse_template() {
         const TEMPLATE: &'static str = "<unknown>"; // Yes, clang can do that
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, TEMPLATE);
         unary_test(
             "ParseTemplate",
             TEMPLATE,
-            Activity::ParseTemplate(TEMPLATE.into()),
-            ActivityArgument::CppEntity(TEMPLATE.into()),
+            Activity::ParseTemplate(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -677,11 +694,13 @@ mod tests {
     #[test]
     fn instantiate_function() {
         const FUNCTION: &'static str = "boost::unit_test::lazy_ostream_impl<boost::unit_test::lazy_ostream, boost::unit_test::basic_cstring<const char>, const boost::unit_test::basic_cstring<const char> &>::operator()";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, FUNCTION);
         unary_test(
             "InstantiateFunction",
             FUNCTION,
-            Activity::InstantiateFunction(FUNCTION.into()),
-            ActivityArgument::CppEntity(FUNCTION.into()),
+            Activity::InstantiateFunction(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -689,11 +708,13 @@ mod tests {
     #[test]
     fn debug_type() {
         const TYPE: &'static str = "generic_dense_assignment_kernel<DstEvaluatorType, SrcEvaluatorType, Eigen::internal::add_assign_op<double, double> >";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, TYPE);
         unary_test(
             "DebugType",
             TYPE,
-            Activity::DebugType(TYPE.into()),
-            ActivityArgument::CppEntity(TYPE.into()),
+            Activity::DebugType(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -701,11 +722,13 @@ mod tests {
     #[test]
     fn debug_global_variable() {
         const VAR: &'static str = "std::__detail::__variant::__gen_vtable<true, void, (lambda at /mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp:819:11) &&, std::variant<Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime> > &&>::_S_vtable";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, VAR);
         unary_test(
             "DebugGlobalVariable",
             VAR,
-            Activity::DebugGlobalVariable(VAR.into()),
-            ActivityArgument::CppEntity(VAR.into()),
+            Activity::DebugGlobalVariable(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -714,11 +737,13 @@ mod tests {
     fn code_gen_function() {
         const FUNCTION: &'static str =
             "boost::unit_test::operator<<<char, std::char_traits<char>, const char>";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, FUNCTION);
         unary_test(
             "CodeGen Function",
             FUNCTION,
-            Activity::CodeGenFunction(FUNCTION.into()),
-            ActivityArgument::CppEntity(FUNCTION.into()),
+            Activity::CodeGenFunction(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }
@@ -726,11 +751,13 @@ mod tests {
     #[test]
     fn debug_function() {
         const FUNCTION: &'static str = "Eigen::operator*<Eigen::PermutationMatrix<6, 6, int>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 6, 6, 1, 6, 6> > >";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(&parser, FUNCTION);
         unary_test(
             "DebugFunction",
             FUNCTION,
-            Activity::DebugFunction(FUNCTION.into()),
-            ActivityArgument::CppEntity(FUNCTION.into()),
+            Activity::DebugFunction(key),
+            ActivityArgument::CppEntity(key),
             EntityParser::new(),
         );
     }

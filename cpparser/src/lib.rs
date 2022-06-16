@@ -37,7 +37,7 @@ use asylum::{
     sequence::InternedSequences,
     Interned, Interner,
 };
-use nom::Parser;
+use nom::{error::Error, Parser};
 use nom_supreme::ParserExt;
 use std::{
     cell::RefCell,
@@ -50,8 +50,8 @@ pub use asylum;
 /// Result type returned by C++ syntax parsers
 pub type IResult<'a, O> = nom::IResult<&'a str, O, Error<&'a str>>;
 
-/// Error type used by C++ syntax parsers
-pub type Error<I> = nom::error::Error<I>;
+/// Re-export nom version in use
+pub use nom;
 
 /// Key to retrieve an interned path component
 ///
@@ -286,7 +286,7 @@ impl<'entities> EntityView<'entities> {
 impl<'entities> Display for EntityView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         if let Some(ty) = &self.0 {
-            write!(f, " {ty}")
+            write!(f, "{ty}")
         } else {
             write!(f, "<unknown>")
         }

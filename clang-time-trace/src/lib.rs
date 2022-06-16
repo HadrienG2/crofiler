@@ -13,7 +13,7 @@ use self::{
     stats::activity::ActivityStat,
     tree::{ActivityTree, ActivityTreeBuilder},
 };
-use cpparser::{Entities, EntityParser};
+use cpparser::{Entities, EntityKey, EntityParser, EntityView};
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -108,6 +108,11 @@ impl ClangTrace {
     /// Access a file path using a PathKey
     pub fn file_path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
         self.entities.path(key)
+    }
+
+    /// Access a parsed C++ entity using an EntityKey
+    pub fn entity(&self, key: EntityKey) -> EntityView {
+        self.entities.entity(key)
     }
 }
 //

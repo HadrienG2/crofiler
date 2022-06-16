@@ -125,7 +125,11 @@ impl<'entities> PartialEq for TypeSpecifierView<'entities> {
 //
 impl<'entities> Display for TypeSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{} {}", self.cv(), self.simple_type())
+        let cv = self.cv();
+        if cv != ConstVolatile::default() {
+            write!(f, "{cv} ")?;
+        }
+        write!(f, "{}", self.simple_type())
     }
 }
 
