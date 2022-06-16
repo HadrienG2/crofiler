@@ -106,6 +106,21 @@ impl EntityParser {
         type_like.or(value_like).parse(s)
     }
 }
+//
+impl Entities {
+    /// Retrieve a previously interned template parameter set
+    pub fn template_parameters(&self, tp: TemplateParameters) -> TemplateParametersView {
+        TemplateParametersView::new(tp, self)
+    }
+
+    /// Retrieve a previously interned template parameter list (excludes `<, void>`)
+    pub(crate) fn template_parameter_list(
+        &self,
+        key: TemplateParameterListKey,
+    ) -> TemplateParameterListView {
+        TemplateParameterListView::new(key, &self.template_parameter_lists, self)
+    }
+}
 
 /// Set of template parameters
 ///
@@ -124,10 +139,8 @@ pub struct TemplateParametersView<'entities>(pub Option<TemplateParameterListVie
 //
 impl<'entities> TemplateParametersView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: TemplateParameters, entities: &'entities Entities) -> Self {
-        Self(inner.map(|id| {
-            TemplateParameterListView::new(id, &entities.template_parameter_lists, entities)
-        }))
+    pub fn new(inner: TemplateParameters, entities: &'entities Entities) -> Self {
+        Self(inner.map(|list| entities.template_parameter_list(list)))
     }
 }
 //
@@ -174,8 +187,8 @@ impl<'entities> TemplateParameterView<'entities> {
     /// Set up a simple type specifier view
     pub(crate) fn new(inner: TemplateParameter, entities: &'entities Entities) -> Self {
         match inner {
-            TemplateParameter::TypeLike(t) => Self::TypeLike(TypeView::new(t, entities)),
-            TemplateParameter::ValueLike(v) => Self::ValueLike(ValueView::new(v, entities)),
+            TemplateParameter::TypeLike(t) => Self::TypeLike(entities.type_like(t)),
+            TemplateParameter::ValueLike(v) => Self::ValueLike(entities.value_like(v)),
         }
     }
 }

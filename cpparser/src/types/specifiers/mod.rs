@@ -58,6 +58,18 @@ impl EntityParser {
         .parse(s)
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed type specifier
+    pub fn type_specifier(&self, ts: TypeSpecifier) -> TypeSpecifierView {
+        TypeSpecifierView::new(ts, self)
+    }
+
+    /// Access a previously parsed simple type specifier
+    pub(crate) fn simple_type(&self, st: SimpleType) -> SimpleTypeView {
+        SimpleTypeView::new(st, self)
+    }
+}
 
 /// Type specifier
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -89,7 +101,7 @@ pub struct TypeSpecifierView<'entities> {
 //
 impl<'entities> TypeSpecifierView<'entities> {
     /// Build a type specifier view
-    pub(crate) fn new(inner: TypeSpecifier, entities: &'entities Entities) -> Self {
+    pub fn new(inner: TypeSpecifier, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
@@ -100,7 +112,7 @@ impl<'entities> TypeSpecifierView<'entities> {
 
     /// Simple type
     pub fn simple_type(&self) -> SimpleTypeView {
-        SimpleTypeView::new(self.inner.simple_type, self.entities)
+        self.entities.simple_type(self.inner.simple_type)
     }
 }
 //
@@ -119,7 +131,7 @@ impl<'entities> Display for TypeSpecifierView<'entities> {
 
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SimpleType {
+pub(crate) enum SimpleType {
     /// Id-expressions
     IdExpression(IdExpression),
 
@@ -153,7 +165,7 @@ impl<'entities> SimpleTypeView<'entities> {
     /// Set up a simple type specifier view
     pub(crate) fn new(inner: SimpleType, entities: &'entities Entities) -> Self {
         match inner {
-            SimpleType::IdExpression(i) => Self::IdExpression(IdExpressionView::new(i, entities)),
+            SimpleType::IdExpression(i) => Self::IdExpression(entities.id_expression(i)),
             SimpleType::LegacyName(l) => Self::LegacyName(l),
         }
     }

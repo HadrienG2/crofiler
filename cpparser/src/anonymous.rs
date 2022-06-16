@@ -56,6 +56,18 @@ impl EntityParser {
         )(s)
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed lambda
+    pub fn lambda(&self, l: Lambda) -> LambdaView {
+        LambdaView::new(l, self)
+    }
+
+    /// Access a previously parsed anonymous entity
+    pub fn anonymous(&self, a: AnonymousEntity) -> AnonymousEntityView {
+        AnonymousEntityView::new(a, self)
+    }
+}
 
 /// Lambda location description
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -84,7 +96,7 @@ pub struct LambdaView<'entities> {
 //
 impl<'entities> LambdaView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: Lambda, entities: &'entities Entities) -> Self {
+    pub fn new(inner: Lambda, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
@@ -122,8 +134,8 @@ pub struct AnonymousEntityView<'entities>(pub Option<IdentifierView<'entities>>)
 //
 impl<'entities> AnonymousEntityView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: AnonymousEntity, entities: &'entities Entities) -> Self {
-        Self(inner.map(|id| IdentifierView::new(id, entities)))
+    pub fn new(inner: AnonymousEntity, entities: &'entities Entities) -> Self {
+        Self(inner.map(|id| entities.identifier(id)))
     }
 }
 //

@@ -122,7 +122,7 @@ pub struct EntityParser {
         RecursiveSequenceInterner<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
 
     /// Interned sequences of scopes
-    scopes: RecursiveSequenceInterner<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+    scope_sequences: RecursiveSequenceInterner<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
 
     /// Interned declarators
     declarators: RecursiveSequenceInterner<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
@@ -141,7 +141,7 @@ impl EntityParser {
             value_trailers: Default::default(),
             function_arguments: Default::default(),
             function_parameters: Default::default(),
-            scopes: Default::default(),
+            scope_sequences: Default::default(),
             declarators: Default::default(),
         }
     }
@@ -197,7 +197,7 @@ impl EntityParser {
             value_trailers: self.value_trailers.into_inner().finalize(),
             function_arguments: self.function_arguments.into_inner().finalize(),
             function_parameters: self.function_parameters.into_inner().finalize(),
-            scopes: self.scopes.into_inner().finalize(),
+            scope_sequences: self.scope_sequences.into_inner().finalize(),
             declarators: self.declarators.into_inner().finalize(),
         }
     }
@@ -243,7 +243,7 @@ pub struct Entities {
         InternedSequences<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
 
     /// Sequences of scopes
-    scopes: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+    scope_sequences: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
 
     /// Declarators (sequences of DeclOperator)
     declarators: InternedSequences<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
@@ -278,7 +278,7 @@ pub struct EntityView<'entities>(pub Option<TypeView<'entities>>);
 //
 impl<'entities> EntityView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: EntityKey, entities: &'entities Entities) -> Self {
+    pub fn new(inner: EntityKey, entities: &'entities Entities) -> Self {
         Self(inner.map(|ty| TypeView::new(ty, entities)))
     }
 }

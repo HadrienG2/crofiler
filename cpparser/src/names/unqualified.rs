@@ -73,6 +73,13 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed unqualified id
+    pub fn unqualified_id(&self, id: UnqualifiedId) -> UnqualifiedIdView {
+        UnqualifiedIdView::new(id, self)
+    }
+}
 
 /// Unqualified id-expression
 ///
@@ -186,7 +193,7 @@ pub enum UnqualifiedIdView<'entities> {
 //
 impl<'entities> UnqualifiedIdView<'entities> {
     /// Build an operator view
-    pub(crate) fn new(id: UnqualifiedId, entities: &'entities Entities) -> Self {
+    pub fn new(id: UnqualifiedId, entities: &'entities Entities) -> Self {
         match id {
             UnqualifiedId::Named {
                 is_destructor,
@@ -194,23 +201,19 @@ impl<'entities> UnqualifiedIdView<'entities> {
                 template_parameters,
             } => Self::Named {
                 is_destructor,
-                id: IdentifierView::new(id, entities),
-                template_parameters: template_parameters
-                    .map(|key| TemplateParametersView::new(key, entities)),
+                id: entities.identifier(id),
+                template_parameters: template_parameters.map(|tp| entities.template_parameters(tp)),
             },
             UnqualifiedId::Operator {
                 operator,
                 template_parameters,
             } => Self::Operator {
-                operator: OperatorView::new(operator, entities),
-                template_parameters: template_parameters
-                    .map(|key| TemplateParametersView::new(key, entities)),
+                operator: entities.operator(operator),
+                template_parameters: template_parameters.map(|tp| entities.template_parameters(tp)),
             },
-            UnqualifiedId::Decltype(value) => Self::Decltype(ValueView::new(value, entities)),
-            UnqualifiedId::Lambda(lambda) => Self::Lambda(LambdaView::new(lambda, entities)),
-            UnqualifiedId::Anonymous(anonymous) => {
-                Self::Anonymous(AnonymousEntityView::new(anonymous, entities))
-            }
+            UnqualifiedId::Decltype(value) => Self::Decltype(entities.value_like(value)),
+            UnqualifiedId::Lambda(lambda) => Self::Lambda(entities.lambda(lambda)),
+            UnqualifiedId::Anonymous(anonymous) => Self::Anonymous(entities.anonymous(anonymous)),
         }
     }
 }

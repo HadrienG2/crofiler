@@ -43,7 +43,7 @@ impl<
     > SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     /// Set up a new slice view
-    pub(crate) fn new(
+    pub fn new(
         key: SequenceKey<KeyImpl, LEN_BITS>,
         sequences: &'entities InternedSequences<Item, KeyImpl, LEN_BITS>,
         entities: &'entities Entities,

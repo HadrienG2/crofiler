@@ -150,6 +150,23 @@ impl EntityParser {
         .parse(s)
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed list of function arguments (from a function call)
+    pub fn function_arguments(&self, a: FunctionArgumentsKey) -> FunctionArgumentsView {
+        FunctionArgumentsView::new(a, &self.function_arguments, self)
+    }
+
+    /// Access a previously parsed function signature
+    pub fn function_signature(&self, s: FunctionSignature) -> FunctionSignatureView {
+        FunctionSignatureView::new(s, self)
+    }
+
+    /// Access a previously parsed list of function parameters
+    pub(crate) fn function_parameters(&self, a: FunctionParametersKey) -> FunctionParametersView {
+        FunctionParametersView::new(a, &self.function_parameters, self)
+    }
+}
 
 /// View of a function call (function argument set)
 pub type FunctionArgumentsView<'entities> = SliceView<
@@ -207,17 +224,13 @@ pub struct FunctionSignatureView<'entities> {
 //
 impl<'entities> FunctionSignatureView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: FunctionSignature, entities: &'entities Entities) -> Self {
+    pub fn new(inner: FunctionSignature, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
     /// Parameter types
     pub fn parameters(&self) -> FunctionParametersView {
-        FunctionParametersView::new(
-            self.inner.parameters,
-            &self.entities.function_parameters,
-            self.entities,
-        )
+        self.entities.function_parameters(self.inner.parameters)
     }
 
     /// CV qualifiers
@@ -239,14 +252,14 @@ impl<'entities> FunctionSignatureView<'entities> {
     pub fn noexcept(&self) -> Option<Option<ValueView>> {
         self.inner
             .noexcept
-            .map(|o| o.map(|v| ValueView::new(v, self.entities)))
+            .map(|o| o.map(|v| self.entities.value_like(v)))
     }
 
     /// Trailing return type
     pub fn trailing_return(&self) -> Option<TypeView> {
         self.inner
             .trailing_return
-            .map(|t| TypeView::new(t, self.entities))
+            .map(|t| self.entities.type_like(t))
     }
 }
 //

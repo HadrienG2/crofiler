@@ -12,6 +12,13 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
+impl Entities {
+    /// Access a previously parsed operator
+    pub fn operator(&self, op: Operator) -> OperatorView {
+        OperatorView::new(op, self)
+    }
+}
+
 /// C++ operators that can be overloaded
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Operator {
@@ -130,7 +137,7 @@ pub enum OperatorView<'entities> {
 //
 impl<'entities> OperatorView<'entities> {
     /// Build an operator view
-    pub(crate) fn new(operator: Operator, entities: &'entities Entities) -> Self {
+    pub fn new(operator: Operator, entities: &'entities Entities) -> Self {
         match operator {
             Operator::Basic {
                 symbol,
@@ -144,10 +151,10 @@ impl<'entities> OperatorView<'entities> {
             Operator::Deref { star } => Self::Deref { star },
             Operator::Spaceship => Self::Spaceship,
             Operator::CallIndex { is_index } => Self::CallIndex { is_index },
-            Operator::CustomLiteral(id) => Self::CustomLiteral(IdentifierView::new(id, entities)),
+            Operator::CustomLiteral(id) => Self::CustomLiteral(entities.identifier(id)),
             Operator::NewDelete { is_delete, array } => Self::NewDelete { is_delete, array },
             Operator::CoAwait => Self::CoAwait,
-            Operator::Conversion(ty) => Self::Conversion(TypeView::new(ty, entities)),
+            Operator::Conversion(ty) => Self::Conversion(entities.type_like(ty)),
         }
     }
 

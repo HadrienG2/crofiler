@@ -77,6 +77,13 @@ impl EntityParser {
         self.types.borrow().len()
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed type
+    pub fn type_like(&self, t: TypeKey) -> TypeView {
+        TypeView::new(t, self)
+    }
+}
 
 /// A type name, or something looking close enough to it
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -105,7 +112,7 @@ pub struct TypeView<'entities> {
 //
 impl<'entities> TypeView<'entities> {
     /// Set up a new C++ type view
-    pub(crate) fn new(key: TypeKey, entities: &'entities Entities) -> Self {
+    pub fn new(key: TypeKey, entities: &'entities Entities) -> Self {
         Self {
             key,
             inner: entities.types.get(key),
@@ -115,25 +122,17 @@ impl<'entities> TypeView<'entities> {
 
     /// GNU-style attributes (`__attribute__((...))`)
     pub fn attributes(&self) -> FunctionArgumentsView {
-        FunctionArgumentsView::new(
-            self.inner.attributes,
-            &self.entities.function_arguments,
-            self.entities,
-        )
+        self.entities.function_arguments(self.inner.attributes)
     }
 
     /// Type specifier
     pub fn type_specifier(&self) -> TypeSpecifierView {
-        TypeSpecifierView::new(self.inner.type_specifier, self.entities)
+        self.entities.type_specifier(self.inner.type_specifier)
     }
 
     /// Declarator
     pub fn declarator(&self) -> DeclaratorView {
-        DeclaratorView::new(
-            self.inner.declarator,
-            &self.entities.declarators,
-            self.entities,
-        )
+        self.entities.declarator(self.inner.declarator)
     }
 }
 //

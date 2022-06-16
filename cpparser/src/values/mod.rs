@@ -102,7 +102,7 @@ impl EntityParser {
     /// May not perform optimally, meant for validation purposes only
     ///
     #[cfg(test)]
-    pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<ValueTrailer> {
+    pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<[AfterValue]> {
         self.value_trailers.borrow().get(key).into()
     }
 
@@ -223,6 +223,23 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed value
+    pub fn value_like(&self, v: ValueKey) -> ValueView {
+        ValueView::new(v, self)
+    }
+
+    /// Access a previously parsed value header
+    pub(crate) fn value_header(&self, vh: ValueHeader) -> ValueHeaderView {
+        ValueHeaderView::new(vh, self)
+    }
+
+    /// Access a previously parsed value trailer
+    pub(crate) fn value_trailer(&self, vt: ValueTrailerKey) -> ValueTrailerView {
+        ValueTrailerView::new(vt, &self.value_trailers, self)
+    }
+}
 
 /// A value, or something that looks close enough to it
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -259,17 +276,13 @@ impl<'entities> ValueView<'entities> {
 
     /// Initial value-like entity
     pub fn header(&self) -> ValueHeaderView {
-        ValueHeaderView::new(self.inner.header, self.entities)
+        self.entities.value_header(self.inner.header)
     }
 
     /// Sequence of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
     pub fn trailer(&self) -> ValueTrailerView {
-        ValueTrailerView::new(
-            self.inner.trailer,
-            &self.entities.value_trailers,
-            self.entities,
-        )
+        self.entities.value_trailer(self.inner.trailer)
     }
 }
 //
@@ -302,7 +315,7 @@ impl<'entities> SliceItemView<'entities> for ValueView<'entities> {
 
 /// Values that are not expressions starting with a value
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ValueHeader {
+pub(crate) enum ValueHeader {
     /// Literal
     Literal(Literal),
 
@@ -366,15 +379,13 @@ impl<'entities> ValueHeaderView<'entities> {
     /// Build an operator view
     pub(crate) fn new(header: ValueHeader, entities: &'entities Entities) -> Self {
         match header {
-            ValueHeader::Literal(l) => Self::Literal(LiteralView::new(l, entities)),
-            ValueHeader::Parenthesized(v) => Self::Parenthesized(ValueView::new(v, entities)),
+            ValueHeader::Literal(l) => Self::Literal(entities.literal(l)),
+            ValueHeader::Parenthesized(v) => Self::Parenthesized(entities.value_like(v)),
             ValueHeader::UnaryOp(o, v) => {
-                Self::UnaryOp(OperatorView::new(o, entities), ValueView::new(v, entities))
+                Self::UnaryOp(entities.operator(o), entities.value_like(v))
             }
-            ValueHeader::NewExpression(n) => {
-                Self::NewExpression(NewExpressionView::new(n, entities))
-            }
-            ValueHeader::IdExpression(i) => Self::IdExpression(IdExpressionView::new(i, entities)),
+            ValueHeader::NewExpression(ne) => Self::NewExpression(entities.new_expression(ne)),
+            ValueHeader::IdExpression(id) => Self::IdExpression(entities.id_expression(id)),
         }
     }
 }
@@ -393,9 +404,6 @@ impl<'entities> Display for ValueHeaderView<'entities> {
         }
     }
 }
-
-/// Things that can come after a ValueHeader in the value grammar
-pub type ValueTrailer = [AfterValue];
 
 /// View of a value's trailer
 pub type ValueTrailerView<'entities> = SliceView<
@@ -460,20 +468,16 @@ impl<'entities> AfterValueView<'entities> {
     /// Build an operator view
     pub(crate) fn new(av: AfterValue, entities: &'entities Entities) -> Self {
         match av {
-            AfterValue::ArrayIndex(v) => Self::ArrayIndex(ValueView::new(v, entities)),
-            AfterValue::FunctionCall(a) => Self::FunctionCall(FunctionArgumentsView::new(
-                a,
-                &entities.function_arguments,
-                entities,
-            )),
+            AfterValue::ArrayIndex(v) => Self::ArrayIndex(entities.value_like(v)),
+            AfterValue::FunctionCall(a) => Self::FunctionCall(entities.function_arguments(a)),
             AfterValue::BinaryOp(o, v) => {
-                Self::BinaryOp(OperatorView::new(o, entities), ValueView::new(v, entities))
+                Self::BinaryOp(entities.operator(o), entities.value_like(v))
             }
             AfterValue::TernaryOp(v1, v2) => {
-                Self::TernaryOp(ValueView::new(v1, entities), ValueView::new(v2, entities))
+                Self::TernaryOp(entities.value_like(v1), entities.value_like(v2))
             }
-            AfterValue::MemberAccess(m) => Self::MemberAccess(UnqualifiedIdView::new(m, entities)),
-            AfterValue::PostfixOp(o) => Self::PostfixOp(OperatorView::new(o, entities)),
+            AfterValue::MemberAccess(m) => Self::MemberAccess(entities.unqualified_id(m)),
+            AfterValue::PostfixOp(o) => Self::PostfixOp(entities.operator(o)),
         }
     }
 }

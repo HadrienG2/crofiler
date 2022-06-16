@@ -20,6 +20,13 @@ impl EntityParser {
             .parse(s)
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed literal
+    pub fn literal(&self, l: Literal) -> LiteralView {
+        LiteralView::new(l, self)
+    }
+}
 
 /// A modern C++ literal, accounting for custom literals
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -51,7 +58,7 @@ pub struct LiteralView<'entities> {
 //
 impl<'entities> LiteralView<'entities> {
     /// Build an id-expression view
-    pub(crate) fn new(inner: Literal, entities: &'entities Entities) -> Self {
+    pub fn new(inner: Literal, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
@@ -64,7 +71,7 @@ impl<'entities> LiteralView<'entities> {
     pub fn custom_suffix(&self) -> Option<IdentifierView> {
         self.inner
             .custom_suffix
-            .map(|i| IdentifierView::new(i, self.entities))
+            .map(|i| self.entities.identifier(i))
     }
 }
 //

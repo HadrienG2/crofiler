@@ -48,7 +48,7 @@ impl EntityParser {
     /// May not perform optimally, meant for validation purposes only
     ///
     #[cfg(test)]
-    pub(crate) fn declarator(&self, key: DeclaratorKey) -> Box<Declarator> {
+    pub(crate) fn declarator(&self, key: DeclaratorKey) -> Box<[DeclOperator]> {
         self.declarators.borrow().get(key).into()
     }
 
@@ -77,7 +77,7 @@ impl EntityParser {
         // Basic pointer declarator
         let mut basic_pointer =
             preceded(char('*').and(space0), Self::parse_cv).map(|cv| DeclOperator::Pointer {
-                path: self.scopes.entry().intern().into(),
+                path: self.scope_sequences.entry().intern().into(),
                 cv,
             });
 
@@ -123,9 +123,13 @@ impl EntityParser {
         }
     }
 }
-
-/// Declarator
-pub type Declarator = [DeclOperator];
+//
+impl Entities {
+    /// Access a previously parsed declarator
+    pub fn declarator(&self, d: DeclaratorKey) -> DeclaratorView {
+        DeclaratorView::new(d, &self.declarators, self)
+    }
+}
 
 /// View of a declarator
 pub type DeclaratorView<'entities> = SliceView<
@@ -209,15 +213,13 @@ impl<'entities> DeclOperatorView<'entities> {
     pub(crate) fn new(op: DeclOperator, entities: &'entities Entities) -> Self {
         match op {
             DeclOperator::Pointer { path, cv } => Self::Pointer {
-                path: NestedNameSpecifierView::new(path, entities),
+                path: entities.nested_name_specifier(path),
                 cv,
             },
             DeclOperator::Reference(r) => Self::Reference(r),
-            DeclOperator::Array(v) => Self::Array(v.map(|v| ValueView::new(v, entities))),
-            DeclOperator::Function(f) => Self::Function(FunctionSignatureView::new(f, entities)),
-            DeclOperator::Parenthesized(d) => {
-                Self::Parenthesized(DeclaratorView::new(d, &entities.declarators, entities))
-            }
+            DeclOperator::Array(v) => Self::Array(v.map(|v| entities.value_like(v))),
+            DeclOperator::Function(f) => Self::Function(entities.function_signature(f)),
+            DeclOperator::Parenthesized(d) => Self::Parenthesized(entities.declarator(d)),
         }
     }
 }

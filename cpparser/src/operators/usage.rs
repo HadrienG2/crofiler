@@ -141,6 +141,13 @@ impl EntityParser {
         .parse(s)
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed new-expression
+    pub fn new_expression(&self, ne: NewExpression) -> NewExpressionView {
+        NewExpressionView::new(ne, self)
+    }
+}
 
 /// New-expression, i.e. usage of the new operator
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -181,7 +188,7 @@ pub struct NewExpressionView<'entities> {
 //
 impl<'entities> NewExpressionView<'entities> {
     /// Build a new-expression view
-    pub(crate) fn new(inner: NewExpression, entities: &'entities Entities) -> Self {
+    pub fn new(inner: NewExpression, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
@@ -193,9 +200,9 @@ impl<'entities> NewExpressionView<'entities> {
 
     /// Placement parameters (if any)
     pub fn placement(&self) -> Option<FunctionArgumentsView> {
-        self.inner.placement.map(|args| {
-            FunctionArgumentsView::new(args, &self.entities.function_arguments, self.entities)
-        })
+        self.inner
+            .placement
+            .map(|args| self.entities.function_arguments(args))
     }
 
     /// Type of values being created
@@ -205,9 +212,9 @@ impl<'entities> NewExpressionView<'entities> {
 
     /// Parameters to the values' constructor (if any)
     pub fn constructor(&self) -> Option<FunctionArgumentsView> {
-        self.inner.constructor.map(|args| {
-            FunctionArgumentsView::new(args, &self.entities.function_arguments, self.entities)
-        })
+        self.inner
+            .constructor
+            .map(|args| self.entities.function_arguments(args))
     }
 }
 //

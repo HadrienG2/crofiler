@@ -73,7 +73,7 @@ impl EntityParser {
         };
 
         // Parse sequence of scope_or_unqualified_id, accumulating scopes
-        let mut scopes = self.scopes.entry();
+        let mut scopes = self.scope_sequences.entry();
         let make_output = |scopes: SequenceEntry<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>, id_opt| {
             (
                 NestedNameSpecifier {
@@ -111,17 +111,17 @@ impl EntityParser {
     ///
     #[cfg(test)]
     pub(crate) fn scope_sequence(&self, key: ScopesKey) -> Box<[Scope]> {
-        self.scopes.borrow().get(key).into()
+        self.scope_sequences.borrow().get(key).into()
     }
 
     /// Total number of Scopes across all interned nested name specifiers so far
     pub fn num_scopes(&self) -> usize {
-        self.scopes.borrow().num_items()
+        self.scope_sequences.borrow().num_items()
     }
 
     /// Maximal number of scopes in a nested name specifier
     pub fn max_scope_sequence_len(&self) -> Option<usize> {
-        self.scopes.borrow().max_sequence_len()
+        self.scope_sequences.borrow().max_sequence_len()
     }
 
     /// This parses either the Scope syntax or the UnqualifiedId syntax, in a manner
@@ -160,6 +160,23 @@ impl EntityParser {
         }
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed id-expression
+    pub fn id_expression(&self, id: IdExpression) -> IdExpressionView {
+        IdExpressionView::new(id, self)
+    }
+
+    /// Access a previously parsed nested name specifier
+    pub fn nested_name_specifier(&self, nns: NestedNameSpecifier) -> NestedNameSpecifierView {
+        NestedNameSpecifierView::new(nns, self)
+    }
+
+    /// Access a previously parsed sequence of scopes
+    pub(crate) fn scope_sequence(&self, key: ScopesKey) -> ScopesView {
+        ScopesView::new(key, &self.scope_sequences, self)
+    }
+}
 
 /// C++ id-expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -182,18 +199,18 @@ pub struct IdExpressionView<'entities> {
 //
 impl<'entities> IdExpressionView<'entities> {
     /// Build an id-expression view
-    pub(crate) fn new(inner: IdExpression, entities: &'entities Entities) -> Self {
+    pub fn new(inner: IdExpression, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
     /// Hierarchical scope
     pub fn path(&self) -> NestedNameSpecifierView {
-        NestedNameSpecifierView::new(self.inner.path, self.entities)
+        self.entities.nested_name_specifier(self.inner.path)
     }
 
     /// Inner unqualified id-expression
     pub fn id(&self) -> UnqualifiedIdView {
-        UnqualifiedIdView::new(self.inner.id, self.entities)
+        self.entities.unqualified_id(self.inner.id)
     }
 }
 //
@@ -240,7 +257,7 @@ pub struct NestedNameSpecifierView<'entities> {
 //
 impl<'entities> NestedNameSpecifierView<'entities> {
     /// Build a nested name specifier view
-    pub(crate) fn new(inner: NestedNameSpecifier, entities: &'entities Entities) -> Self {
+    pub fn new(inner: NestedNameSpecifier, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
@@ -251,7 +268,7 @@ impl<'entities> NestedNameSpecifierView<'entities> {
 
     /// Sequence of inner scopes
     pub fn scopes(&self) -> ScopesView {
-        ScopesView::new(self.inner.scopes, &self.entities.scopes, self.entities)
+        self.entities.scope_sequence(self.inner.scopes)
     }
 }
 //
@@ -314,13 +331,13 @@ pub struct ScopeView<'entities> {
 //
 impl<'entities> ScopeView<'entities> {
     /// Build a scope view
-    pub(crate) fn new(inner: Scope, entities: &'entities Entities) -> Self {
+    pub fn new(inner: Scope, entities: &'entities Entities) -> Self {
         Self { inner, entities }
     }
 
     /// What identifies the scope
     pub fn id(&self) -> UnqualifiedIdView {
-        UnqualifiedIdView::new(self.inner.id, self.entities)
+        self.entities.unqualified_id(self.inner.id)
     }
 
     /// When functions are scopes containing other entities (which can happen
@@ -328,7 +345,7 @@ impl<'entities> ScopeView<'entities> {
     pub fn function_signature(&self) -> Option<FunctionSignatureView> {
         self.inner
             .function_signature
-            .map(|signature| FunctionSignatureView::new(signature, self.entities))
+            .map(|s| self.entities.function_signature(s))
     }
 }
 //
@@ -411,7 +428,7 @@ pub mod tests {
         let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
         let scopes = |ss: &[&str]| -> ScopesKey {
             // Generate scope sequence
-            let mut entry = parser.scopes.entry();
+            let mut entry = parser.scope_sequences.entry();
             let scopes: Vec<Scope> = ss
                 .iter()
                 .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
@@ -566,7 +583,7 @@ pub mod tests {
     fn nested_name_specifier() {
         let parser = EntityParser::new();
         let scopes = |ss: &[&str]| -> ScopesKey {
-            let mut entry = parser.scopes.entry();
+            let mut entry = parser.scope_sequences.entry();
             for scope in ss
                 .iter()
                 .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
@@ -611,7 +628,7 @@ pub mod tests {
                 IdExpression {
                     path: NestedNameSpecifier {
                         rooted: false,
-                        scopes: parser.scopes.entry().intern()
+                        scopes: parser.scope_sequences.entry().intern()
                     },
                     id: unqualified_id("something")
                 }

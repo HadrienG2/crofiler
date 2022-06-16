@@ -81,6 +81,13 @@ impl EntityParser {
         self.identifiers.borrow().len()
     }
 }
+//
+impl Entities {
+    /// Access a previously parsed identifier
+    pub fn identifier(&self, key: IdentifierKey) -> IdentifierView {
+        IdentifierView::new(key, self)
+    }
+}
 
 /// Trait that maps parsed keywords to parser output
 pub trait KeywordMappings<Output, const LEN: usize> {
@@ -197,7 +204,7 @@ pub struct IdentifierView<'entities> {
 //
 impl<'entities> IdentifierView<'entities> {
     /// Set up a C++ identifier view
-    pub(crate) fn new(key: IdentifierKey, entities: &'entities Entities) -> Self {
+    pub fn new(key: IdentifierKey, entities: &'entities Entities) -> Self {
         Self {
             key,
             inner: entities.identifiers.resolve(&key),
