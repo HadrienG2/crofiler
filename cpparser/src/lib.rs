@@ -4,11 +4,11 @@
 
 pub mod anonymous;
 pub mod functions;
+mod interning;
 pub mod names;
 pub mod operators;
 pub mod templates;
 pub mod types;
-mod utilities;
 pub mod values;
 
 use crate::{
@@ -16,28 +16,33 @@ use crate::{
         FunctionArgumentsKeyImpl, FunctionParametersKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS,
         FUNCTION_PARAMETERS_LEN_BITS,
     },
+    interning::recursion::RecursiveSequenceInterner,
     names::{
         atoms::IdentifierKey,
         scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
     },
-    templates::{TemplateParameter, TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS},
+    templates::{
+        TemplateParameter, TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS,
+    },
     types::{
         declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
         specifiers::legacy::{self, LegacyName},
-        TypeKey, TypeLike,
+        TypeKey, TypeLike, TypeView,
     },
-    utilities::RecursiveSequenceInterner,
     values::{AfterValue, ValueKey, ValueLike, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS},
 };
 use asylum::{
     lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
-    path::{self, InternedPath, InternedPaths, PathInterner},
+    path::{self, InternedPaths, PathInterner},
     sequence::InternedSequences,
     Interned, Interner,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{cell::RefCell, fmt::Debug};
+use std::{
+    cell::RefCell,
+    fmt::{self, Display, Formatter},
+};
 
 /// Re-export asylum version in use
 pub use asylum;
@@ -68,6 +73,9 @@ pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
 type PathKeyImpl = Spur;
 const PATH_LEN_BITS: u32 = 8;
 
+/// Interned file path
+pub type InternedPath<'entities> = path::InternedPath<'entities, PathComponentKey>;
+
 /// Parser for C++ entities
 //
 // The toplevel module only contains the data structures and general
@@ -94,11 +102,11 @@ pub struct EntityParser {
     /// Interned values
     values: RefCell<Interner<ValueLike, ValueKey>>,
 
-    /// Interned template parameter sets
-    template_parameter_sets: RecursiveSequenceInterner<
+    /// Interned template parameter lists
+    template_parameter_lists: RecursiveSequenceInterner<
         TemplateParameter,
-        TemplateParametersKeyImpl,
-        TEMPLATE_PARAMETERS_LEN_BITS,
+        TemplateParameterListKeyImpl,
+        TEMPLATE_PARAMETER_LIST_LEN_BITS,
     >,
 
     /// Interned value trailers (part of ValueLike that comes after ValueHeader)
@@ -129,7 +137,7 @@ impl EntityParser {
             paths: Default::default(),
             types: Default::default(),
             values: RefCell::new(Interner::new()),
-            template_parameter_sets: Default::default(),
+            template_parameter_lists: Default::default(),
             value_trailers: Default::default(),
             function_arguments: Default::default(),
             function_parameters: Default::default(),
@@ -167,7 +175,11 @@ impl EntityParser {
     }
 
     /// Parse a C++ entity
-    pub fn parse_entity<'source>(&self, s: &'source str) -> IResult<'source, Option<TypeKey>> {
+    ///
+    /// None will be returned upon encountering the special `<unknown>` entity
+    /// that clang occasionally feels like referring to.
+    ///
+    pub fn parse_entity<'source>(&self, s: &'source str) -> IResult<'source, EntityKey> {
         use nom::combinator::eof;
         let type_like = (|s| self.parse_type_like(s)).map(Some);
         let unknown = Self::parse_unknown_entity.value(None);
@@ -181,7 +193,7 @@ impl EntityParser {
             paths: self.paths.into_inner().finalize(),
             types: self.types.into_inner().finalize(),
             values: self.values.into_inner().finalize(),
-            template_parameter_sets: self.template_parameter_sets.into_inner().finalize(),
+            template_parameter_lists: self.template_parameter_lists.into_inner().finalize(),
             value_trailers: self.value_trailers.into_inner().finalize(),
             function_arguments: self.function_arguments.into_inner().finalize(),
             function_parameters: self.function_parameters.into_inner().finalize(),
@@ -196,7 +208,7 @@ impl Default for EntityParser {
         Self::new()
     }
 }
-//
+
 /// Set of previously parsed C++ entities
 #[derive(Debug, PartialEq)]
 pub struct Entities {
@@ -212,11 +224,11 @@ pub struct Entities {
     /// Values
     values: Interned<ValueLike, ValueKey>,
 
-    /// Template parameter sets
-    template_parameter_sets: InternedSequences<
+    /// Template parameter lists
+    template_parameter_lists: InternedSequences<
         TemplateParameter,
-        TemplateParametersKeyImpl,
-        TEMPLATE_PARAMETERS_LEN_BITS,
+        TemplateParameterListKeyImpl,
+        TEMPLATE_PARAMETER_LIST_LEN_BITS,
     >,
 
     /// Value trailers (part of ValueLike that comes after ValueHeader)
@@ -239,8 +251,45 @@ pub struct Entities {
 //
 impl Entities {
     /// Retrieve a previously interned path
-    pub fn path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
+    pub fn path(&self, key: PathKey) -> InternedPath {
         self.paths.get(key)
+    }
+
+    /// Retrieve a previously interned entity
+    pub fn entity(&self, key: EntityKey) -> EntityView {
+        EntityView::new(key, self)
+    }
+}
+
+/// Interned C++ entity
+///
+/// None encodes to the special `<unknown>` entity that clang occasionally feels
+/// like referring to.
+///
+pub type EntityKey = Option<TypeKey>;
+
+/// View of a C++ entity
+///
+/// None encodes to the special `<unknown>` entity that clang occasionally feels
+/// like referring to.
+///
+#[derive(PartialEq)]
+pub struct EntityView<'entities>(pub Option<TypeView<'entities>>);
+//
+impl<'entities> EntityView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: EntityKey, entities: &'entities Entities) -> Self {
+        Self(inner.map(|ty| TypeView::new(ty, entities)))
+    }
+}
+//
+impl<'entities> Display for EntityView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(ty) = &self.0 {
+            write!(f, " {ty}")
+        } else {
+            write!(f, "<unknown>")
+        }
     }
 }
 

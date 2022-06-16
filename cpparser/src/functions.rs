@@ -1,12 +1,12 @@
 //! Function-related parsing
 
 use crate::{
+    interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
     types::{
         qualifiers::{ConstVolatile, Reference},
-        TypeKey,
+        TypeKey, TypeView,
     },
-    utilities::RecursiveSequenceInterner,
-    values::ValueKey,
+    values::{ValueKey, ValueView},
     Entities, EntityParser, IResult,
 };
 use asylum::{
@@ -15,7 +15,10 @@ use asylum::{
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    fmt::{self, Display, Formatter},
+    hash::Hash,
+};
 
 /// Interned function arguments (= list of parameter values) key
 ///
@@ -147,18 +150,15 @@ impl EntityParser {
         .parse(s)
     }
 }
-//
-impl Entities {
-    /// Retrieve a function call previously parsed by parse_function_call
-    pub fn function_call(&self, key: FunctionArgumentsKey) -> &[ValueKey] {
-        self.function_arguments.get(key)
-    }
 
-    /// Retrieve a function parameter set previously parsed by parse_function_signature
-    pub fn function_parameters(&self, key: FunctionParametersKey) -> &[TypeKey] {
-        self.function_parameters.get(key)
-    }
-}
+/// View of a function call (function argument set)
+pub type FunctionArgumentsView<'entities> = SliceView<
+    'entities,
+    ValueKey,
+    ValueView<'entities>,
+    FunctionArgumentsKeyImpl,
+    FUNCTION_ARGUMENTS_LEN_BITS,
+>;
 
 /// Function signature
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -195,6 +195,106 @@ impl From<FunctionParametersKey> for FunctionSignature {
         }
     }
 }
+
+/// A view of a function signature
+pub struct FunctionSignatureView<'entities> {
+    /// Wrapped FunctionSignature
+    inner: FunctionSignature,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> FunctionSignatureView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: FunctionSignature, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Parameter types
+    pub fn parameters(&self) -> FunctionParametersView {
+        FunctionParametersView::new(
+            self.inner.parameters,
+            &self.entities.function_parameters,
+            self.entities,
+        )
+    }
+
+    /// CV qualifiers
+    pub fn cv(&self) -> ConstVolatile {
+        self.inner.cv
+    }
+
+    /// Reference qualifiers
+    pub fn reference(&self) -> Reference {
+        self.inner.reference
+    }
+
+    /// noexcept qualifier
+    ///
+    /// The first layer of Option represents presence or absence of the
+    /// "noexcept" keyword, the second layer represents the optional expression
+    /// that can be passed as an argument to noexcept.
+    ///
+    pub fn noexcept(&self) -> Option<Option<ValueView>> {
+        self.inner
+            .noexcept
+            .map(|o| o.map(|v| ValueView::new(v, self.entities)))
+    }
+
+    /// Trailing return type
+    pub fn trailing_return(&self) -> Option<TypeView> {
+        self.inner
+            .trailing_return
+            .map(|t| TypeView::new(t, self.entities))
+    }
+}
+//
+impl<'entities> PartialEq for FunctionSignatureView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for FunctionSignatureView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.parameters())?;
+
+        let cv = self.cv();
+        if cv != ConstVolatile::default() {
+            write!(f, " {cv}")?;
+        }
+
+        let reference = self.reference();
+        if reference != Reference::None {
+            write!(f, " {reference}")?;
+        }
+
+        let noexcept = self.noexcept();
+        if let Some(value) = noexcept {
+            write!(f, " noexcept")?;
+            if let Some(value) = value {
+                write!(f, "({value})")?;
+            }
+        }
+
+        let trailing_return = self.trailing_return();
+        if let Some(ty) = trailing_return {
+            write!(f, " -> {ty}")?;
+        }
+        Ok(())
+    }
+}
+
+/// View of a function parameter set
+pub type FunctionParametersView<'entities> = SliceView<
+    'entities,
+    TypeKey,
+    TypeView<'entities>,
+    FunctionParametersKeyImpl,
+    FUNCTION_PARAMETERS_LEN_BITS,
+>;
 
 /// Parser recognizing a set of function parameters, given a parameter grammar
 ///

@@ -1,9 +1,13 @@
 //! Clang-provided names to C++ entities that don't have a language-defined name
 //! including lambdas, anonymous classes, anonymous namespaces...
 
-use crate::{names::atoms::IdentifierKey, EntityParser, IResult, PathKey};
+use crate::{
+    names::atoms::{IdentifierKey, IdentifierView},
+    Entities, EntityParser, IResult, InternedPath, PathKey,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser for clang's `<unknown>` C++ entity, sometimes seen in ParseTemplate
@@ -56,10 +60,10 @@ impl EntityParser {
 /// Lambda location description
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Lambda {
-    /// In which file the lambda is declared
+    /// Source file in which the lambda is declared
     file: PathKey,
 
-    /// Where exactly in the file
+    /// Declaration location within the file
     location: (Line, Column),
 }
 //
@@ -69,12 +73,69 @@ pub type Line = u32;
 /// Column number within a file
 pub type Column = u32;
 
+/// View of a lambda location description
+pub struct LambdaView<'entities> {
+    /// Wrapped Lambda
+    inner: Lambda,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> LambdaView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: Lambda, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Source file in which the lambda is declared
+    pub fn file(&self) -> InternedPath {
+        self.entities.path(self.inner.file)
+    }
+
+    /// Declaration location within the file
+    pub fn location(&self) -> (Line, Column) {
+        self.inner.location
+    }
+}
+//
+impl<'entities> PartialEq for LambdaView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for LambdaView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let (line, column) = self.location();
+        write!(f, "(lambda at {}:{line}:{column})", self.file())
+    }
+}
+
 /// Anonymous clang entity (known as `(anonymous)` or `(anonymous <something>)`)
-///
-/// So far, only anonymous classes and namespaces were seen, but for all I know
-/// there might be others... In any case, if the <something> is specified, it is
-/// reported back as the string argument to this option.
 pub type AnonymousEntity = Option<IdentifierKey>;
+
+/// View of an anonymous clang entity (known as `(anonymous)` or `(anonymous <something>)`)
+#[derive(PartialEq)]
+pub struct AnonymousEntityView<'entities>(pub Option<IdentifierView<'entities>>);
+//
+impl<'entities> AnonymousEntityView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: AnonymousEntity, entities: &'entities Entities) -> Self {
+        Self(inner.map(|id| IdentifierView::new(id, entities)))
+    }
+}
+//
+impl<'entities> Display for AnonymousEntityView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "(anonymous")?;
+        if let Some(id) = &self.0 {
+            write!(f, " {id}")?
+        }
+        write!(f, ")")
+    }
+}
 
 #[cfg(test)]
 mod tests {

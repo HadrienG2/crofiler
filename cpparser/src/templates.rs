@@ -1,10 +1,15 @@
 //! Things that could be templates
 
-use crate::{types::TypeKey, values::ValueKey, Entities, EntityParser, IResult};
+use crate::{
+    interning::slice::{SliceItemView, SliceView},
+    types::{TypeKey, TypeView},
+    values::{ValueKey, ValueView},
+    Entities, EntityParser, IResult,
+};
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned template parameter set key
 ///
@@ -15,10 +20,10 @@ use std::fmt::Debug;
 /// After parsing, you can retrieve a template parameter set by passing this key
 /// to the template_parameters() method of the Entities struct.
 ///
-pub type TemplateParametersKey =
-    SequenceKey<TemplateParametersKeyImpl, TEMPLATE_PARAMETERS_LEN_BITS>;
-pub(crate) type TemplateParametersKeyImpl = Spur;
-pub(crate) const TEMPLATE_PARAMETERS_LEN_BITS: u32 = 10;
+pub type TemplateParameterListKey =
+    SequenceKey<TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS>;
+pub(crate) type TemplateParameterListKeyImpl = Spur;
+pub(crate) const TEMPLATE_PARAMETER_LIST_LEN_BITS: u32 = 10;
 //
 impl EntityParser {
     /// Parser for unqualified id-expressions
@@ -38,7 +43,7 @@ impl EntityParser {
             |s| self.parse_template_parameter(s),
             space0.and(char(',')).and(space0),
             space0.and(char('>')),
-            || self.template_parameter_sets.entry(),
+            || self.template_parameter_lists.entry(),
             |mut entry, item| {
                 entry.push(item);
                 entry
@@ -46,7 +51,7 @@ impl EntityParser {
         )
         .map(|entry| entry.intern());
 
-        let empty_arguments = char('>').map(|_| self.template_parameter_sets.entry().intern());
+        let empty_arguments = char('>').map(|_| self.template_parameter_lists.entry().intern());
 
         let invalid_arguments = tag(", void>");
 
@@ -64,19 +69,19 @@ impl EntityParser {
     #[cfg(test)]
     pub(crate) fn template_parameters(
         &self,
-        key: TemplateParametersKey,
+        key: TemplateParameterListKey,
     ) -> Box<[TemplateParameter]> {
-        self.template_parameter_sets.borrow().get(key).into()
+        self.template_parameter_lists.borrow().get(key).into()
     }
 
     /// Total number of template parameters across all interned template parameter sets so far
     pub fn num_template_parameters(&self) -> usize {
-        self.template_parameter_sets.borrow().num_items()
+        self.template_parameter_lists.borrow().num_items()
     }
 
     /// Maximal number of template parameters
     pub fn max_template_parameter_set_len(&self) -> Option<usize> {
-        self.template_parameter_sets.borrow().max_sequence_len()
+        self.template_parameter_lists.borrow().max_sequence_len()
     }
 
     /// Parser recognizing a single template parameter/argument
@@ -101,20 +106,49 @@ impl EntityParser {
         type_like.or(value_like).parse(s)
     }
 }
-//
-impl Entities {
-    /// Retrieve a previously interned template parameter set
-    pub fn template_parameters(&self, key: TemplateParametersKey) -> &[TemplateParameter] {
-        self.template_parameter_sets.get(key)
-    }
-}
 
 /// Set of template parameters
 ///
 /// None means that a known invalid template parameter set printout from clang,
 /// such as `<, void>`, was encountered.
 ///
-pub type TemplateParameters = Option<TemplateParametersKey>;
+pub type TemplateParameters = Option<TemplateParameterListKey>;
+
+/// View of a set of template parameters
+///
+/// None means that a known invalid template parameter set printout from clang,
+/// such as `<, void>`, was encountered.
+///
+#[derive(PartialEq)]
+pub struct TemplateParametersView<'entities>(pub Option<TemplateParameterListView<'entities>>);
+//
+impl<'entities> TemplateParametersView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: TemplateParameters, entities: &'entities Entities) -> Self {
+        Self(inner.map(|id| {
+            TemplateParameterListView::new(id, &entities.template_parameter_lists, entities)
+        }))
+    }
+}
+//
+impl<'entities> Display for TemplateParametersView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(list) = &self.0 {
+            write!(f, "{list}")
+        } else {
+            write!(f, "<, void>")
+        }
+    }
+}
+
+/// View of a set of template parameters, excluding clang's `<, void>` edge case
+pub type TemplateParameterListView<'entities> = SliceView<
+    'entities,
+    TemplateParameter,
+    TemplateParameterView<'entities>,
+    TemplateParameterListKeyImpl,
+    TEMPLATE_PARAMETER_LIST_LEN_BITS,
+>;
 
 /// Template parameter
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -124,6 +158,49 @@ pub enum TemplateParameter {
 
     /// Value
     ValueLike(ValueKey),
+}
+
+/// View of a template parameter
+#[derive(PartialEq)]
+pub enum TemplateParameterView<'entities> {
+    /// Type or value looking close enough to a type
+    TypeLike(TypeView<'entities>),
+
+    /// Value
+    ValueLike(ValueView<'entities>),
+}
+//
+impl<'entities> TemplateParameterView<'entities> {
+    /// Set up a simple type specifier view
+    pub(crate) fn new(inner: TemplateParameter, entities: &'entities Entities) -> Self {
+        match inner {
+            TemplateParameter::TypeLike(t) => Self::TypeLike(TypeView::new(t, entities)),
+            TemplateParameter::ValueLike(v) => Self::ValueLike(ValueView::new(v, entities)),
+        }
+    }
+}
+//
+impl<'entities> Display for TemplateParameterView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::TypeLike(t) => write!(f, "{t}"),
+            Self::ValueLike(v) => write!(f, "{v}"),
+        }
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for TemplateParameterView<'entities> {
+    type Inner = TemplateParameter;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "<";
+
+    const DISPLAY_SEPARATOR: &'static str = ", ";
+
+    const DISPLAY_TRAILER: &'static str = ">";
 }
 
 #[cfg(test)]

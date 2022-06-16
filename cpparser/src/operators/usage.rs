@@ -1,9 +1,14 @@
 //! Operator-related grammar that is only used when parsing expressions
 
 use super::{Operator, Symbol};
-use crate::{functions::FunctionArgumentsKey, types::TypeKey, EntityParser, IResult};
+use crate::{
+    functions::{FunctionArgumentsKey, FunctionArgumentsView},
+    types::{TypeKey, TypeView},
+    Entities, EntityParser, IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parse the increment/decrement operator
@@ -137,7 +142,7 @@ impl EntityParser {
     }
 }
 
-/// New expression, i.e. usage of the new operator
+/// New-expression, i.e. usage of the new operator
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NewExpression {
     /// Whether this new expression is rooted (starts with ::), which means that
@@ -162,6 +167,71 @@ impl From<TypeKey> for NewExpression {
             ty,
             constructor: None,
         }
+    }
+}
+
+/// A view of a new-expression, i.e. usage of the new operator
+pub struct NewExpressionView<'entities> {
+    /// Wrapped NewExpression
+    inner: NewExpression,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> NewExpressionView<'entities> {
+    /// Build a new-expression view
+    pub(crate) fn new(inner: NewExpression, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Whether this new expression is rooted (starts with ::), which means that
+    /// class-specific replacements will be ignored
+    pub fn rooted(&self) -> bool {
+        self.inner.rooted
+    }
+
+    /// Placement parameters (if any)
+    pub fn placement(&self) -> Option<FunctionArgumentsView> {
+        self.inner.placement.map(|args| {
+            FunctionArgumentsView::new(args, &self.entities.function_arguments, self.entities)
+        })
+    }
+
+    /// Type of values being created
+    pub fn ty(&self) -> TypeView {
+        TypeView::new(self.inner.ty, self.entities)
+    }
+
+    /// Parameters to the values' constructor (if any)
+    pub fn constructor(&self) -> Option<FunctionArgumentsView> {
+        self.inner.constructor.map(|args| {
+            FunctionArgumentsView::new(args, &self.entities.function_arguments, self.entities)
+        })
+    }
+}
+//
+impl<'entities> PartialEq for NewExpressionView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for NewExpressionView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if self.rooted() {
+            write!(f, "::")?;
+        }
+        write!(f, "new")?;
+        if let Some(placement) = self.placement() {
+            write!(f, "{placement}")?;
+        }
+        write!(f, " {}", self.ty())?;
+        if let Some(constructor) = self.constructor() {
+            write!(f, "{constructor}")?;
+        }
+        Ok(())
     }
 }
 

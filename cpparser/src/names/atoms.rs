@@ -4,6 +4,10 @@ use crate::{Entities, EntityParser, Error, IResult};
 use asylum::lasso::MiniSpur;
 use nom::{error::ErrorKind, Parser};
 use nom_supreme::ParserExt;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::Deref,
+};
 
 /// Interned C++ identifier key
 ///
@@ -75,13 +79,6 @@ impl EntityParser {
     /// Tell how many unique identifiers have been parsed so far
     pub fn num_identifiers(&self) -> usize {
         self.identifiers.borrow().len()
-    }
-}
-//
-impl Entities {
-    /// Retrieve an identifier previously parsed by parse_identifier
-    pub fn identifier(&self, key: IdentifierKey) -> &str {
-        self.identifiers.resolve(&key)
     }
 }
 
@@ -186,6 +183,55 @@ fn is_id_continue(b: u8) -> bool {
     is_id_start(b) || b.is_ascii_digit()
 }
 
+/// A view of a C++ identifier
+pub struct IdentifierView<'entities> {
+    /// Key used to retrieve the identifier
+    key: IdentifierKey,
+
+    /// Wrapped identifier
+    inner: &'entities str,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> IdentifierView<'entities> {
+    /// Set up a C++ identifier view
+    pub(crate) fn new(key: IdentifierKey, entities: &'entities Entities) -> Self {
+        Self {
+            key,
+            inner: entities.identifiers.resolve(&key),
+            entities,
+        }
+    }
+}
+//
+impl<'entities> AsRef<str> for IdentifierView<'entities> {
+    fn as_ref(&self) -> &str {
+        self.inner
+    }
+}
+//
+impl<'entities> Deref for IdentifierView<'entities> {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.inner
+    }
+}
+//
+impl<'entities> PartialEq for IdentifierView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.key == other.key)
+    }
+}
+//
+impl<'entities> Display for IdentifierView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.inner)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +277,6 @@ mod tests {
         assert_eq!(&*parser.identifier(key), ID);
 
         let entities = parser.finalize();
-        assert_eq!(entities.identifier(key), ID);
+        assert_eq!(IdentifierView::new(key, &entities).as_ref(), ID);
     }
 }

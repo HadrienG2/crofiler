@@ -4,13 +4,16 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    functions::FunctionSignature, names::scopes::NestedNameSpecifier, values::ValueKey, Entities,
-    EntityParser, IResult,
+    functions::{FunctionSignature, FunctionSignatureView},
+    interning::slice::{SliceItemView, SliceView},
+    names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
+    values::{ValueKey, ValueView},
+    Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned declarator key
 ///
@@ -120,16 +123,18 @@ impl EntityParser {
         }
     }
 }
-//
-impl Entities {
-    /// Retrieve a previously interned declarator
-    pub fn declarator(&self, key: DeclaratorKey) -> &Declarator {
-        self.declarators.get(key)
-    }
-}
 
 /// Declarator
 pub type Declarator = [DeclOperator];
+
+/// View of a declarator
+pub type DeclaratorView<'entities> = SliceView<
+    'entities,
+    DeclOperator,
+    DeclOperatorView<'entities>,
+    DeclaratorKeyImpl,
+    DECLARATOR_LEN_BITS,
+>;
 
 /// Operators that can appear within a declarator
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -172,6 +177,93 @@ impl From<DeclaratorKey> for DeclOperator {
     fn from(d: DeclaratorKey) -> Self {
         Self::Parenthesized(d)
     }
+}
+
+/// View of a type declarator component (operator)
+#[derive(PartialEq)]
+pub enum DeclOperatorView<'entities> {
+    /// Pointer declarator
+    Pointer {
+        /// Nested name specifier (for pointer-to-member)
+        path: NestedNameSpecifierView<'entities>,
+
+        /// Const and volatile qualifiers,
+        cv: ConstVolatile,
+    },
+
+    /// Reference declarator
+    Reference(Reference),
+
+    /// Array declarator, with optional size
+    Array(Option<ValueView<'entities>>),
+
+    /// Function declarator
+    Function(FunctionSignatureView<'entities>),
+
+    /// Parentheses, used to override operator priorities
+    Parenthesized(DeclaratorView<'entities>),
+}
+//
+impl<'entities> DeclOperatorView<'entities> {
+    /// Build an operator view
+    pub(crate) fn new(op: DeclOperator, entities: &'entities Entities) -> Self {
+        match op {
+            DeclOperator::Pointer { path, cv } => Self::Pointer {
+                path: NestedNameSpecifierView::new(path, entities),
+                cv,
+            },
+            DeclOperator::Reference(r) => Self::Reference(r),
+            DeclOperator::Array(v) => Self::Array(v.map(|v| ValueView::new(v, entities))),
+            DeclOperator::Function(f) => Self::Function(FunctionSignatureView::new(f, entities)),
+            DeclOperator::Parenthesized(d) => {
+                Self::Parenthesized(DeclaratorView::new(d, &entities.declarators, entities))
+            }
+        }
+    }
+}
+//
+impl<'entities> Display for DeclOperatorView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::Pointer { path, cv } => {
+                write!(f, "{path}*")?;
+                if *cv != ConstVolatile::default() {
+                    write!(f, " {cv}")?;
+                }
+            }
+            Self::Reference(r) => {
+                write!(f, "{r}")?;
+            }
+            Self::Array(a) => {
+                write!(f, "[")?;
+                if let Some(a) = a {
+                    write!(f, "{a}")?;
+                }
+                write!(f, "]")?;
+            }
+            Self::Function(func) => {
+                write!(f, "{func}")?;
+            }
+            Self::Parenthesized(d) => {
+                write!(f, "({d})")?;
+            }
+        }
+        Ok(())
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for DeclOperatorView<'entities> {
+    type Inner = DeclOperator;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "";
+
+    const DISPLAY_SEPARATOR: &'static str = " ";
+
+    const DISPLAY_TRAILER: &'static str = "";
 }
 
 #[cfg(test)]

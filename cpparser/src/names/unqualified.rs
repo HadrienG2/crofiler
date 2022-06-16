@@ -1,14 +1,15 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
 use crate::{
-    anonymous::{AnonymousEntity, Lambda},
-    names::atoms::IdentifierKey,
-    operators::Operator,
-    templates::TemplateParameters,
-    values::ValueKey,
-    EntityParser, IResult,
+    anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
+    names::atoms::{IdentifierKey, IdentifierView},
+    operators::{self, Operator, OperatorView},
+    templates::{TemplateParameters, TemplateParametersView},
+    values::{ValueKey, ValueView},
+    Entities, EntityParser, IResult,
 };
 use nom::Parser;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser for unqualified id-expressions
@@ -146,6 +147,110 @@ impl From<Lambda> for UnqualifiedId {
 impl From<AnonymousEntity> for UnqualifiedId {
     fn from(a: AnonymousEntity) -> Self {
         Self::Anonymous(a)
+    }
+}
+
+/// View of an unqualified id-expression
+#[derive(PartialEq)]
+pub enum UnqualifiedIdView<'entities> {
+    /// An entity named by a user-specified identifier
+    Named {
+        /// Truth that this is a destructor (names starts with ~)
+        is_destructor: bool,
+
+        /// Base identifier
+        id: IdentifierView<'entities>,
+
+        /// Optional template parameters
+        template_parameters: Option<TemplateParametersView<'entities>>,
+    },
+
+    /// An operator overload
+    Operator {
+        /// Which operator was overloaded
+        operator: OperatorView<'entities>,
+
+        /// Optional template parameters
+        template_parameters: Option<TemplateParametersView<'entities>>,
+    },
+
+    /// A decltype(<value>) expression
+    Decltype(ValueView<'entities>),
+
+    /// A lambda function, with source location information
+    Lambda(LambdaView<'entities>),
+
+    /// Another kind of anonymous entity from clang
+    Anonymous(AnonymousEntityView<'entities>),
+}
+//
+impl<'entities> UnqualifiedIdView<'entities> {
+    /// Build an operator view
+    pub(crate) fn new(id: UnqualifiedId, entities: &'entities Entities) -> Self {
+        match id {
+            UnqualifiedId::Named {
+                is_destructor,
+                id,
+                template_parameters,
+            } => Self::Named {
+                is_destructor,
+                id: IdentifierView::new(id, entities),
+                template_parameters: template_parameters
+                    .map(|key| TemplateParametersView::new(key, entities)),
+            },
+            UnqualifiedId::Operator {
+                operator,
+                template_parameters,
+            } => Self::Operator {
+                operator: OperatorView::new(operator, entities),
+                template_parameters: template_parameters
+                    .map(|key| TemplateParametersView::new(key, entities)),
+            },
+            UnqualifiedId::Decltype(value) => Self::Decltype(ValueView::new(value, entities)),
+            UnqualifiedId::Lambda(lambda) => Self::Lambda(LambdaView::new(lambda, entities)),
+            UnqualifiedId::Anonymous(anonymous) => {
+                Self::Anonymous(AnonymousEntityView::new(anonymous, entities))
+            }
+        }
+    }
+}
+//
+impl<'entities> Display for UnqualifiedIdView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::Named {
+                is_destructor,
+                id,
+                template_parameters,
+            } => {
+                if *is_destructor {
+                    write!(f, "~")?;
+                }
+                write!(f, "{id}")?;
+                if let Some(template_parameters) = template_parameters {
+                    write!(f, "{template_parameters}")?;
+                }
+            }
+            Self::Operator {
+                operator,
+                template_parameters,
+            } => {
+                operator.display(f, operators::DisplayContext::Declaration)?;
+                if let Some(template_parameters) = template_parameters {
+                    write!(f, "{template_parameters}")?;
+                }
+            }
+            Self::Decltype(value) => {
+                write!(f, "decltype({value})")?;
+            }
+            Self::Lambda(lambda) => {
+                write!(f, "{lambda}")?;
+            }
+            Self::Anonymous(anonymous) => {
+                write!(f, "{anonymous}")?;
+            }
+        }
+        Ok(())
     }
 }
 

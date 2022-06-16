@@ -1,8 +1,12 @@
 //! Literals (and things that should be literals like negative numbers)
 
-use crate::{names::atoms::IdentifierKey, EntityParser, IResult};
+use crate::{
+    names::atoms::{IdentifierKey, IdentifierView},
+    Entities, EntityParser, IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser for literals
@@ -33,6 +37,52 @@ impl<T: Into<LiteralValue>> From<T> for Literal {
             value: value.into(),
             custom_suffix: None,
         }
+    }
+}
+
+/// View of a literal
+pub struct LiteralView<'entities> {
+    /// Wrapped Literal
+    inner: Literal,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> LiteralView<'entities> {
+    /// Build an id-expression view
+    pub(crate) fn new(inner: Literal, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Inner value
+    pub fn value(&self) -> LiteralValue {
+        self.inner.value
+    }
+
+    /// Custom literal suffix, if any
+    pub fn custom_suffix(&self) -> Option<IdentifierView> {
+        self.inner
+            .custom_suffix
+            .map(|i| IdentifierView::new(i, self.entities))
+    }
+}
+//
+impl<'entities> PartialEq for LiteralView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for LiteralView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.value())?;
+        let custom_suffix = self.custom_suffix();
+        if let Some(suffix) = custom_suffix {
+            write!(f, "{suffix}")?;
+        }
+        Ok(())
     }
 }
 
@@ -78,6 +128,16 @@ impl From<u64> for LiteralValue {
 impl From<char> for LiteralValue {
     fn from(c: char) -> Self {
         LiteralValue::Char(c)
+    }
+}
+//
+impl Display for LiteralValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::I64(i) => write!(f, "{i}"),
+            Self::U64(u) => write!(f, "{u}"),
+            Self::Char(c) => write!(f, "{c}"),
+        }
     }
 }
 

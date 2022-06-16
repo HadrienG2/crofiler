@@ -4,6 +4,7 @@ use crate::sequence::{InternedSequences, SequenceInterner, SequenceKey};
 use lasso::{Key, Rodeo, RodeoResolver, Spur};
 use std::{
     ffi::OsStr,
+    fmt::{self, Display, Formatter},
     hash::Hash,
     path::{Path, PathBuf},
 };
@@ -76,6 +77,14 @@ impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>>
             path_buf.push(component);
         }
         path_buf.into_boxed_path()
+    }
+}
+//
+impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>> Display
+    for InternedPath<'parent, ComponentKey, Resolver>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.to_boxed_path().display())
     }
 }
 

@@ -3,10 +3,14 @@
 mod overloads;
 pub mod usage;
 
-use crate::{names::atoms::IdentifierKey, types::TypeKey, EntityParser, IResult};
+use crate::{
+    names::atoms::{IdentifierKey, IdentifierView},
+    types::{TypeKey, TypeView},
+    Entities, EntityParser, IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
+use std::fmt::{self, Display, Formatter};
 
 /// C++ operators that can be overloaded
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -72,6 +76,193 @@ impl From<TypeKey> for Operator {
     fn from(t: TypeKey) -> Self {
         Self::Conversion(t)
     }
+}
+
+/// View of a C++ operator
+#[derive(PartialEq)]
+pub enum OperatorView<'entities> {
+    /// Basic grammar followed by most operators: a symbol that can appear
+    /// twice, optionally followed by an equality sign.
+    Basic {
+        /// Base symbol at the beginning
+        symbol: Symbol,
+
+        /// Whether this symbol is repeated
+        twice: bool,
+
+        /// Whether this singleton/pair is followed by an equality sign
+        equal: bool,
+    },
+
+    /// Dereference operators `->` and `->*`
+    Deref {
+        /// `->` if this is false, `->*` if this is true
+        star: bool,
+    },
+
+    /// Spaceship operator `<=>`
+    Spaceship,
+
+    /// Bracketed operators `()` and `[]`
+    CallIndex {
+        /// `()` if this is false, `[]` if this is true
+        is_index: bool,
+    },
+
+    /// Custom literal operator (`operator "" <suffix-identifier>`)
+    CustomLiteral(IdentifierView<'entities>),
+
+    /// Allocation/deallocation functions
+    NewDelete {
+        /// `new` if this is false, `delete` if this is true
+        is_delete: bool,
+
+        /// True if this targets arrays (e.g. `operator new[]`)
+        array: bool,
+    },
+
+    /// Overloaded `co_await` operator
+    CoAwait,
+
+    /// Type conversion operator (`operator <type>`)
+    Conversion(TypeView<'entities>),
+}
+//
+impl<'entities> OperatorView<'entities> {
+    /// Build an operator view
+    pub(crate) fn new(operator: Operator, entities: &'entities Entities) -> Self {
+        match operator {
+            Operator::Basic {
+                symbol,
+                twice,
+                equal,
+            } => Self::Basic {
+                symbol,
+                twice,
+                equal,
+            },
+            Operator::Deref { star } => Self::Deref { star },
+            Operator::Spaceship => Self::Spaceship,
+            Operator::CallIndex { is_index } => Self::CallIndex { is_index },
+            Operator::CustomLiteral(id) => Self::CustomLiteral(IdentifierView::new(id, entities)),
+            Operator::NewDelete { is_delete, array } => Self::NewDelete { is_delete, array },
+            Operator::CoAwait => Self::CoAwait,
+            Operator::Conversion(ty) => Self::Conversion(TypeView::new(ty, entities)),
+        }
+    }
+
+    /// Display the operator using appropriate syntax for a certain context
+    pub fn display(
+        &self,
+        f: &mut Formatter<'_>,
+        context: DisplayContext,
+    ) -> Result<(), fmt::Error> {
+        if context == DisplayContext::Declaration {
+            write!(f, "operator")?;
+        }
+        match self {
+            Self::Basic {
+                symbol,
+                twice,
+                equal,
+            } => {
+                if context == DisplayContext::BinaryUsage {
+                    write!(f, " ")?;
+                }
+                write!(f, "{symbol}")?;
+                if *twice {
+                    write!(f, "{symbol}")?;
+                }
+                if *equal {
+                    write!(f, "=")?;
+                }
+                if context == DisplayContext::BinaryUsage {
+                    write!(f, " ")?;
+                }
+            }
+            Self::Deref { star } => {
+                write!(f, "->")?;
+                if *star {
+                    write!(f, "*")?;
+                }
+            }
+            Self::Spaceship => {
+                if context == DisplayContext::BinaryUsage {
+                    write!(f, " ")?;
+                }
+                write!(f, "<=>")?;
+                if context == DisplayContext::BinaryUsage {
+                    write!(f, " ")?;
+                }
+            }
+            Self::CallIndex { is_index } => {
+                if *is_index {
+                    write!(f, "[]")?;
+                } else {
+                    write!(f, "()")?;
+                }
+            }
+            Self::CustomLiteral(identifier) => {
+                if context == DisplayContext::Declaration {
+                    write!(f, "\"\" ")?;
+                }
+                write!(f, "{identifier}")?;
+            }
+            Self::NewDelete { is_delete, array } => {
+                if context == DisplayContext::Declaration {
+                    write!(f, " ")?;
+                }
+                if *is_delete {
+                    write!(f, "delete")?;
+                } else {
+                    write!(f, "new")?;
+                }
+                if *array {
+                    write!(f, "[]")?;
+                }
+                if context == DisplayContext::PrefixUsage {
+                    write!(f, " ")?;
+                }
+            }
+            Self::CoAwait => {
+                if context == DisplayContext::Declaration {
+                    write!(f, " ")?;
+                }
+                write!(f, "co_await")?;
+                if context == DisplayContext::PrefixUsage {
+                    write!(f, " ")?;
+                }
+            }
+            Self::Conversion(ty) => {
+                if context == DisplayContext::Declaration {
+                    write!(f, " ")?;
+                } else if context == DisplayContext::PrefixUsage {
+                    write!(f, "(")?;
+                }
+                write!(f, "{ty}")?;
+                if context == DisplayContext::PrefixUsage {
+                    write!(f, ")")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+//
+/// Context in which an operator is displayed
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DisplayContext {
+    /// Operator declaration
+    Declaration,
+
+    /// Usage in prefix position
+    PrefixUsage,
+
+    /// Usage in binary position
+    BinaryUsage,
+
+    /// Usage in postfix position
+    PostfixUsage,
 }
 
 /// Parse arithmetic and comparison operators
@@ -225,6 +416,28 @@ pub enum Symbol {
 
     /// ,
     Comma,
+}
+//
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let c = match self {
+            Self::AddPlus => '+',
+            Self::SubNeg => '-',
+            Self::MulDeref => '*',
+            Self::Div => '/',
+            Self::Mod => '%',
+            Self::Xor => '^',
+            Self::AndRef => '&',
+            Self::Or => '|',
+            Self::BitNot => '~',
+            Self::Not => '!',
+            Self::AssignEq => '=',
+            Self::Less => '<',
+            Self::Greater => '>',
+            Self::Comma => ',',
+        };
+        write!(f, "{c}")
+    }
 }
 
 #[cfg(test)]

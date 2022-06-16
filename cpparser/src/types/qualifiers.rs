@@ -2,7 +2,10 @@
 
 use crate::{EntityParser, IResult};
 use nom_supreme::ParserExt;
-use std::ops::BitOr;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::BitOr,
+};
 
 impl EntityParser {
     /// Parser recognizing CV qualifiers
@@ -66,6 +69,21 @@ impl BitOr for ConstVolatile {
         }
     }
 }
+//
+impl Display for ConstVolatile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if self.is_const {
+            write!(f, "const")?;
+        }
+        if self.is_const && self.is_volatile {
+            write!(f, " ")?;
+        }
+        if self.is_volatile {
+            write!(f, "volatile")?;
+        }
+        Ok(())
+    }
+}
 
 /// Reference qualifiers
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -84,6 +102,17 @@ pub enum Reference {
 impl Default for Reference {
     fn default() -> Self {
         Self::None
+    }
+}
+//
+impl Display for Reference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let s = match self {
+            Self::None => "",
+            Self::LValue => "&",
+            Self::RValue => "&&",
+        };
+        write!(f, "{s}")
     }
 }
 

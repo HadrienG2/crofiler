@@ -1,4 +1,5 @@
-//! Miscellaneous tooling used as part of cpparser's implementation
+//! Extension of SequenceInterner which provides an entry() API that can be
+//! called recursively using shared references
 
 use asylum::{
     lasso::{Key, Spur},

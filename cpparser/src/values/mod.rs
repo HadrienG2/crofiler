@@ -2,15 +2,24 @@
 
 pub mod literals;
 
-use self::literals::Literal;
+use self::literals::{Literal, LiteralView};
 use crate::{
-    functions::FunctionArgumentsKey,
-    names::{scopes::IdExpression, unqualified::UnqualifiedId},
-    operators::{usage::NewExpression, Operator},
+    functions::{FunctionArgumentsKey, FunctionArgumentsView},
+    interning::slice::{SliceItemView, SliceView},
+    names::{
+        scopes::{IdExpression, IdExpressionView},
+        unqualified::{UnqualifiedId, UnqualifiedIdView},
+    },
+    operators::{
+        self,
+        usage::{NewExpression, NewExpressionView},
+        Operator, OperatorView,
+    },
     Entities, EntityParser, IResult,
 };
 use asylum::{lasso::MiniSpur, sequence::SequenceKey};
 use nom::Parser;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned C++ value key
 ///
@@ -214,18 +223,6 @@ impl EntityParser {
         }
     }
 }
-//
-impl Entities {
-    /// Retrieve a value previously parsed by parse_value_like
-    pub fn value_like(&self, key: ValueKey) -> &ValueLike {
-        self.values.get(key)
-    }
-
-    /// Retrieve a value trailer previously parsed by parse_value_like
-    pub fn value_trailer(&self, key: ValueTrailerKey) -> &ValueTrailer {
-        self.value_trailers.get(key)
-    }
-}
 
 /// A value, or something that looks close enough to it
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -236,6 +233,71 @@ pub struct ValueLike {
     /// Stream of additional entities (indexing operators, function calls,
     /// other operators...) that build this into a more complex value.
     trailer: ValueTrailerKey,
+}
+
+/// View of a value
+pub struct ValueView<'entities> {
+    /// Key used to retrieve the value
+    key: ValueKey,
+
+    /// Wrapped ValueLike
+    inner: &'entities ValueLike,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> ValueView<'entities> {
+    /// Build a value view
+    pub(crate) fn new(key: ValueKey, entities: &'entities Entities) -> Self {
+        Self {
+            key,
+            inner: entities.values.get(key),
+            entities,
+        }
+    }
+
+    /// Initial value-like entity
+    pub fn header(&self) -> ValueHeaderView {
+        ValueHeaderView::new(self.inner.header, self.entities)
+    }
+
+    /// Sequence of additional entities (indexing operators, function calls,
+    /// other operators...) that build this into a more complex value.
+    pub fn trailer(&self) -> ValueTrailerView {
+        ValueTrailerView::new(
+            self.inner.trailer,
+            &self.entities.value_trailers,
+            self.entities,
+        )
+    }
+}
+//
+impl<'entities> PartialEq for ValueView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.key == other.key)
+    }
+}
+//
+impl<'entities> Display for ValueView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}{}", self.header(), self.trailer())
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for ValueView<'entities> {
+    type Inner = ValueKey;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "(";
+
+    const DISPLAY_SEPARATOR: &'static str = ", ";
+
+    const DISPLAY_TRAILER: &'static str = ")";
 }
 
 /// Values that are not expressions starting with a value
@@ -281,8 +343,68 @@ impl From<IdExpression> for ValueHeader {
     }
 }
 
+/// View of a value that is not an expression starting with a value
+#[derive(PartialEq)]
+pub enum ValueHeaderView<'entities> {
+    /// Literal
+    Literal(LiteralView<'entities>),
+
+    /// Value with parentheses around it
+    Parenthesized(ValueView<'entities>),
+
+    /// Unary operator applied to a value
+    UnaryOp(OperatorView<'entities>, ValueView<'entities>),
+
+    /// New-expression
+    NewExpression(NewExpressionView<'entities>),
+
+    /// Named value
+    IdExpression(IdExpressionView<'entities>),
+}
+//
+impl<'entities> ValueHeaderView<'entities> {
+    /// Build an operator view
+    pub(crate) fn new(header: ValueHeader, entities: &'entities Entities) -> Self {
+        match header {
+            ValueHeader::Literal(l) => Self::Literal(LiteralView::new(l, entities)),
+            ValueHeader::Parenthesized(v) => Self::Parenthesized(ValueView::new(v, entities)),
+            ValueHeader::UnaryOp(o, v) => {
+                Self::UnaryOp(OperatorView::new(o, entities), ValueView::new(v, entities))
+            }
+            ValueHeader::NewExpression(n) => {
+                Self::NewExpression(NewExpressionView::new(n, entities))
+            }
+            ValueHeader::IdExpression(i) => Self::IdExpression(IdExpressionView::new(i, entities)),
+        }
+    }
+}
+//
+impl<'entities> Display for ValueHeaderView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::Literal(l) => write!(f, "{l}"),
+            Self::Parenthesized(v) => write!(f, "({v})"),
+            Self::UnaryOp(o, v) => {
+                o.display(f, operators::DisplayContext::PrefixUsage)?;
+                write!(f, "{v}")
+            }
+            Self::NewExpression(n) => write!(f, "{n}"),
+            Self::IdExpression(i) => write!(f, "{i}"),
+        }
+    }
+}
+
 /// Things that can come after a ValueHeader in the value grammar
 pub type ValueTrailer = [AfterValue];
+
+/// View of a value's trailer
+pub type ValueTrailerView<'entities> = SliceView<
+    'entities,
+    AfterValue,
+    AfterValueView<'entities>,
+    ValueTrailerKeyImpl,
+    VALUE_TRAILER_LEN_BITS,
+>;
 
 /// Things that can come up after a value to form a more complex value
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -310,6 +432,80 @@ impl From<FunctionArgumentsKey> for AfterValue {
     fn from(f: FunctionArgumentsKey) -> Self {
         AfterValue::FunctionCall(f)
     }
+}
+
+/// View of something that comes after a value to form a more complex value
+#[derive(PartialEq)]
+pub enum AfterValueView<'entities> {
+    /// Array indexing
+    ArrayIndex(ValueView<'entities>),
+
+    /// Function call
+    FunctionCall(FunctionArgumentsView<'entities>),
+
+    /// Binary operator (OP x)
+    BinaryOp(OperatorView<'entities>, ValueView<'entities>),
+
+    /// Ternary operator (? x : y)
+    TernaryOp(ValueView<'entities>, ValueView<'entities>),
+
+    /// Member access (. stuff)
+    MemberAccess(UnqualifiedIdView<'entities>),
+
+    /// Postfix operator (++ and -- only in current C++)
+    PostfixOp(OperatorView<'entities>),
+}
+//
+impl<'entities> AfterValueView<'entities> {
+    /// Build an operator view
+    pub(crate) fn new(av: AfterValue, entities: &'entities Entities) -> Self {
+        match av {
+            AfterValue::ArrayIndex(v) => Self::ArrayIndex(ValueView::new(v, entities)),
+            AfterValue::FunctionCall(a) => Self::FunctionCall(FunctionArgumentsView::new(
+                a,
+                &entities.function_arguments,
+                entities,
+            )),
+            AfterValue::BinaryOp(o, v) => {
+                Self::BinaryOp(OperatorView::new(o, entities), ValueView::new(v, entities))
+            }
+            AfterValue::TernaryOp(v1, v2) => {
+                Self::TernaryOp(ValueView::new(v1, entities), ValueView::new(v2, entities))
+            }
+            AfterValue::MemberAccess(m) => Self::MemberAccess(UnqualifiedIdView::new(m, entities)),
+            AfterValue::PostfixOp(o) => Self::PostfixOp(OperatorView::new(o, entities)),
+        }
+    }
+}
+//
+impl<'entities> Display for AfterValueView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::ArrayIndex(i) => write!(f, "[{i}]"),
+            Self::FunctionCall(a) => write!(f, "{a}"),
+            Self::BinaryOp(o, v) => {
+                o.display(f, operators::DisplayContext::BinaryUsage)?;
+                write!(f, "{v}")
+            }
+            Self::TernaryOp(v1, v2) => write!(f, " ? {v1} : {v2}"),
+            Self::MemberAccess(m) => write!(f, ".{m}"),
+            Self::PostfixOp(o) => o.display(f, operators::DisplayContext::PostfixUsage),
+        }
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for AfterValueView<'entities> {
+    type Inner = AfterValue;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "";
+
+    const DISPLAY_SEPARATOR: &'static str = "";
+
+    const DISPLAY_TRAILER: &'static str = "";
 }
 
 #[cfg(test)]

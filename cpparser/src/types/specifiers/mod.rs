@@ -6,10 +6,13 @@ pub mod legacy;
 
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
-use crate::{names::scopes::IdExpression, EntityParser, IResult};
+use crate::{
+    names::scopes::{IdExpression, IdExpressionView},
+    Entities, EntityParser, IResult,
+};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::Debug;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser recognizing type specifiers, as defined by
@@ -75,6 +78,45 @@ impl<T: Into<SimpleType>> From<T> for TypeSpecifier {
     }
 }
 
+/// A view of a type specifier
+pub struct TypeSpecifierView<'entities> {
+    /// Wrapped TypeSpecifier
+    inner: TypeSpecifier,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> TypeSpecifierView<'entities> {
+    /// Build a type specifier view
+    pub(crate) fn new(inner: TypeSpecifier, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// CV qualifiers applying to the simple type
+    pub fn cv(&self) -> ConstVolatile {
+        self.inner.cv
+    }
+
+    /// Simple type
+    pub fn simple_type(&self) -> SimpleTypeView {
+        SimpleTypeView::new(self.inner.simple_type, self.entities)
+    }
+}
+//
+impl<'entities> PartialEq for TypeSpecifierView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for TypeSpecifierView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{} {}", self.cv(), self.simple_type())
+    }
+}
+
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SimpleType {
@@ -94,6 +136,35 @@ impl From<IdExpression> for SimpleType {
 impl From<LegacyName> for SimpleType {
     fn from(n: LegacyName) -> Self {
         Self::LegacyName(n)
+    }
+}
+
+/// View of a simple type specifier
+#[derive(PartialEq)]
+pub enum SimpleTypeView<'entities> {
+    /// Id-expressions
+    IdExpression(IdExpressionView<'entities>),
+
+    /// C-style space-separated type names (e.g. "unsigned int")
+    LegacyName(LegacyName),
+}
+//
+impl<'entities> SimpleTypeView<'entities> {
+    /// Set up a simple type specifier view
+    pub(crate) fn new(inner: SimpleType, entities: &'entities Entities) -> Self {
+        match inner {
+            SimpleType::IdExpression(i) => Self::IdExpression(IdExpressionView::new(i, entities)),
+            SimpleType::LegacyName(l) => Self::LegacyName(l),
+        }
+    }
+}
+//
+impl<'entities> Display for SimpleTypeView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::IdExpression(i) => write!(f, "{i}"),
+            Self::LegacyName(l) => write!(f, "{l}"),
+        }
     }
 }
 

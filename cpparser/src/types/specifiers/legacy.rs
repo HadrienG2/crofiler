@@ -5,6 +5,7 @@
 use crate::{EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser for legacy C-style type specifiers that can have spaces in them
@@ -168,6 +169,27 @@ pub enum LegacyName {
 
     /// "long double"
     LongDouble,
+}
+//
+impl Display for LegacyName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let s = match self {
+            Self::SignedShort => "short",
+            Self::UnsignedShort => "unsigned short",
+            Self::SignedInt => "int",
+            Self::UnsignedInt => "unsigned int",
+            Self::SignedLong => "long",
+            Self::UnsignedLong => "unsigned long",
+            Self::SignedLongLong => "long long",
+            Self::UnsignedLongLong => "unsigned long long",
+            Self::Char => "char",
+            Self::SignedChar => "signed char",
+            Self::UnsignedChar => "unsigned char",
+            Self::Double => "double",
+            Self::LongDouble => "long double",
+        };
+        write!(f, "{s}")
+    }
 }
 
 /// C-style type name component

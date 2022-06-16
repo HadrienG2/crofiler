@@ -4,11 +4,19 @@ pub mod declarators;
 pub mod qualifiers;
 pub mod specifiers;
 
-use self::{declarators::DeclaratorKey, specifiers::TypeSpecifier};
-use crate::{functions::FunctionArgumentsKey, Entities, EntityParser, IResult};
+use self::{
+    declarators::{DeclaratorKey, DeclaratorView},
+    specifiers::{TypeSpecifier, TypeSpecifierView},
+};
+use crate::{
+    functions::{FunctionArgumentsKey, FunctionArgumentsView},
+    interning::slice::SliceItemView,
+    Entities, EntityParser, IResult,
+};
 use asylum::lasso::Spur;
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned C++ type key
 ///
@@ -69,18 +77,11 @@ impl EntityParser {
         self.types.borrow().len()
     }
 }
-//
-impl Entities {
-    /// Retrieve a type previously parsed by parse_type_like
-    pub fn type_like(&self, key: TypeKey) -> &TypeLike {
-        self.types.get(key)
-    }
-}
 
 /// A type name, or something looking close enough to it
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypeLike {
-    /// GNU-style attributes __attribute__((...))
+    /// GNU-style attributes (`__attribute__((...))`)
     attributes: FunctionArgumentsKey,
 
     /// Type specifier
@@ -88,6 +89,88 @@ pub struct TypeLike {
 
     /// Declarator
     declarator: DeclaratorKey,
+}
+
+/// A view of a C++ type (or something else that honors the type grammar)
+pub struct TypeView<'entities> {
+    /// Key used to retrieve the type
+    key: TypeKey,
+
+    /// Wrapped TypeLike
+    inner: &'entities TypeLike,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> TypeView<'entities> {
+    /// Set up a new C++ type view
+    pub(crate) fn new(key: TypeKey, entities: &'entities Entities) -> Self {
+        Self {
+            key,
+            inner: entities.types.get(key),
+            entities,
+        }
+    }
+
+    /// GNU-style attributes (`__attribute__((...))`)
+    pub fn attributes(&self) -> FunctionArgumentsView {
+        FunctionArgumentsView::new(
+            self.inner.attributes,
+            &self.entities.function_arguments,
+            self.entities,
+        )
+    }
+
+    /// Type specifier
+    pub fn type_specifier(&self) -> TypeSpecifierView {
+        TypeSpecifierView::new(self.inner.type_specifier, self.entities)
+    }
+
+    /// Declarator
+    pub fn declarator(&self) -> DeclaratorView {
+        DeclaratorView::new(
+            self.inner.declarator,
+            &self.entities.declarators,
+            self.entities,
+        )
+    }
+}
+//
+impl<'entities> PartialEq for TypeView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.key == other.key)
+    }
+}
+//
+impl<'entities> Display for TypeView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let attributes = self.attributes();
+        if !attributes.is_empty() {
+            write!(f, "__attribute__({}) ", attributes)?;
+        }
+        write!(f, "{}", self.type_specifier())?;
+        let declarator = self.declarator();
+        if !declarator.is_empty() {
+            write!(f, " {}", declarator)?;
+        }
+        Ok(())
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for TypeView<'entities> {
+    type Inner = TypeKey;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "(";
+
+    const DISPLAY_SEPARATOR: &'static str = ", ";
+
+    const DISPLAY_TRAILER: &'static str = ")";
 }
 
 #[cfg(test)]

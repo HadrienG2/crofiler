@@ -1,12 +1,18 @@
 //! Handling of hierarchical scopes
 
-use super::unqualified::UnqualifiedId;
+use super::unqualified::{UnqualifiedId, UnqualifiedIdView};
 use crate::{
-    functions::FunctionSignature, utilities::SequenceEntry, Entities, EntityParser, IResult,
+    functions::{FunctionSignature, FunctionSignatureView},
+    interning::{
+        recursion::SequenceEntry,
+        slice::{SliceItemView, SliceView},
+    },
+    Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned Scope sequence key
 ///
@@ -154,13 +160,6 @@ impl EntityParser {
         }
     }
 }
-//
-impl Entities {
-    /// Retrieve a previously interned scope sequence
-    pub fn scope_sequence(&self, key: ScopesKey) -> &[Scope] {
-        self.scopes.get(key)
-    }
-}
 
 /// C++ id-expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -168,8 +167,47 @@ pub struct IdExpression {
     /// Hierarchical scope
     path: NestedNameSpecifier,
 
-    /// Unqualified id-expression
+    /// Inner unqualified id-expression
     id: UnqualifiedId,
+}
+
+/// View of an id-expression
+pub struct IdExpressionView<'entities> {
+    /// Wrapped IdExpression
+    inner: IdExpression,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> IdExpressionView<'entities> {
+    /// Build an id-expression view
+    pub(crate) fn new(inner: IdExpression, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Hierarchical scope
+    pub fn path(&self) -> NestedNameSpecifierView {
+        NestedNameSpecifierView::new(self.inner.path, self.entities)
+    }
+
+    /// Inner unqualified id-expression
+    pub fn id(&self) -> UnqualifiedIdView {
+        UnqualifiedIdView::new(self.inner.id, self.entities)
+    }
+}
+//
+impl<'entities> PartialEq for IdExpressionView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for IdExpressionView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}{}", self.path(), self.id())
+    }
 }
 
 /// A nested name specifier
@@ -190,6 +228,52 @@ impl From<ScopesKey> for NestedNameSpecifier {
         }
     }
 }
+
+/// View of a nested name specifier
+pub struct NestedNameSpecifierView<'entities> {
+    /// Wrapped NestedNameSpecifier
+    inner: NestedNameSpecifier,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> NestedNameSpecifierView<'entities> {
+    /// Build a nested name specifier view
+    pub(crate) fn new(inner: NestedNameSpecifier, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Truth that the path starts at the root scope (leading ::)
+    pub fn is_rooted(&self) -> bool {
+        self.inner.rooted
+    }
+
+    /// Sequence of inner scopes
+    pub fn scopes(&self) -> ScopesView {
+        ScopesView::new(self.inner.scopes, &self.entities.scopes, self.entities)
+    }
+}
+//
+impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for NestedNameSpecifierView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if self.is_rooted() {
+            write!(f, "::")?;
+        }
+        write!(f, "{}", self.scopes())
+    }
+}
+
+/// View of a sequence of scopes
+pub type ScopesView<'entities> =
+    SliceView<'entities, Scope, ScopeView<'entities>, ScopesKeyImpl, SCOPES_LEN_BITS>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -217,6 +301,66 @@ impl<T: Into<UnqualifiedId>> From<T> for Scope {
             ..Default::default()
         }
     }
+}
+
+/// View of a Scope
+pub struct ScopeView<'entities> {
+    /// Wrapped Scope
+    inner: Scope,
+
+    /// Underlying interned entity storage
+    entities: &'entities Entities,
+}
+//
+impl<'entities> ScopeView<'entities> {
+    /// Build a scope view
+    pub(crate) fn new(inner: Scope, entities: &'entities Entities) -> Self {
+        Self { inner, entities }
+    }
+
+    /// What identifies the scope
+    pub fn id(&self) -> UnqualifiedIdView {
+        UnqualifiedIdView::new(self.inner.id, self.entities)
+    }
+
+    /// When functions are scopes containing other entities (which can happen
+    /// because lambdas), the function signature will be specified.
+    pub fn function_signature(&self) -> Option<FunctionSignatureView> {
+        self.inner
+            .function_signature
+            .map(|signature| FunctionSignatureView::new(signature, self.entities))
+    }
+}
+//
+impl<'entities> PartialEq for ScopeView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.entities as *const Entities == other.entities as *const Entities)
+            && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for ScopeView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.id())?;
+        if let Some(signature) = self.function_signature() {
+            write!(f, "{signature}")?;
+        }
+        write!(f, "::")
+    }
+}
+//
+impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
+    type Inner = Scope;
+
+    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+        Self::new(inner, entities)
+    }
+
+    const DISPLAY_HEADER: &'static str = "";
+
+    const DISPLAY_SEPARATOR: &'static str = "";
+
+    const DISPLAY_TRAILER: &'static str = "";
 }
 
 #[cfg(test)]
