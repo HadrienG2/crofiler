@@ -6,10 +6,7 @@ use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
     functions::{FunctionSignature, FunctionSignatureView},
     interning::slice::{SliceItemView, SliceView},
-    names::{
-        atoms::{IdentifierKey, IdentifierView},
-        scopes::{NestedNameSpecifier, NestedNameSpecifierView},
-    },
+    names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
     values::{ValueKey, ValueView},
     Entities, EntityParser, IResult,
 };
@@ -75,6 +72,11 @@ impl EntityParser {
         };
         use nom_supreme::tag::complete::tag;
 
+        // CV qualifier
+        let cv = Self::parse_cv
+            .verify(|&cv| cv != ConstVolatile::default())
+            .map(DeclOperator::ConstVolatile);
+
         // Reference declarator (/!\ Only works because we know >1 ref-sign is coming below)
         let mut reference = Self::parse_reference.map(DeclOperator::Reference);
 
@@ -90,10 +92,6 @@ impl EntityParser {
         let nested_star = (|s| self.parse_nested_name_specifier(s)).terminated(char('*'));
         let mut member_pointer = separated_pair(nested_star, space0, Self::parse_cv)
             .map(|(path, cv)| DeclOperator::Pointer { path, cv });
-
-        // ABI indicator (appears in demangled names)
-        let abi =
-            delimited(tag("[abi:"), |s| self.parse_identifier(s), char(']')).map(DeclOperator::Abi);
 
         // Array declarator
         let array = delimited(
@@ -134,8 +132,10 @@ impl EntityParser {
             Some(b'&') => reference.parse(s),
             Some(b'*') => basic_pointer.parse(s),
             Some(b'(') => function.or(parenthesized).or(member_pointer).parse(s),
-            Some(b'[') => abi.or(array).parse(s),
+            Some(b'[') => function.or(array).parse(s),
             Some(b'_') => vector_size.or(member_pointer).parse(s),
+            Some(b'c') => cv.or(member_pointer).parse(s),
+            Some(b'v') => cv.or(member_pointer).parse(s),
             _ => member_pointer.parse(s),
         }
     }
@@ -160,6 +160,9 @@ pub type DeclaratorView<'entities> = SliceView<
 /// Operators that can appear within a declarator
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclOperator {
+    /// CV qualifier
+    ConstVolatile(ConstVolatile),
+
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
@@ -171,9 +174,6 @@ pub enum DeclOperator {
 
     /// Reference declarator
     Reference(Reference),
-
-    /// ABI identifier
-    Abi(IdentifierKey),
 
     /// Array declarator, with optional size
     Array(Option<ValueKey>),
@@ -209,6 +209,9 @@ impl From<DeclaratorKey> for DeclOperator {
 /// View of a type declarator component (operator)
 #[derive(PartialEq)]
 pub enum DeclOperatorView<'entities> {
+    /// CV qualifier
+    ConstVolatile(ConstVolatile),
+
     /// Pointer declarator
     Pointer {
         /// Nested name specifier (for pointer-to-member)
@@ -220,9 +223,6 @@ pub enum DeclOperatorView<'entities> {
 
     /// Reference declarator
     Reference(Reference),
-
-    /// ABI identifier
-    Abi(IdentifierView<'entities>),
 
     /// Array declarator, with optional size
     Array(Option<ValueView<'entities>>),
@@ -241,12 +241,12 @@ impl<'entities> DeclOperatorView<'entities> {
     /// Build an operator view
     pub(crate) fn new(op: DeclOperator, entities: &'entities Entities) -> Self {
         match op {
+            DeclOperator::ConstVolatile(cv) => Self::ConstVolatile(cv),
             DeclOperator::Pointer { path, cv } => Self::Pointer {
                 path: entities.nested_name_specifier(path),
                 cv,
             },
             DeclOperator::Reference(r) => Self::Reference(r),
-            DeclOperator::Abi(a) => Self::Abi(entities.identifier(a)),
             DeclOperator::Array(v) => Self::Array(v.map(|v| entities.value_like(v))),
             DeclOperator::Function(f) => Self::Function(entities.function_signature(f)),
             DeclOperator::Parenthesized(d) => Self::Parenthesized(entities.declarator(d)),
@@ -258,18 +258,14 @@ impl<'entities> DeclOperatorView<'entities> {
 impl<'entities> Display for DeclOperatorView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
+            Self::ConstVolatile(cv) => write!(f, "{cv}")?,
             Self::Pointer { path, cv } => {
                 write!(f, "{path}*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
                 }
             }
-            Self::Reference(r) => {
-                write!(f, "{r}")?;
-            }
-            Self::Abi(a) => {
-                write!(f, "[abi:{a}]")?;
-            }
+            Self::Reference(r) => write!(f, "{r}")?,
             Self::Array(a) => {
                 write!(f, "[")?;
                 if let Some(a) = a {
@@ -277,15 +273,9 @@ impl<'entities> Display for DeclOperatorView<'entities> {
                 }
                 write!(f, "]")?;
             }
-            Self::Function(func) => {
-                write!(f, "{func}")?;
-            }
-            Self::Parenthesized(d) => {
-                write!(f, "({d})")?;
-            }
-            Self::VectorSize(s) => {
-                write!(f, "__vector({s})")?;
-            }
+            Self::Function(func) => write!(f, "{func}")?,
+            Self::Parenthesized(d) => write!(f, "({d})")?,
+            Self::VectorSize(s) => write!(f, "__vector({s})")?,
         }
         Ok(())
     }
@@ -315,6 +305,15 @@ mod tests {
     #[test]
     fn decl_operator() {
         let parser = EntityParser::new();
+
+        // CV qualifier
+        assert_eq!(
+            parser.parse_decl_operator("const volatile"),
+            Ok((
+                "",
+                DeclOperator::ConstVolatile(ConstVolatile::CONST | ConstVolatile::VOLATILE),
+            ))
+        );
 
         // Basic pointer syntax
         let nested_name_specifier = |s| unwrap_parse(parser.parse_nested_name_specifier(s));
@@ -357,15 +356,6 @@ mod tests {
         assert_eq!(
             parser.parse_decl_operator("&"),
             Ok(("", Reference::LValue.into()))
-        );
-
-        // ABI identifier
-        assert_eq!(
-            parser.parse_decl_operator("[abi:cxx11]"),
-            Ok((
-                "",
-                DeclOperator::Abi(unwrap_parse(parser.parse_identifier("cxx11")))
-            ))
         );
 
         // Array of unknown length

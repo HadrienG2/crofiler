@@ -2,6 +2,7 @@
 
 use crate::{
     interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
+    names::atoms::{IdentifierKey, IdentifierView},
     types::{
         qualifiers::{ConstVolatile, Reference},
         TypeKey, TypeView,
@@ -83,17 +84,20 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, FunctionSignature> {
         use nom::{
-            character::complete::space0,
+            character::complete::{char, space0},
             combinator::opt,
-            sequence::{preceded, tuple},
+            sequence::{delimited, preceded, tuple},
         };
         use nom_supreme::tag::complete::tag;
 
-        let type_like = |s| self.parse_type_like(s);
+        // ABI indicator (appears in demangled names)
+        let abi = delimited(tag("[abi:"), |s| self.parse_identifier(s), char(']'));
 
+        let type_like = |s| self.parse_type_like(s);
         let trailing_return = preceded(tag("->").and(space0), &type_like);
 
         let mut tuple = tuple((
+            opt(abi),
             (|s| function_parameters(s, &type_like, &self.function_parameters)).terminated(space0),
             Self::parse_cv.terminated(space0),
             Self::parse_reference.terminated(space0),
@@ -101,7 +105,8 @@ impl EntityParser {
             opt(trailing_return),
         ))
         .map(
-            |(parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
+            |(abi, parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
+                abi,
                 parameters,
                 cv,
                 reference,
@@ -180,6 +185,9 @@ pub type FunctionArgumentsView<'entities> = SliceView<
 /// Function signature
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FunctionSignature {
+    /// ABI identifier (appears in demangled names)
+    abi: Option<IdentifierKey>,
+
     /// Parameter types
     parameters: FunctionParametersKey,
 
@@ -204,6 +212,7 @@ pub struct FunctionSignature {
 impl From<FunctionParametersKey> for FunctionSignature {
     fn from(parameters: FunctionParametersKey) -> Self {
         Self {
+            abi: None,
             parameters,
             cv: ConstVolatile::default(),
             reference: Reference::None,
@@ -226,6 +235,11 @@ impl<'entities> FunctionSignatureView<'entities> {
     /// Build a new-expression view
     pub fn new(inner: FunctionSignature, entities: &'entities Entities) -> Self {
         Self { inner, entities }
+    }
+
+    /// ABI
+    pub fn abi(&self) -> Option<IdentifierView> {
+        self.inner.abi.map(|abi| self.entities.identifier(abi))
     }
 
     /// Parameter types
@@ -272,6 +286,10 @@ impl<'entities> PartialEq for FunctionSignatureView<'entities> {
 //
 impl<'entities> Display for FunctionSignatureView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(abi) = self.abi() {
+            write!(f, "[abi:{abi}]")?;
+        }
+
         write!(f, "{}", self.parameters())?;
 
         let cv = self.cv();
@@ -408,6 +426,21 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
+                    parameters: empty_parameters,
+                    cv: ConstVolatile::default(),
+                    reference: Reference::None,
+                    noexcept: None,
+                    trailing_return: None
+                }
+            ))
+        );
+        assert_eq!(
+            parser.parse_function_signature("[abi:cxx11]()"),
+            Ok((
+                "",
+                FunctionSignature {
+                    abi: Some(unwrap_parse(parser.parse_identifier("cxx11"))),
                     parameters: empty_parameters,
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
@@ -421,6 +454,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: type_parameters("(int)"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
@@ -434,6 +468,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::CONST,
                     reference: Reference::None,
@@ -447,6 +482,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
@@ -460,6 +496,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
@@ -473,6 +510,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::VOLATILE,
                     reference: Reference::LValue,
@@ -486,6 +524,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
                     reference: Reference::None,
@@ -499,6 +538,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
@@ -514,6 +554,7 @@ mod tests {
             Ok((
                 "",
                 FunctionSignature {
+                    abi: None,
                     parameters: empty_parameters,
                     cv: ConstVolatile::default(),
                     reference: Reference::None,

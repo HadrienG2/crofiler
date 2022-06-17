@@ -20,13 +20,20 @@ impl EntityParser {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
-            sequence::delimited,
+            sequence::{delimited, preceded},
         };
         use nom_supreme::tag::complete::tag;
 
+        // Sometimes, demangler will output cv-qualified tempalte names like
+        // "T const<...>". This is meaningless. const T cannot have different
+        // templating behavior than T. So we ignore this syntax.
+        let named_template_parameters = preceded(opt(space0.and(Self::parse_cv)), |s| {
+            self.parse_template_parameters(s)
+        });
+
         // An entity named by a user-specified identifier
         let named = |is_destructor| {
-            ((|s| self.parse_identifier(s)).and(opt(|s| self.parse_template_parameters(s)))).map(
+            ((|s| self.parse_identifier(s)).and(opt(named_template_parameters))).map(
                 move |(id, template_parameters)| UnqualifiedId::Named {
                     is_destructor,
                     id,

@@ -25,7 +25,7 @@ impl EntityParser {
         use nom::{
             character::complete::{space0, space1, u32},
             combinator::opt,
-            sequence::{preceded, tuple},
+            sequence::preceded,
         };
         use nom_supreme::tag::complete::tag;
 
@@ -50,16 +50,11 @@ impl EntityParser {
         let simple_type = legacy_primitive.or(libiberty_auto).or(id_expression);
 
         // The simple type can be surrounded by cv qualifiers on both sides
-        tuple((
-            Self::parse_cv.terminated(space0),
-            simple_type,
-            preceded(space0, Self::parse_cv),
-        ))
-        .map(|(cv1, simple_type, cv2)| TypeSpecifier {
-            cv: cv1 | cv2,
-            simple_type,
-        })
-        .parse(s)
+
+        (Self::parse_cv.terminated(space0))
+            .and(simple_type)
+            .map(|(cv, simple_type)| TypeSpecifier { cv, simple_type })
+            .parse(s)
     }
 }
 //
@@ -223,18 +218,6 @@ mod tests {
         assert_eq!(
             parser.parse_type_specifier("unsigned int"),
             Ok(("", LegacyName::UnsignedInt.into()))
-        );
-
-        // CV qualifiers are accepted before and after
-        assert_eq!(
-            parser.parse_type_specifier("const unsigned long volatile"),
-            Ok((
-                "",
-                TypeSpecifier {
-                    cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
-                    simple_type: LegacyName::UnsignedLong.into(),
-                }
-            ))
         );
 
         // And we can live with the occasional keyword
