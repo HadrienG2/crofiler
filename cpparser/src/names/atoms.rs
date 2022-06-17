@@ -170,7 +170,7 @@ fn is_id_start(c: char) -> bool {
 #[inline(always)]
 fn is_id_start(b: u8) -> bool {
     debug_assert!(b.is_ascii());
-    b.is_ascii_alphabetic() || (b == b'_')
+    b.is_ascii_alphabetic() || (b == b'_') || (b == b'$')
 }
 
 /// Truth that a character can be used in the middle of a C++ identifier

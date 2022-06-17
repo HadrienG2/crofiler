@@ -19,6 +19,7 @@ use crate::{
 };
 use asylum::{lasso::MiniSpur, sequence::SequenceKey};
 use nom::Parser;
+use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
 /// Interned C++ value key
@@ -132,6 +133,7 @@ impl EntityParser {
             character::complete::{char, space0},
             sequence::{delimited, separated_pair},
         };
+        use nom_supreme::tag::complete::tag;
 
         let literal = (|s| self.parse_literal(s)).map(ValueHeader::Literal);
 
@@ -151,6 +153,8 @@ impl EntityParser {
 
         let id_expression = (|s| self.parse_id_expression(s)).map(ValueHeader::IdExpression);
 
+        let ellipsis = tag("...").value(ValueHeader::Ellipsis);
+
         literal
             .or(new_expression)
             // Must come after new_expression as it matches the new keyword
@@ -158,6 +162,7 @@ impl EntityParser {
             .or(unary_op)
             // Must come after unary_op to match casts as intended
             .or(parenthesized)
+            .or(ellipsis)
             .parse(s)
     }
 
@@ -175,6 +180,7 @@ impl EntityParser {
             character::complete::{char, space0},
             sequence::{delimited, preceded, separated_pair},
         };
+        use nom_supreme::tag::complete::tag;
 
         let curr_value_like = |s| self.parse_value_like(s, allow_comma, allow_greater);
 
@@ -205,10 +211,12 @@ impl EntityParser {
 
         let mut function_call = (|s| self.parse_function_call(s)).map(AfterValue::FunctionCall);
 
-        let mut member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id(s))
+        let member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id(s))
             .map(AfterValue::MemberAccess);
 
         let postfix_op = Self::parse_increment_decrement.map(AfterValue::PostfixOp);
+
+        let ellipsis = tag("...").value(AfterValue::Ellipsis);
 
         // Since this parser is quite hot (~1M calls on a test workload) and usually
         // fails, we reduce the cost of failure by dispatching to appropriate
@@ -217,7 +225,7 @@ impl EntityParser {
         match s.as_bytes().first() {
             Some(b'(') => function_call.parse(s),
             Some(b'?') => ternary_op.parse(s),
-            Some(b'.') => member_access.parse(s),
+            Some(b'.') => member_access.or(ellipsis).parse(s),
             Some(b'[') => array_index.parse(s),
             _ => binary_op.or(postfix_op).parse(s),
         }
@@ -330,6 +338,9 @@ pub(crate) enum ValueHeader {
 
     /// Named value
     IdExpression(IdExpression),
+
+    /// Ellipsis sign ... (used in fold expressions)
+    Ellipsis,
 }
 //
 impl From<Literal> for ValueHeader {
@@ -373,6 +384,9 @@ pub enum ValueHeaderView<'entities> {
 
     /// Named value
     IdExpression(IdExpressionView<'entities>),
+
+    /// Ellipsis sign ... (used in fold expressions)
+    Ellipsis,
 }
 //
 impl<'entities> ValueHeaderView<'entities> {
@@ -386,6 +400,7 @@ impl<'entities> ValueHeaderView<'entities> {
             }
             ValueHeader::NewExpression(ne) => Self::NewExpression(entities.new_expression(ne)),
             ValueHeader::IdExpression(id) => Self::IdExpression(entities.id_expression(id)),
+            ValueHeader::Ellipsis => Self::Ellipsis,
         }
     }
 }
@@ -401,6 +416,7 @@ impl<'entities> Display for ValueHeaderView<'entities> {
             }
             Self::NewExpression(n) => write!(f, "{n}"),
             Self::IdExpression(i) => write!(f, "{i}"),
+            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
@@ -434,6 +450,9 @@ pub enum AfterValue {
 
     /// Postfix operator (++ and -- only in current C++)
     PostfixOp(Operator),
+
+    /// Ellipsis sign ... (used in template parameter pack expansion)
+    Ellipsis,
 }
 //
 impl From<FunctionArgumentsKey> for AfterValue {
@@ -462,6 +481,9 @@ pub enum AfterValueView<'entities> {
 
     /// Postfix operator (++ and -- only in current C++)
     PostfixOp(OperatorView<'entities>),
+
+    /// Ellipsis sign ... (used in template parameter pack expansion)
+    Ellipsis,
 }
 //
 impl<'entities> AfterValueView<'entities> {
@@ -478,6 +500,7 @@ impl<'entities> AfterValueView<'entities> {
             }
             AfterValue::MemberAccess(m) => Self::MemberAccess(entities.unqualified_id(m)),
             AfterValue::PostfixOp(o) => Self::PostfixOp(entities.operator(o)),
+            AfterValue::Ellipsis => Self::Ellipsis,
         }
     }
 }
@@ -494,6 +517,7 @@ impl<'entities> Display for AfterValueView<'entities> {
             Self::TernaryOp(v1, v2) => write!(f, " ? {v1} : {v2}"),
             Self::MemberAccess(m) => write!(f, ".{m}"),
             Self::PostfixOp(o) => o.display(f, operators::DisplayContext::PostfixUsage),
+            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
@@ -584,6 +608,9 @@ mod tests {
                 ValueHeader::IdExpression(unwrap_parse(parser.parse_id_expression("MyValue")))
             ))
         );
+
+        // Ellipsis (as in fold expressions)
+        assert_eq!(parse_value_header("..."), Ok(("", ValueHeader::Ellipsis)));
     }
 
     #[test]
@@ -657,6 +684,9 @@ mod tests {
                 })
             ))
         );
+
+        // Trailing ellipsis
+        assert_eq!(parse_after_value("..."), Ok(("", AfterValue::Ellipsis)));
     }
 
     #[test]

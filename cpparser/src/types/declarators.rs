@@ -6,7 +6,10 @@ use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
     functions::{FunctionSignature, FunctionSignatureView},
     interning::slice::{SliceItemView, SliceView},
-    names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
+    names::{
+        atoms::{IdentifierKey, IdentifierView},
+        scopes::{NestedNameSpecifier, NestedNameSpecifierView},
+    },
     values::{ValueKey, ValueView},
     Entities, EntityParser, IResult,
 };
@@ -70,6 +73,7 @@ impl EntityParser {
             combinator::opt,
             sequence::{delimited, preceded, separated_pair},
         };
+        use nom_supreme::tag::complete::tag;
 
         // Reference declarator (/!\ Only works because we know >1 ref-sign is coming below)
         let mut reference = Self::parse_reference.map(DeclOperator::Reference);
@@ -87,8 +91,12 @@ impl EntityParser {
         let mut member_pointer = separated_pair(nested_star, space0, Self::parse_cv)
             .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
+        // ABI indicator (appears in demangled names)
+        let abi =
+            delimited(tag("[abi:"), |s| self.parse_identifier(s), char(']')).map(DeclOperator::Abi);
+
         // Array declarator
-        let mut array = delimited(
+        let array = delimited(
             char('[').and(space0),
             opt(|s| self.parse_value_like(s, false, true)),
             space0.and(char(']')),
@@ -106,6 +114,14 @@ impl EntityParser {
         )
         .map(DeclOperator::Parenthesized);
 
+        // Vector size
+        let vector_size = delimited(
+            tag("__vector("),
+            |s| self.parse_value_like(s, false, true),
+            char(')'),
+        )
+        .map(DeclOperator::VectorSize);
+
         // Putting it all together...
         //
         // Since this parser is **very** hot (10M calls on a test workload), even
@@ -118,7 +134,8 @@ impl EntityParser {
             Some(b'&') => reference.parse(s),
             Some(b'*') => basic_pointer.parse(s),
             Some(b'(') => function.or(parenthesized).or(member_pointer).parse(s),
-            Some(b'[') => array.parse(s),
+            Some(b'[') => abi.or(array).parse(s),
+            Some(b'_') => vector_size.or(member_pointer).parse(s),
             _ => member_pointer.parse(s),
         }
     }
@@ -155,6 +172,9 @@ pub enum DeclOperator {
     /// Reference declarator
     Reference(Reference),
 
+    /// ABI identifier
+    Abi(IdentifierKey),
+
     /// Array declarator, with optional size
     Array(Option<ValueKey>),
 
@@ -163,6 +183,9 @@ pub enum DeclOperator {
 
     /// Parentheses, used to override operator priorities
     Parenthesized(DeclaratorKey),
+
+    /// Vector size, as in `__vector(2)`
+    VectorSize(ValueKey),
 }
 //
 impl From<Reference> for DeclOperator {
@@ -198,6 +221,9 @@ pub enum DeclOperatorView<'entities> {
     /// Reference declarator
     Reference(Reference),
 
+    /// ABI identifier
+    Abi(IdentifierView<'entities>),
+
     /// Array declarator, with optional size
     Array(Option<ValueView<'entities>>),
 
@@ -206,6 +232,9 @@ pub enum DeclOperatorView<'entities> {
 
     /// Parentheses, used to override operator priorities
     Parenthesized(DeclaratorView<'entities>),
+
+    /// Vector size, as in `__vector(2)`
+    VectorSize(ValueView<'entities>),
 }
 //
 impl<'entities> DeclOperatorView<'entities> {
@@ -217,9 +246,11 @@ impl<'entities> DeclOperatorView<'entities> {
                 cv,
             },
             DeclOperator::Reference(r) => Self::Reference(r),
+            DeclOperator::Abi(a) => Self::Abi(entities.identifier(a)),
             DeclOperator::Array(v) => Self::Array(v.map(|v| entities.value_like(v))),
             DeclOperator::Function(f) => Self::Function(entities.function_signature(f)),
             DeclOperator::Parenthesized(d) => Self::Parenthesized(entities.declarator(d)),
+            DeclOperator::VectorSize(v) => Self::VectorSize(entities.value_like(v)),
         }
     }
 }
@@ -236,6 +267,9 @@ impl<'entities> Display for DeclOperatorView<'entities> {
             Self::Reference(r) => {
                 write!(f, "{r}")?;
             }
+            Self::Abi(a) => {
+                write!(f, "[abi:{a}]")?;
+            }
             Self::Array(a) => {
                 write!(f, "[")?;
                 if let Some(a) = a {
@@ -248,6 +282,9 @@ impl<'entities> Display for DeclOperatorView<'entities> {
             }
             Self::Parenthesized(d) => {
                 write!(f, "({d})")?;
+            }
+            Self::VectorSize(s) => {
+                write!(f, "__vector({s})")?;
             }
         }
         Ok(())
@@ -322,6 +359,15 @@ mod tests {
             Ok(("", Reference::LValue.into()))
         );
 
+        // ABI identifier
+        assert_eq!(
+            parser.parse_decl_operator("[abi:cxx11]"),
+            Ok((
+                "",
+                DeclOperator::Abi(unwrap_parse(parser.parse_identifier("cxx11")))
+            ))
+        );
+
         // Array of unknown length
         assert_eq!(
             parser.parse_decl_operator("[]"),
@@ -334,7 +380,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Array(Some(unwrap_parse(
-                    parser.parse_value_like("42", true, true)
+                    parser.parse_value_like("42", false, true)
                 )))
             ))
         );
@@ -352,6 +398,15 @@ mod tests {
         assert_eq!(
             parser.parse_decl_operator("(&&)"),
             Ok(("", unwrap_parse(parser.parse_declarator("&&")).into()))
+        );
+
+        // Vector size
+        assert_eq!(
+            parser.parse_decl_operator("__vector(2)"),
+            Ok((
+                "",
+                DeclOperator::VectorSize(unwrap_parse(parser.parse_value_like("2", false, true)))
+            ))
         );
     }
 
