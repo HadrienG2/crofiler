@@ -117,6 +117,7 @@ name = "clang-time-trace"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
+ "cpp_demangle",
  "cpparser",
  "maplit",
  "more-asserts",
@@ -200,7 +201,6 @@ name = "crofiler"
 version = "0.1.0"
 dependencies = [
  "clang-time-trace",
- "cpp_demangle",
  "once_cell",
  "termion",
  "unicode-segmentation",

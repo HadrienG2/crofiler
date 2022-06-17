@@ -6,10 +6,14 @@ use crate::{
     ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent},
     PathError, PathKey,
 };
+use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
 use cpparser::{nom, EntityKey, EntityParser};
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
+
+/// Tuned 10x above maximum observed requirement
+const CPP_DEMANGLE_RECURSION_LIMIT: u32 = 1024;
 
 /// Clang activity with timing information
 #[derive(Clone, Debug, PartialEq)]
@@ -137,8 +141,7 @@ pub enum Activity {
     RunPass(Box<str>),
 
     /// Optimizing code
-    // TODO: Demangle then switch to a namespace + AST representation
-    OptFunction(Box<str>),
+    OptFunction(MangledSymbol),
 
     /// Per-function compiler passes
     PerFunctionPasses,
@@ -247,14 +250,48 @@ impl Activity {
                 Ok(constructor(parser.path_to_key(path)))
             };
         //
+        let parse_entity = |s: &str| -> Result<EntityKey, ActivityParseError> {
+            let (rest, entity) = parser
+                .parse_entity(s)
+                .map_err(|e| e.map_input(Box::<str>::from))?;
+            assert_eq!(rest, "");
+            Ok(entity)
+        };
+        //
         let fill_entity_arg =
             |constructor: fn(EntityKey) -> Activity| -> Result<Activity, ActivityParseError> {
                 let entity: &str = &detail_arg()?;
-                let (rest, entity) = parser
-                    .parse_entity(entity)
-                    .map_err(|e| e.map_input(Box::<str>::from))?;
-                assert_eq!(rest, "");
-                Ok(constructor(entity))
+                Ok(constructor(parse_entity(entity)?))
+            };
+        //
+        let fill_mangled_arg =
+            |constructor: fn(MangledSymbol) -> Activity| -> Result<Activity, ActivityParseError> {
+                let symbol = detail_arg()?;
+                let demangling_result = match Symbol::new_with_options(
+                    &*symbol,
+                    &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+                )
+                .map(|s| {
+                    s.demangle(
+                        &DemangleOptions::default()
+                            // TODO: Check for number of matches with and without this option
+                            .hide_expression_literal_types()
+                            .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+                    )
+                }) {
+                    // Mangled symbol was successfully demangled, intern it along with the rest
+                    Ok(Ok(entity)) => MangledSymbol::Demangled(parse_entity(&entity)?),
+
+                    // Symbol failed to demangle, try some patterns that cpp_demangle
+                    // should not reject but actually does reject before giving up
+                    Ok(Err(_)) | Err(_) => match &*symbol {
+                        "main" | "__clang_call_terminate" => {
+                            MangledSymbol::Demangled(parse_entity(&*symbol)?)
+                        }
+                        _ => MangledSymbol::Mangled(symbol),
+                    },
+                };
+                Ok(constructor(demangling_result))
             };
 
         // Parse the activity name and parse arguments accordingly
@@ -277,7 +314,7 @@ impl Activity {
             "CodeGen Function" => fill_entity_arg(CodeGenFunction),
             "DebugFunction" => fill_entity_arg(DebugFunction),
             "RunPass" => fill_str_arg(RunPass),
-            "OptFunction" => fill_str_arg(OptFunction),
+            "OptFunction" => fill_mangled_arg(OptFunction),
             "RunLoopPass" => fill_str_arg(RunLoopPass),
             "OptModule" => fill_path_arg(OptModule),
             _ => Err(ActivityParseError::UnknownActivity(name.clone())),
@@ -352,9 +389,22 @@ pub enum ActivityArgument {
     CppEntity(EntityKey),
 
     /// A C++ mangled symbol
-    // TODO: Demangle, then switch to a namespace + AST representation, and if
-    //       that works well consider unifying with the CppEntity type
-    MangledSymbol(Box<str>),
+    MangledSymbol(MangledSymbol),
+}
+//
+/// A mangled C++ symbol that possibly underwent successful demangling
+#[derive(Clone, Debug, PartialEq)]
+pub enum MangledSymbol {
+    /// Symbol was successfully mangled and interned
+    Demangled(EntityKey),
+
+    /// Demangling failed and the symbol was kept in its original form.
+    ///
+    /// Typical patterns that fail to demangle include
+    /// - __cxx_global_var_init(.<number>)?
+    /// - _GLOBAL__sub_I_<source file>
+    ///
+    Mangled(Box<str>),
 }
 
 /// What can go wrong while parsing an Activity
@@ -776,12 +826,26 @@ mod tests {
 
     #[test]
     fn opt_function() {
-        const FUNCTION: &'static str = "_GLOBAL__sub_I_CombinatorialKalmanFilterTests.cpp";
+        const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
+        let parser = EntityParser::new();
+        let key = unwrap_entity(
+            &parser,
+            "Acts::Test::comb_kalman_filter_zero_field::test_method()",
+        );
         unary_test(
             "OptFunction",
-            FUNCTION,
-            Activity::OptFunction(FUNCTION.into()),
-            ActivityArgument::MangledSymbol(FUNCTION.into()),
+            VALID,
+            Activity::OptFunction(MangledSymbol::Demangled(key)),
+            ActivityArgument::MangledSymbol(MangledSymbol::Demangled(key)),
+            EntityParser::new(),
+        );
+
+        const INVALID: &'static str = "__cxx_global_var_init.1";
+        unary_test(
+            "OptFunction",
+            INVALID,
+            Activity::OptFunction(MangledSymbol::Mangled(INVALID.into())),
+            ActivityArgument::MangledSymbol(MangledSymbol::Mangled(INVALID.into())),
             EntityParser::new(),
         );
     }
