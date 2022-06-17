@@ -4,10 +4,12 @@
 
 mod path;
 
-use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
+use clang_time_trace::{ActivityArgument, ClangTrace, Duration, MangledSymbol};
 use std::collections::HashMap;
 
 fn main() {
+    env_logger::init();
+
     let trace =
         ClangTrace::from_file("2020-05-25_CombinatorialKalmanFilterTests.cpp.json").unwrap();
 
@@ -81,9 +83,10 @@ fn main() {
     println!("\nProcessing C++ entities...");
     for activity_trace in trace.all_activities() {
         match activity_trace.activity().argument() {
-            ActivityArgument::MangledSymbol(m) => {
+            /*ActivityArgument::MangledSymbol(MangledSymbol::Demangled(m))
+            | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(m)) => {
                 println!("{m:?}");
-            } /*ActivityArgument::CppEntity(e) => {
+            } *//*ActivityArgument::CppEntity(e) => {
             println!(
             "- {}({})",
             activity_trace.activity().name(),
@@ -94,48 +97,6 @@ fn main() {
         }
     }
     println!("...all good!");
-
-    // DEBUG
-    /*println!("Interner usage statistics:");
-    println!("- Identifiers: {}", parser.num_identifiers());
-    println!(
-        "- Paths: {} interned components, {} total components, max {} components/path",
-        parser.num_unique_path_components(),
-        parser.num_path_components(),
-        parser.max_path_len().unwrap()
-    );
-    println!("- Types: {}", parser.num_types());
-    println!("- Values: {}", parser.num_values());
-    println!(
-        "- Template parameters: {} total parameters, max {} parameters/set",
-        parser.num_template_parameters(),
-        parser.max_template_parameter_set_len().unwrap()
-    );
-    println!(
-        "- Value trailers: {} total AfterValue, max {} AfterValue/set",
-        parser.num_after_value(),
-        parser.max_value_trailer_len().unwrap()
-    );
-    println!(
-        "- Function calls: {} total arguments, max {} arguments/set",
-        parser.num_function_arguments(),
-        parser.max_function_arguments_len().unwrap()
-    );
-    println!(
-        "- Function parameters: {} total parameters, max {} parameters/set",
-        parser.num_function_parameters(),
-        parser.max_function_parameters_len().unwrap()
-    );
-    println!(
-        "- Scopes: {} total Scopes, max {} Scopes/set",
-        parser.num_scopes(),
-        parser.max_scope_sequence_len().unwrap()
-    );
-    println!(
-        "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
-        parser.num_decl_operators(),
-        parser.max_declarator_len().unwrap()
-    );*/
 
     // DEBUG
     /* use cpparser::values::*;

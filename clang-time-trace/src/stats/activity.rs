@@ -8,6 +8,7 @@ use crate::{
 };
 use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
 use cpparser::{nom, EntityKey, EntityParser};
+use log::trace;
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
@@ -39,7 +40,11 @@ impl ActivityStat {
     }
 
     /// Decode a TraceEvent which is expected to contain a timed activity
-    pub fn parse(t: TraceEvent, parser: &EntityParser) -> Result<Self, ActivityStatParseError> {
+    pub fn parse(
+        t: TraceEvent,
+        parser: &EntityParser,
+        demangling_buf: &mut String,
+    ) -> Result<Self, ActivityStatParseError> {
         match t {
             TraceEvent::X {
                 duration_event:
@@ -57,7 +62,7 @@ impl ActivityStat {
                 tdur: None,
                 end_stack_trace: None,
             } => {
-                let activity = Activity::parse(name, args, parser)?;
+                let activity = Activity::parse(name, args, parser, demangling_buf)?;
                 Ok(Self {
                     activity,
                     start: ts,
@@ -224,6 +229,7 @@ impl Activity {
         name: Box<str>,
         args: Option<HashMap<Box<str>, json::Value>>,
         parser: &EntityParser,
+        mut demangling_buf: &mut String,
     ) -> Result<Self, ActivityParseError> {
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
@@ -264,34 +270,49 @@ impl Activity {
                 Ok(constructor(parse_entity(entity)?))
             };
         //
-        let fill_mangled_arg =
+        let mut fill_mangled_arg =
             |constructor: fn(MangledSymbol) -> Activity| -> Result<Activity, ActivityParseError> {
                 let symbol = detail_arg()?;
+
+                let parse_demangled = |entity: Box<str>| -> MangledSymbol {
+                    if let Ok(parsed) = parse_entity(&*entity) {
+                        MangledSymbol::Parsed(parsed)
+                    } else {
+                        MangledSymbol::Demangled(entity)
+                    }
+                };
+
                 let demangling_result = match Symbol::new_with_options(
                     &*symbol,
                     &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
                 )
                 .map(|s| {
-                    s.demangle(
+                    demangling_buf.clear();
+                    s.structured_demangle(
+                        &mut demangling_buf,
                         &DemangleOptions::default()
-                            // TODO: Check for number of matches with and without this option
                             .hide_expression_literal_types()
                             .no_return_type()
                             .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
                     )
                 }) {
                     // Mangled symbol was successfully demangled, intern it along with the rest
-                    Ok(Ok(entity)) => MangledSymbol::Demangled(parse_entity(&entity)?),
+                    Ok(Ok(())) => parse_demangled(demangling_buf.clone().into_boxed_str()),
 
                     // Symbol failed to demangle, try some patterns that cpp_demangle
                     // should not reject but actually does reject before giving up
                     Ok(Err(_)) | Err(_) => match &*symbol {
-                        "main" | "__clang_call_terminate" => {
-                            MangledSymbol::Demangled(parse_entity(&*symbol)?)
-                        }
+                        "main" | "__clang_call_terminate" => parse_demangled(symbol),
                         _ => MangledSymbol::Mangled(symbol),
                     },
                 };
+
+                match &demangling_result {
+                    MangledSymbol::Parsed(_) => {}
+                    MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
+                    MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+                }
+
                 Ok(constructor(demangling_result))
             };
 
@@ -393,11 +414,19 @@ pub enum ActivityArgument {
     MangledSymbol(MangledSymbol),
 }
 //
-/// A mangled C++ symbol that possibly underwent successful demangling
+/// A mangled C++ symbol that we tried to demangle and parse
 #[derive(Clone, Debug, PartialEq)]
 pub enum MangledSymbol {
     /// Symbol was successfully mangled and interned
-    Demangled(EntityKey),
+    Parsed(EntityKey),
+
+    /// The symbol was demangled, but could not be parsed into an AST
+    ///
+    /// This normally happens when the demangler emits ill-formed output such
+    /// as `SomeTemplate<int, && >` or `()...`. If you find reasonable output
+    /// which we do not parse, please submit it as a bug.
+    ///
+    Demangled(Box<str>),
 
     /// Demangling failed and the symbol was kept in its original form.
     ///
@@ -462,8 +491,9 @@ mod tests {
 
         // Check direct Activity parsing
         let name = Box::<str>::from(name);
+        let mut demangling_buf = String::new();
         assert_eq!(
-            Activity::parse(name.clone(), args.clone(), parser),
+            Activity::parse(name.clone(), args.clone(), parser, &mut demangling_buf),
             Ok(expected.clone())
         );
 
@@ -496,7 +526,11 @@ mod tests {
 
         // Valid ActivityStat input
         assert_eq!(
-            ActivityStat::parse(make_event(true, 1, 0, None, None, None, None, None), parser),
+            ActivityStat::parse(
+                make_event(true, 1, 0, None, None, None, None, None),
+                parser,
+                &mut demangling_buf
+            ),
             Ok(ActivityStat {
                 activity: expected.clone(),
                 start,
@@ -505,9 +539,9 @@ mod tests {
         );
 
         // Invalid inputs
-        let test_bad_input = |input: TraceEvent| {
+        let mut test_bad_input = |input: TraceEvent| {
             assert_eq!(
-                ActivityStat::parse(input.clone(), parser),
+                ActivityStat::parse(input.clone(), parser, &mut demangling_buf),
                 Err(ActivityStatParseError::UnexpectedInput(input))
             )
         };
@@ -560,9 +594,10 @@ mod tests {
     #[test]
     fn unknown_activity() {
         let parser = EntityParser::new();
+        let mut demanging_buf = String::new();
         let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
-            Activity::parse(activity.clone(), None, &parser),
+            Activity::parse(activity.clone(), None, &parser, &mut demanging_buf),
             Err(ActivityParseError::UnknownActivity(activity))
         );
     }
@@ -581,8 +616,14 @@ mod tests {
 
         // Add an undesired detail argument
         let args = maplit::hashmap! { "detail".into() => json::json!("") };
+        let mut demangling_buf = String::new();
         assert_eq!(
-            Activity::parse(name.into(), Some(args.clone()), &parser),
+            Activity::parse(
+                name.into(),
+                Some(args.clone()),
+                &parser,
+                &mut demangling_buf,
+            ),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(args)
             ))
@@ -646,15 +687,21 @@ mod tests {
         );
 
         // Try not providing the requested argument
+        let mut demangling_buf = String::new();
         let missing_arg_error = Err(ActivityParseError::BadArguments(ArgParseError::MissingKey(
             "detail",
         )));
         assert_eq!(
-            Activity::parse(name.clone(), None, &parser),
+            Activity::parse(name.clone(), None, &parser, &mut demangling_buf),
             missing_arg_error
         );
         assert_eq!(
-            Activity::parse(name.clone(), Some(HashMap::new()), &parser),
+            Activity::parse(
+                name.clone(),
+                Some(HashMap::new()),
+                &parser,
+                &mut demangling_buf
+            ),
             missing_arg_error
         );
 
@@ -662,7 +709,12 @@ mod tests {
         let bad_value = json::json!(42usize);
         let bad_arg_value = maplit::hashmap! { "detail".into() => bad_value.clone() };
         assert_eq!(
-            Activity::parse(name.clone(), Some(bad_arg_value), &parser),
+            Activity::parse(
+                name.clone(),
+                Some(bad_arg_value),
+                &parser,
+                &mut demangling_buf
+            ),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedValue("detail", bad_value)
             ))
@@ -672,7 +724,7 @@ mod tests {
         let mut bad_arg = good_args.clone();
         bad_arg.insert("wat".into(), json::json!(""));
         assert_eq!(
-            Activity::parse(name, Some(bad_arg.clone()), &parser),
+            Activity::parse(name, Some(bad_arg.clone()), &parser, &mut demangling_buf),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
             ))
@@ -827,8 +879,9 @@ mod tests {
 
     #[test]
     fn opt_function() {
-        const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
         let parser = EntityParser::new();
+
+        const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
         let key = unwrap_entity(
             &parser,
             "Acts::Test::comb_kalman_filter_zero_field::test_method()",
@@ -836,8 +889,8 @@ mod tests {
         unary_test(
             "OptFunction",
             VALID,
-            Activity::OptFunction(MangledSymbol::Demangled(key)),
-            ActivityArgument::MangledSymbol(MangledSymbol::Demangled(key)),
+            Activity::OptFunction(MangledSymbol::Parsed(key)),
+            ActivityArgument::MangledSymbol(MangledSymbol::Parsed(key)),
             EntityParser::new(),
         );
 

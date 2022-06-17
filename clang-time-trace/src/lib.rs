@@ -14,6 +14,7 @@ use self::{
     tree::{ActivityTree, ActivityTreeBuilder},
 };
 use cpparser::{Entities, EntityKey, EntityParser, EntityView};
+use log::debug;
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -29,7 +30,9 @@ pub use self::{
     ctf::{Duration, Timestamp},
     metadata::ProcessNameParseError,
     stats::{
-        activity::{Activity, ActivityArgument, ActivityParseError, ActivityStatParseError},
+        activity::{
+            Activity, ActivityArgument, ActivityParseError, ActivityStatParseError, MangledSymbol,
+        },
         global::{GlobalStat, GlobalStatParseError},
         ArgParseError,
     },
@@ -138,6 +141,7 @@ impl FromStr for ClangTrace {
         // Process the trace events
         let mut activities = ActivityTreeBuilder::with_capacity(profile_ctf.traceEvents.len() - 1);
         let entities = EntityParser::new();
+        let mut demangling_buf = String::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
         //
@@ -150,7 +154,7 @@ impl FromStr for ClangTrace {
                 } => {
                     // Parse activity statistics and insert the new activity
                     // into the activity tree
-                    activities.insert(ActivityStat::parse(t, &entities)?)?;
+                    activities.insert(ActivityStat::parse(t, &entities, &mut demangling_buf)?)?;
                 }
 
                 // Durations associated with a nonzero tid are global stats
@@ -180,6 +184,9 @@ impl FromStr for ClangTrace {
             }
         }
 
+        // Display entity parser usage statistics
+        log_entity_parser_usage(&entities);
+
         // Build the final ClangTrace
         if let Some(process_name) = process_name {
             Ok(Self {
@@ -192,6 +199,50 @@ impl FromStr for ClangTrace {
             Err(ClangTraceParseError::NoProcessName)
         }
     }
+}
+
+/// Log how the entity parser was used, to ease interner key choices
+fn log_entity_parser_usage(parser: &EntityParser) {
+    debug!("EntityParser interner usage statistics:");
+    debug!("- Identifiers: {}", parser.num_identifiers());
+    debug!(
+        "- Paths: {} interned components, {} total components, max {} components/path",
+        parser.num_unique_path_components(),
+        parser.num_path_components(),
+        parser.max_path_len().unwrap()
+    );
+    debug!("- Types: {}", parser.num_types());
+    debug!("- Values: {}", parser.num_values());
+    debug!(
+        "- Template parameters: {} total parameters, max {} parameters/set",
+        parser.num_template_parameters(),
+        parser.max_template_parameter_set_len().unwrap()
+    );
+    debug!(
+        "- Value trailers: {} total AfterValue, max {} AfterValue/set",
+        parser.num_after_value(),
+        parser.max_value_trailer_len().unwrap()
+    );
+    debug!(
+        "- Function calls: {} total arguments, max {} arguments/set",
+        parser.num_function_arguments(),
+        parser.max_function_arguments_len().unwrap()
+    );
+    debug!(
+        "- Function parameters: {} total parameters, max {} parameters/set",
+        parser.num_function_parameters(),
+        parser.max_function_parameters_len().unwrap()
+    );
+    debug!(
+        "- Scopes: {} total Scopes, max {} Scopes/set",
+        parser.num_scopes(),
+        parser.max_scope_sequence_len().unwrap()
+    );
+    debug!(
+        "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
+        parser.num_decl_operators(),
+        parser.max_declarator_len().unwrap()
+    );
 }
 
 /// What can go wrong while loading clang's -ftime-trace data from a file
