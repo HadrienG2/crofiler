@@ -276,6 +276,7 @@ impl Activity {
                         &DemangleOptions::default()
                             // TODO: Check for number of matches with and without this option
                             .hide_expression_literal_types()
+                            .no_return_type()
                             .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
                     )
                 }) {

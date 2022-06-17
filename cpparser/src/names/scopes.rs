@@ -7,6 +7,7 @@ use crate::{
         recursion::SequenceEntry,
         slice::{SliceItemView, SliceView},
     },
+    types::qualifiers::{ConstVolatile, Reference},
     Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
@@ -131,14 +132,33 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, ScopeOrUnqualifiedId> {
-        use nom::combinator::opt;
+        use nom::{character::complete::space0, combinator::opt, multi::many0_count};
         use nom_supreme::tag::complete::tag;
         // Parse the initial UnqualifiedId
         match self.parse_unqualified_id(s) {
             // An UnqualifiedId was found, but is this actually a Scope?
             Ok((after_id, id)) => {
                 match opt(|s| self.parse_function_signature(s))
-                    .terminated(tag("::"))
+                    // Ignore any declarator other than a function signature:
+                    // - T* does not have members so it is meaningless as a scope
+                    // - T& has the same members as T
+                    // - T[] does not have members so its is meaningless as a scope
+                    // - T() was accounted for above
+                    // - Since no declarator makes sense (other than a signature)
+                    //   a parenthesized declarator won't make sense either.
+                    .terminated(
+                        many0_count(
+                            space0.and(
+                                (Self::parse_cv
+                                    .verify(|&cv| cv != ConstVolatile::default())
+                                    .value(()))
+                                .or(Self::parse_reference
+                                    .verify(|&r| r != Reference::None)
+                                    .value(())),
+                            ),
+                        )
+                        .and(tag("::")),
+                    )
                     .parse(after_id)
                 {
                     // Yes, return the Scope

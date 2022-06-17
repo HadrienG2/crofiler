@@ -23,10 +23,11 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier> {
         use nom::{
-            character::complete::{space0, space1},
+            character::complete::{space0, space1, u32},
             combinator::opt,
             sequence::{preceded, tuple},
         };
+        use nom_supreme::tag::complete::tag;
 
         // The inner simple type can be an id-expression (which must be preceded
         // keywords in obscure circumstances...)
@@ -42,8 +43,11 @@ impl EntityParser {
         // ...or a legacy C-style primitive type with inner spaces...
         let legacy_primitive = (|s| self.parse_legacy_name(s)).map(SimpleType::LegacyName);
 
+        // ...or an indexed auto type as sometimes seen in libiberty's output
+        let libiberty_auto = preceded(tag("auto:"), u32).map(SimpleType::LibibertyAuto);
+
         // ...and we'll try all of that
-        let simple_type = legacy_primitive.or(id_expression);
+        let simple_type = legacy_primitive.or(libiberty_auto).or(id_expression);
 
         // The simple type can be surrounded by cv qualifiers on both sides
         tuple((
@@ -141,6 +145,9 @@ pub(crate) enum SimpleType {
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
+
+    /// Libiberty-style auto types (e.g. "auto:1")
+    LibibertyAuto(u32),
 }
 //
 impl From<IdExpression> for SimpleType {
@@ -163,6 +170,9 @@ pub enum SimpleTypeView<'entities> {
 
     /// C-style space-separated type names (e.g. "unsigned int")
     LegacyName(LegacyName),
+
+    /// Libiberty-style auto types (e.g. "auto:1")
+    LibibertyAuto(u32),
 }
 //
 impl<'entities> SimpleTypeView<'entities> {
@@ -171,6 +181,7 @@ impl<'entities> SimpleTypeView<'entities> {
         match inner {
             SimpleType::IdExpression(i) => Self::IdExpression(entities.id_expression(i)),
             SimpleType::LegacyName(l) => Self::LegacyName(l),
+            SimpleType::LibibertyAuto(u) => Self::LibibertyAuto(u),
         }
     }
 }
@@ -180,6 +191,7 @@ impl<'entities> Display for SimpleTypeView<'entities> {
         match self {
             Self::IdExpression(i) => write!(f, "{i}"),
             Self::LegacyName(l) => write!(f, "{l}"),
+            Self::LibibertyAuto(u) => write!(f, "auto:{u}"),
         }
     }
 }
@@ -199,6 +211,12 @@ mod tests {
         assert_eq!(
             parser.parse_type_specifier("whatever"),
             Ok(("", id_expression("whatever").into()))
+        );
+
+        // Libiberty auto type branch
+        assert_eq!(
+            parser.parse_type_specifier("auto:1"),
+            Ok(("", SimpleType::LibibertyAuto(1).into()))
         );
 
         // Legacy primitive branch

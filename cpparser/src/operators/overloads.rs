@@ -15,7 +15,11 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
-        use nom::{character::complete::char, combinator::opt, sequence::preceded};
+        use nom::{
+            character::complete::{char, space0},
+            combinator::opt,
+            sequence::preceded,
+        };
 
         // Try arithmetic operators of increasing length until hopefully finding one
         // that matches optimally.
@@ -32,7 +36,7 @@ impl EntityParser {
                     // Must come last as it matches keywords
                     .or((|s| self.parse_type_like(s)).map(Operator::Conversion)),
             ))
-            .and(opt(|s| self.parse_template_parameters(s)));
+            .and(preceded(space0, opt(|s| self.parse_template_parameters(s))));
 
         // And for an operator overload, we need the operator keyword...
         preceded(
@@ -56,8 +60,9 @@ impl EntityParser {
         len: usize,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
         use nom::{
+            character::complete::space0,
             combinator::{map_opt, opt, peek},
-            sequence::tuple,
+            sequence::{preceded, tuple},
         };
         let arithmetic_or_comparison = match len {
             1 => super::arithmetic_or_comparison::<1>,
@@ -68,7 +73,7 @@ impl EntityParser {
         map_opt(
             tuple((
                 arithmetic_or_comparison,
-                opt(|s| self.parse_template_parameters(s)),
+                preceded(space0, opt(|s| self.parse_template_parameters(s))),
                 peek(opt(super::symbol)),
             )),
             |(operator, parameters_opt, symbol)| {

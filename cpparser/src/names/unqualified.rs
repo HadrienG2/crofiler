@@ -53,7 +53,7 @@ impl EntityParser {
         .map(UnqualifiedId::Decltype);
 
         // Anonymous entities to which clang gives a name
-        let lambda = (|s| self.parse_lambda(s)).map(UnqualifiedId::Lambda);
+        let mut lambda = (|s| self.parse_lambda(s)).map(UnqualifiedId::Lambda);
         let anonymous = (|s| self.parse_anonymous(s)).map(UnqualifiedId::Anonymous);
 
         // Operator and decltype must go before named because named matches keywords
@@ -65,6 +65,7 @@ impl EntityParser {
         // destructor or not. Branches other than _ are ordered by decreasing freq.
         //
         match s.as_bytes().first() {
+            Some(b'{') => lambda.parse(s),
             Some(b'(') => lambda.or(anonymous).parse(s),
             Some(b'd') => decltype.or(named(false)).parse(s),
             Some(b'o') => operator.or(named(false)).parse(s),
