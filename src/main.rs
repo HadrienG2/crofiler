@@ -5,6 +5,7 @@
 mod path;
 
 use clang_time_trace::{ActivityArgument, ClangTrace, Duration};
+use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
 use std::collections::HashMap;
 
 fn main() {
@@ -77,18 +78,52 @@ fn main() {
         }
     }
 
-    // Print a list of C++ entities that the parser doesn't handle yet
-    println!("\nPrinting C++ entities...");
+    // Play around with collected C++ entities
+    println!("\nProcessing C++ entities...");
+    let mut num_parse_errors = 0;
+    let mut num_display_errors = 0;
+    /// Tuned 10x above maximum observed requirement
+    const CPP_DEMANGLE_RECURSION_LIMIT: u32 = 1024;
     for activity_trace in trace.all_activities() {
-        if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
+        if let ActivityArgument::MangledSymbol(m) = activity_trace.activity().argument() {
+            let mangled = format!("{}({m})", activity_trace.activity().name());
+            match Symbol::new_with_options(
+                &*m,
+                &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+            ) {
+                Err(e) => {
+                    println!("- Failed to parse mangled symbol {mangled}: {e}");
+                    num_parse_errors += 1;
+                }
+                Ok(s) => match s.demangle(
+                    &DemangleOptions::default()
+                        // TODO: Check for number of matches with and without this option
+                        .hide_expression_literal_types()
+                        .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+                ) {
+                    Err(e) => {
+                        println!("- Failed to demangle symbol {m}: {e}");
+                        num_display_errors += 1;
+                    }
+                    Ok(_) => {} // Too high a success rate :)
+                },
+            }
+        }
+        /*if let ActivityArgument::CppEntity(e) = activity_trace.activity().argument() {
             println!(
                 "- {}({})",
                 activity_trace.activity().name(),
                 trace.entity(e)
             );
-        }
+        }*/
     }
-    println!("...all good!");
+    if num_parse_errors == 0 && num_display_errors == 0 {
+        println!("...all good!");
+    } else {
+        println!(
+            "Encountered {num_parse_errors} parse errors and {num_display_errors} display errors"
+        );
+    }
 
     // DEBUG
     /*println!("Interner usage statistics:");
