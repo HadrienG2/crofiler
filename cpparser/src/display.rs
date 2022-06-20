@@ -30,23 +30,30 @@ impl<T: CustomDisplay> CustomDisplay for Option<T> {
 
 /// Recursion depth to be used while rendering an entity
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct RecursionDepths {
     /// Scopes (x::y::z::... paths)
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub scopes: usize,
 
     /// Template parameter sets
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub templates: usize,
 
     /// Function parameter sets (in declaration)
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub function_parameters: usize,
 
     /// Function argument sets (in calls)
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub function_calls: usize,
 
     /// Declarators (things that qualify a type like &, const, noexcept...)
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub declarators: usize,
 
     /// Expressions (in values)
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub expressions: usize,
 }
 //

@@ -330,7 +330,11 @@ impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
         if self.is_rooted() && depths.scopes > 0 {
             write!(f, "::")?;
         }
-        self.scopes().display(f, depths)
+        self.scopes().display(f, depths)?;
+        if depths.scopes == 0 && !self.scopes().is_empty() {
+            write!(f, "::")?;
+        }
+        Ok(())
     }
 }
 

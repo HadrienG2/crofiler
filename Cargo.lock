@@ -202,6 +202,7 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "asylum",
+ "clap 3.2.5",
  "criterion",
  "nom",
  "nom-supreme",
