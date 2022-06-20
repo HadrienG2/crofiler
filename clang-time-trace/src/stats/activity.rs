@@ -874,10 +874,9 @@ mod tests {
         let parser = EntityParser::new();
 
         const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
-        let key = unwrap_entity(
-            &parser,
-            "Acts::Test::comb_kalman_filter_zero_field::test_method()",
-        );
+        let key = parser
+            .parse_entity("Acts::Test::comb_kalman_filter_zero_field::test_method()")
+            .unwrap();
         unary_test(
             "OptFunction",
             VALID,
