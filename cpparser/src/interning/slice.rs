@@ -108,9 +108,31 @@ impl<
         let mut depths = self
             .iter()
             .map(|item| item.recursion_depths())
-            .fold(RecursionDepths::NONE, |acc, item| acc.max(item));
+            .fold(RecursionDepths::NEVER, |acc, item| acc.max(item));
         *ItemView::get_recursion_depth(&mut depths) += (self.iter().count() != 0) as usize;
         depths
+    }
+
+    fn display(
+        &self,
+        f: &mut Formatter<'_>,
+        mut depths: RecursionDepths,
+    ) -> Result<(), fmt::Error> {
+        write!(f, "{}", ItemView::DISPLAY_HEADER)?;
+        let get_depth = ItemView::get_recursion_depth;
+        if *get_depth(&mut depths) > 0 {
+            *get_depth(&mut depths) -= 1;
+            let mut iterator = self.iter().peekable();
+            while let Some(view) = iterator.next() {
+                view.display(f, depths)?;
+                if iterator.peek().is_some() {
+                    write!(f, "{}", ItemView::DISPLAY_SEPARATOR)?;
+                }
+            }
+        } else if self.iter().count() > 0 {
+            write!(f, "…")?;
+        }
+        write!(f, "{}", ItemView::DISPLAY_TRAILER)
     }
 }
 //
@@ -123,15 +145,7 @@ impl<
     > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", ItemView::DISPLAY_HEADER)?;
-        let mut iterator = self.iter().peekable();
-        while let Some(view) = iterator.next() {
-            write!(f, "{view}")?;
-            if iterator.peek().is_some() {
-                write!(f, "{}", ItemView::DISPLAY_SEPARATOR)?;
-            }
-        }
-        write!(f, "{}", ItemView::DISPLAY_TRAILER)
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 

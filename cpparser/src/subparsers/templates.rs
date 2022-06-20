@@ -149,17 +149,21 @@ impl<'entities> TemplateParametersView<'entities> {
 //
 impl<'entities> Display for TemplateParametersView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        if let Some(list) = &self.0 {
-            write!(f, "{list}")
-        } else {
-            write!(f, "<, void>")
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         self.0.recursion_depths()
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        if let Some(list) = &self.0 {
+            list.display(f, depths)
+        } else {
+            write!(f, "<, void>")
+        }
     }
 }
 
@@ -204,10 +208,7 @@ impl<'entities> TemplateParameterView<'entities> {
 //
 impl<'entities> Display for TemplateParameterView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::TypeLike(t) => write!(f, "{t}"),
-            Self::ValueLike(v) => write!(f, "{v}"),
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -216,6 +217,13 @@ impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
         match self {
             Self::TypeLike(t) => t.recursion_depths(),
             Self::ValueLike(v) => v.recursion_depths(),
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::TypeLike(t) => t.display(f, depths),
+            Self::ValueLike(v) => v.display(f, depths),
         }
     }
 }

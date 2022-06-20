@@ -125,17 +125,21 @@ impl<'entities> PartialEq for TypeSpecifierView<'entities> {
 //
 impl<'entities> Display for TypeSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let cv = self.cv();
-        if cv != ConstVolatile::default() {
-            write!(f, "{cv} ")?;
-        }
-        write!(f, "{}", self.simple_type())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for TypeSpecifierView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         self.simple_type().recursion_depths()
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        let cv = self.cv();
+        if cv != ConstVolatile::default() {
+            write!(f, "{cv} ")?;
+        }
+        self.simple_type().display(f, depths)
     }
 }
 
@@ -190,11 +194,7 @@ impl<'entities> SimpleTypeView<'entities> {
 //
 impl<'entities> Display for SimpleTypeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::IdExpression(i) => write!(f, "{i}"),
-            Self::LegacyName(l) => write!(f, "{l}"),
-            Self::LibibertyAuto(u) => write!(f, "auto:{u}"),
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -202,8 +202,16 @@ impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         match self {
             Self::IdExpression(i) => i.recursion_depths(),
-            Self::LegacyName(_) => RecursionDepths::NONE,
-            Self::LibibertyAuto(_) => RecursionDepths::NONE,
+            Self::LegacyName(_) => RecursionDepths::NEVER,
+            Self::LibibertyAuto(_) => RecursionDepths::NEVER,
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::IdExpression(i) => i.display(f, depths),
+            Self::LegacyName(l) => write!(f, "{l}"),
+            Self::LibibertyAuto(u) => write!(f, "auto:{u}"),
         }
     }
 }

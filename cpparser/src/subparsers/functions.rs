@@ -289,11 +289,24 @@ impl<'entities> PartialEq for FunctionSignatureView<'entities> {
 //
 impl<'entities> Display for FunctionSignatureView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        self.display(f, RecursionDepths::ALWAYS)
+    }
+}
+//
+impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.parameters()
+            .recursion_depths()
+            .max(self.noexcept().recursion_depths())
+            .max(self.trailing_return().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
         if let Some(abi) = self.abi() {
             write!(f, "[abi:{abi}]")?;
         }
 
-        write!(f, "{}", self.parameters())?;
+        self.parameters().display(f, depths)?;
 
         let cv = self.cv();
         if cv != ConstVolatile::default() {
@@ -309,24 +322,18 @@ impl<'entities> Display for FunctionSignatureView<'entities> {
         if let Some(value) = noexcept {
             write!(f, " noexcept")?;
             if let Some(value) = value {
-                write!(f, "({value})")?;
+                write!(f, "(")?;
+                value.display(f, depths)?;
+                write!(f, ")")?;
             }
         }
 
         let trailing_return = self.trailing_return();
         if let Some(ty) = trailing_return {
-            write!(f, " -> {ty}")?;
+            write!(f, " -> ")?;
+            ty.display(f, depths)?;
         }
         Ok(())
-    }
-}
-//
-impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.parameters()
-            .recursion_depths()
-            .max(self.noexcept().recursion_depths())
-            .max(self.trailing_return().recursion_depths())
     }
 }
 

@@ -209,13 +209,19 @@ impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
 //
 impl<'entities> Display for LibibertyLambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{{lambda{}#{}}}", self.signature(), self.id())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         self.signature().recursion_depths()
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        write!(f, "{{lambda")?;
+        self.signature().display(f, depths)?;
+        write!(f, "#{}}}", self.id())
     }
 }
 
@@ -251,10 +257,7 @@ impl<'entities> LambdaView<'entities> {
 //
 impl<'entities> Display for LambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::Clang(c) => write!(f, "{c}"),
-            Self::Libiberty(l) => write!(f, "{l}"),
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -262,8 +265,15 @@ impl<'entities> CustomDisplay for LambdaView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         match self {
             // FIXME: Bring in simplified path display from crofiler
-            Self::Clang(_) => RecursionDepths::NONE,
+            Self::Clang(_) => RecursionDepths::NEVER,
             Self::Libiberty(l) => l.recursion_depths(),
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::Clang(c) => write!(f, "{c}"),
+            Self::Libiberty(l) => l.display(f, depths),
         }
     }
 }

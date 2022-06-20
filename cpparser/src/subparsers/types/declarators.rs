@@ -260,41 +260,55 @@ impl<'entities> DeclOperatorView<'entities> {
 //
 impl<'entities> Display for DeclOperatorView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::ConstVolatile(cv) => write!(f, "{cv}")?,
-            Self::Pointer { path, cv } => {
-                write!(f, "{path}*")?;
-                if *cv != ConstVolatile::default() {
-                    write!(f, " {cv}")?;
-                }
-            }
-            Self::Reference(r) => write!(f, "{r}")?,
-            Self::Array(a) => {
-                write!(f, "[")?;
-                if let Some(a) = a {
-                    write!(f, "{a}")?;
-                }
-                write!(f, "]")?;
-            }
-            Self::Function(func) => write!(f, "{func}")?,
-            Self::Parenthesized(d) => write!(f, "({d})")?,
-            Self::VectorSize(s) => write!(f, "__vector({s})")?,
-        }
-        Ok(())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         match self {
-            Self::ConstVolatile(_) => RecursionDepths::NONE,
+            Self::ConstVolatile(_) => RecursionDepths::NEVER,
             Self::Pointer { path, .. } => path.recursion_depths(),
-            Self::Reference(_) => RecursionDepths::NONE,
+            Self::Reference(_) => RecursionDepths::NEVER,
             Self::Array(a) => a.recursion_depths(),
             Self::Function(func) => func.recursion_depths(),
             Self::Parenthesized(d) => d.recursion_depths(),
             Self::VectorSize(s) => s.recursion_depths(),
         }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::ConstVolatile(cv) => write!(f, "{cv}")?,
+            Self::Pointer { path, cv } => {
+                path.display(f, depths)?;
+                write!(f, "*")?;
+                if *cv != ConstVolatile::default() {
+                    write!(f, " {cv}")?;
+                }
+            }
+            Self::Reference(r) => write!(f, "{r}")?,
+            // FIXME: Add recursion bound based on [] sign
+            Self::Array(a) => {
+                write!(f, "[")?;
+                a.display(f, depths)?;
+                write!(f, "]")?;
+            }
+            Self::Function(func) => func.display(f, depths)?,
+            // FIXME: Add recursion bound based on () sign
+            Self::Parenthesized(d) => {
+                write!(f, "(")?;
+                d.display(f, depths)?;
+                write!(f, ")")?;
+            }
+            // FIXME: Add recursion bound based on () sign
+            Self::VectorSize(s) => {
+                write!(f, "__vector(")?;
+                s.display(f, depths)?;
+                write!(f, ")")?;
+            }
+        }
+        Ok(())
     }
 }
 //

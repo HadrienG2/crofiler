@@ -231,40 +231,7 @@ impl<'entities> UnqualifiedIdView<'entities> {
 //
 impl<'entities> Display for UnqualifiedIdView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::Named {
-                is_destructor,
-                id,
-                template_parameters,
-            } => {
-                if *is_destructor {
-                    write!(f, "~")?;
-                }
-                write!(f, "{id}")?;
-                if let Some(template_parameters) = template_parameters {
-                    write!(f, "{template_parameters}")?;
-                }
-            }
-            Self::Operator {
-                operator,
-                template_parameters,
-            } => {
-                operator.display(f, operators::DisplayContext::Declaration)?;
-                if let Some(template_parameters) = template_parameters {
-                    write!(f, "{template_parameters}")?;
-                }
-            }
-            Self::Decltype(value) => {
-                write!(f, "decltype({value})")?;
-            }
-            Self::Lambda(lambda) => {
-                write!(f, "{lambda}")?;
-            }
-            Self::Anonymous(anonymous) => {
-                write!(f, "{anonymous}")?;
-            }
-        }
-        Ok(())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -281,9 +248,41 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
             } => operator
                 .recursion_depths()
                 .max(template_parameters.recursion_depths()),
+            // FIXME: Add decltype to list of elidable recursions
             Self::Decltype(value) => value.recursion_depths(),
             Self::Lambda(lambda) => lambda.recursion_depths(),
-            Self::Anonymous(_) => RecursionDepths::NONE,
+            Self::Anonymous(_) => RecursionDepths::NEVER,
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::Named {
+                is_destructor,
+                id,
+                template_parameters,
+            } => {
+                if *is_destructor {
+                    write!(f, "~")?;
+                }
+                write!(f, "{id}")?;
+                template_parameters.display(f, depths)
+            }
+            Self::Operator {
+                operator,
+                template_parameters,
+            } => {
+                operator.display(f, depths, operators::DisplayContext::Declaration)?;
+                template_parameters.display(f, depths)
+            }
+            Self::Decltype(value) => {
+                // FIXME: Add decltype to list of elidable recursions
+                write!(f, "decltype(")?;
+                value.display(f, depths)?;
+                write!(f, ")")
+            }
+            Self::Lambda(lambda) => lambda.display(f, depths),
+            Self::Anonymous(anonymous) => write!(f, "{anonymous}"),
         }
     }
 }

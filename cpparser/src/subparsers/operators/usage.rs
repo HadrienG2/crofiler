@@ -230,18 +230,7 @@ impl<'entities> PartialEq for NewExpressionView<'entities> {
 //
 impl<'entities> Display for NewExpressionView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        if self.rooted() {
-            write!(f, "::")?;
-        }
-        write!(f, "new")?;
-        if let Some(placement) = self.placement() {
-            write!(f, "{placement}")?;
-        }
-        write!(f, " {}", self.ty())?;
-        if let Some(constructor) = self.constructor() {
-            write!(f, "{constructor}")?;
-        }
-        Ok(())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -251,6 +240,17 @@ impl<'entities> CustomDisplay for NewExpressionView<'entities> {
             .recursion_depths()
             .max(self.ty().recursion_depths())
             .max(self.constructor().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        if self.rooted() {
+            write!(f, "::")?;
+        }
+        write!(f, "new")?;
+        self.placement().display(f, depths)?;
+        write!(f, " ")?;
+        self.ty().display(f, depths)?;
+        self.constructor().display(f, depths)
     }
 }
 

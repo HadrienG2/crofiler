@@ -1,21 +1,32 @@
 //! Tools to help customize the display of C++ entities
 
+use std::fmt::{self, Formatter};
+
 /// Trait implemented by entities with a customizable display
 pub trait CustomDisplay {
     /// Maximum recursion depth that is reached, across all recursive areas of
     /// the grammar, when rendering this entity
     fn recursion_depths(&self) -> RecursionDepths;
+
+    /// Display the type, honoring a recursion depth constraint
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error>;
 }
 //
 impl<T: CustomDisplay> CustomDisplay for Option<T> {
     fn recursion_depths(&self) -> RecursionDepths {
         self.as_ref()
             .map(|inner| inner.recursion_depths())
-            .unwrap_or(RecursionDepths::NONE)
+            .unwrap_or(RecursionDepths::NEVER)
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        if let Some(inner) = self {
+            inner.display(f, depths)
+        } else {
+            Ok(())
+        }
     }
 }
-//
-// TODO: impl Display for CustomDisplay
 
 /// Recursion depth to be used while rendering an entity
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -41,7 +52,7 @@ pub struct RecursionDepths {
 //
 impl RecursionDepths {
     /// Prevent any form of grammatically allowed recursion
-    pub const NONE: Self = Self {
+    pub const NEVER: Self = Self {
         scopes: usize::MIN,
         templates: usize::MIN,
         function_parameters: usize::MIN,
@@ -70,5 +81,11 @@ impl RecursionDepths {
             declarators: self.declarators.max(other.declarators),
             expressions: self.expressions.max(other.expressions),
         }
+    }
+}
+//
+impl Default for RecursionDepths {
+    fn default() -> Self {
+        Self::ALWAYS
     }
 }

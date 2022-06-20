@@ -246,7 +246,7 @@ impl<'entities> PartialEq for IdExpressionView<'entities> {
 //
 impl<'entities> Display for IdExpressionView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}{}", self.path(), self.id())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -255,6 +255,11 @@ impl<'entities> CustomDisplay for IdExpressionView<'entities> {
         self.path()
             .recursion_depths()
             .max(self.id().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        self.path().display(f, depths)?;
+        self.id().display(f, depths)
     }
 }
 
@@ -312,16 +317,20 @@ impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
 //
 impl<'entities> Display for NestedNameSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        if self.is_rooted() {
-            write!(f, "::")?;
-        }
-        write!(f, "{}", self.scopes())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         self.scopes().recursion_depths()
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        if self.is_rooted() && depths.scopes > 0 {
+            write!(f, "::")?;
+        }
+        self.scopes().display(f, depths)
     }
 }
 
@@ -395,17 +404,19 @@ impl<'entities> PartialEq for ScopeView<'entities> {
 //
 impl<'entities> Display for ScopeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.id())?;
-        if let Some(signature) = self.function_signature() {
-            write!(f, "{signature}")?;
-        }
-        write!(f, "::")
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for ScopeView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         (self.id().recursion_depths()).max(self.function_signature().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        self.id().display(f, depths)?;
+        self.function_signature().display(f, depths)?;
+        write!(f, "::")
     }
 }
 //

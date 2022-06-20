@@ -161,10 +161,25 @@ impl<'entities> OperatorView<'entities> {
         }
     }
 
+    /// Tell how much recursion would need to be performed when displaying this
+    pub fn recursion_depths(&self) -> RecursionDepths {
+        match self {
+            Self::Basic { .. } => RecursionDepths::NEVER,
+            Self::Deref { .. } => RecursionDepths::NEVER,
+            Self::Spaceship => RecursionDepths::NEVER,
+            Self::CallIndex { .. } => RecursionDepths::NEVER,
+            Self::CustomLiteral(_) => RecursionDepths::NEVER,
+            Self::NewDelete { .. } => RecursionDepths::NEVER,
+            Self::CoAwait => RecursionDepths::NEVER,
+            Self::Conversion(ty) => ty.recursion_depths(),
+        }
+    }
+
     /// Display the operator using appropriate syntax for a certain context
     pub fn display(
         &self,
         f: &mut Formatter<'_>,
+        depths: RecursionDepths,
         context: DisplayContext,
     ) -> Result<(), fmt::Error> {
         if context == DisplayContext::Declaration {
@@ -249,7 +264,7 @@ impl<'entities> OperatorView<'entities> {
                 } else if context == DisplayContext::PrefixUsage {
                     write!(f, "(")?;
                 }
-                write!(f, "{ty}")?;
+                ty.display(f, depths)?;
                 if context == DisplayContext::PrefixUsage {
                     write!(f, ")")?;
                 }
@@ -273,21 +288,6 @@ pub enum DisplayContext {
 
     /// Usage in postfix position
     PostfixUsage,
-}
-//
-impl<'entities> CustomDisplay for OperatorView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        match self {
-            Self::Basic { .. } => RecursionDepths::NONE,
-            Self::Deref { .. } => RecursionDepths::NONE,
-            Self::Spaceship => RecursionDepths::NONE,
-            Self::CallIndex { .. } => RecursionDepths::NONE,
-            Self::CustomLiteral(_) => RecursionDepths::NONE,
-            Self::NewDelete { .. } => RecursionDepths::NONE,
-            Self::CoAwait => RecursionDepths::NONE,
-            Self::Conversion(ty) => ty.recursion_depths(),
-        }
-    }
 }
 
 /// Parse arithmetic and comparison operators

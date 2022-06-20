@@ -146,16 +146,7 @@ impl<'entities> PartialEq for TypeView<'entities> {
 //
 impl<'entities> Display for TypeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let attributes = self.attributes();
-        if !attributes.is_empty() {
-            write!(f, "__attribute__({}) ", attributes)?;
-        }
-        write!(f, "{}", self.type_specifier())?;
-        let declarator = self.declarator();
-        if !declarator.is_empty() {
-            write!(f, " {}", declarator)?;
-        }
-        Ok(())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -165,6 +156,22 @@ impl<'entities> CustomDisplay for TypeView<'entities> {
             .recursion_depths()
             .max(self.type_specifier().recursion_depths())
             .max(self.declarator().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        let attributes = self.attributes();
+        if !attributes.is_empty() {
+            write!(f, "__attribute__(")?;
+            attributes.display(f, depths)?;
+            write!(f, ")")?;
+        }
+        self.type_specifier().display(f, depths)?;
+        let declarator = self.declarator();
+        if !declarator.is_empty() {
+            write!(f, " ")?;
+            declarator.display(f, depths)?;
+        }
+        Ok(())
     }
 }
 //

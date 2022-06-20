@@ -306,7 +306,7 @@ impl<'entities> PartialEq for ValueView<'entities> {
 //
 impl<'entities> Display for ValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}{}", self.header(), self.trailer())
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -315,6 +315,11 @@ impl<'entities> CustomDisplay for ValueView<'entities> {
         self.header()
             .recursion_depths()
             .max(self.trailer().recursion_depths())
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        self.header().display(f, depths)?;
+        self.trailer().display(f, depths)
     }
 }
 //
@@ -422,29 +427,38 @@ impl<'entities> ValueHeaderView<'entities> {
 //
 impl<'entities> Display for ValueHeaderView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::Literal(l) => write!(f, "{l}"),
-            Self::Parenthesized(v) => write!(f, "({v})"),
-            Self::UnaryOp(o, v) => {
-                o.display(f, operators::DisplayContext::PrefixUsage)?;
-                write!(f, "{v}")
-            }
-            Self::NewExpression(n) => write!(f, "{n}"),
-            Self::IdExpression(i) => write!(f, "{i}"),
-            Self::Ellipsis => write!(f, "..."),
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
 impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
     fn recursion_depths(&self) -> RecursionDepths {
         match self {
-            Self::Literal(_) => RecursionDepths::NONE,
+            Self::Literal(_) => RecursionDepths::NEVER,
             Self::Parenthesized(v) => v.recursion_depths(),
             Self::UnaryOp(o, v) => o.recursion_depths().max(v.recursion_depths()),
             Self::NewExpression(n) => n.recursion_depths(),
             Self::IdExpression(i) => i.recursion_depths(),
-            Self::Ellipsis => RecursionDepths::NONE,
+            Self::Ellipsis => RecursionDepths::NEVER,
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            Self::Literal(l) => write!(f, "{l}"),
+            // FIXME: Add a recursion bound for parentheses
+            Self::Parenthesized(v) => {
+                write!(f, "(")?;
+                v.display(f, depths)?;
+                write!(f, ")")
+            }
+            Self::UnaryOp(o, v) => {
+                o.display(f, depths, operators::DisplayContext::PrefixUsage)?;
+                v.display(f, depths)
+            }
+            Self::NewExpression(n) => n.display(f, depths),
+            Self::IdExpression(i) => i.display(f, depths),
+            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
@@ -535,18 +549,7 @@ impl<'entities> AfterValueView<'entities> {
 //
 impl<'entities> Display for AfterValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::ArrayIndex(i) => write!(f, "[{i}]"),
-            Self::FunctionCall(a) => write!(f, "{a}"),
-            Self::BinaryOp(o, v) => {
-                o.display(f, operators::DisplayContext::BinaryUsage)?;
-                write!(f, "{v}")
-            }
-            Self::TernaryOp(v1, v2) => write!(f, " ? {v1} : {v2}"),
-            Self::MemberAccess(m) => write!(f, ".{m}"),
-            Self::PostfixOp(o) => o.display(f, operators::DisplayContext::PostfixUsage),
-            Self::Ellipsis => write!(f, "..."),
-        }
+        self.display(f, RecursionDepths::ALWAYS)
     }
 }
 //
@@ -559,7 +562,35 @@ impl<'entities> CustomDisplay for AfterValueView<'entities> {
             Self::TernaryOp(v1, v2) => v1.recursion_depths().max(v2.recursion_depths()),
             Self::MemberAccess(m) => m.recursion_depths(),
             Self::PostfixOp(o) => o.recursion_depths(),
-            Self::Ellipsis => RecursionDepths::NONE,
+            Self::Ellipsis => RecursionDepths::NEVER,
+        }
+    }
+
+    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+        match self {
+            // FIXME: Add a recursion bound on array indexing
+            Self::ArrayIndex(i) => {
+                write!(f, "[")?;
+                i.display(f, depths)?;
+                write!(f, "]")
+            }
+            Self::FunctionCall(a) => a.display(f, depths),
+            Self::BinaryOp(o, v) => {
+                o.display(f, depths, operators::DisplayContext::BinaryUsage)?;
+                v.display(f, depths)
+            }
+            Self::TernaryOp(v1, v2) => {
+                write!(f, " ? ")?;
+                v1.display(f, depths)?;
+                write!(f, " : ")?;
+                v2.display(f, depths)
+            }
+            Self::MemberAccess(m) => {
+                write!(f, ".")?;
+                m.display(f, depths)
+            }
+            Self::PostfixOp(o) => o.display(f, depths, operators::DisplayContext::PostfixUsage),
+            Self::Ellipsis => write!(f, "..."),
         }
     }
 }
