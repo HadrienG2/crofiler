@@ -4,8 +4,10 @@ mod overloads;
 pub mod usage;
 
 use crate::{
-    names::atoms::{IdentifierKey, IdentifierView},
-    types::{TypeKey, TypeView},
+    subparsers::{
+        names::atoms::{IdentifierKey, IdentifierView},
+        types::{TypeKey, TypeView},
+    },
     Entities, EntityParser, IResult,
 };
 use nom::Parser;

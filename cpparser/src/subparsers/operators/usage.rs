@@ -2,8 +2,10 @@
 
 use super::{Operator, Symbol};
 use crate::{
-    functions::{FunctionArgumentsKey, FunctionArgumentsView},
-    types::{TypeKey, TypeView},
+    subparsers::{
+        functions::{FunctionArgumentsKey, FunctionArgumentsView},
+        types::{TypeKey, TypeView},
+    },
     Entities, EntityParser, IResult,
 };
 use nom::Parser;

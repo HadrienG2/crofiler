@@ -1,11 +1,13 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
 use crate::{
-    anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
-    names::atoms::{IdentifierKey, IdentifierView},
-    operators::{self, Operator, OperatorView},
-    templates::{TemplateParameters, TemplateParametersView},
-    values::{ValueKey, ValueView},
+    subparsers::{
+        anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
+        names::atoms::{IdentifierKey, IdentifierView},
+        operators::{self, Operator, OperatorView},
+        templates::{TemplateParameters, TemplateParametersView},
+        values::{ValueKey, ValueView},
+    },
     Entities, EntityParser, IResult,
 };
 use nom::Parser;

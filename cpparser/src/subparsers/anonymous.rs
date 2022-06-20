@@ -2,8 +2,10 @@
 //! including lambdas, anonymous classes, anonymous namespaces...
 
 use crate::{
-    functions::{FunctionSignature, FunctionSignatureView},
-    names::atoms::{IdentifierKey, IdentifierView},
+    subparsers::{
+        functions::{FunctionSignature, FunctionSignatureView},
+        names::atoms::{IdentifierKey, IdentifierView},
+    },
     Entities, EntityParser, IResult, InternedPath, PathKey,
 };
 use nom::Parser;

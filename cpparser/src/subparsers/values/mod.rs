@@ -4,16 +4,18 @@ pub mod literals;
 
 use self::literals::{Literal, LiteralView};
 use crate::{
-    functions::{FunctionArgumentsKey, FunctionArgumentsView},
     interning::slice::{SliceItemView, SliceView},
-    names::{
-        scopes::{IdExpression, IdExpressionView},
-        unqualified::{UnqualifiedId, UnqualifiedIdView},
-    },
-    operators::{
-        self,
-        usage::{NewExpression, NewExpressionView},
-        Operator, OperatorView,
+    subparsers::{
+        functions::{FunctionArgumentsKey, FunctionArgumentsView},
+        names::{
+            scopes::{IdExpression, IdExpressionView},
+            unqualified::{UnqualifiedId, UnqualifiedIdView},
+        },
+        operators::{
+            self,
+            usage::{NewExpression, NewExpressionView},
+            Operator, OperatorView,
+        },
     },
     Entities, EntityParser, IResult,
 };
@@ -539,7 +541,7 @@ impl<'entities> SliceItemView<'entities> for AfterValueView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{operators::Symbol, tests::unwrap_parse};
+    use crate::{subparsers::operators::Symbol, tests::unwrap_parse};
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 

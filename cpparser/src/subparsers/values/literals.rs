@@ -1,7 +1,7 @@
 //! Literals (and things that should be literals like negative numbers)
 
 use crate::{
-    names::atoms::{IdentifierKey, IdentifierView},
+    subparsers::names::atoms::{IdentifierKey, IdentifierView},
     Entities, EntityParser, IResult,
 };
 use nom::Parser;

@@ -4,10 +4,12 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    functions::{FunctionSignature, FunctionSignatureView},
     interning::slice::{SliceItemView, SliceView},
-    names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
-    values::{ValueKey, ValueView},
+    subparsers::{
+        functions::{FunctionSignature, FunctionSignatureView},
+        names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
+        values::{ValueKey, ValueView},
+    },
     Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};

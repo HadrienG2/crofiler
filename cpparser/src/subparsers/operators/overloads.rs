@@ -1,7 +1,7 @@
 //! Operator-related grammar that is only used when declaring overloads
 
 use super::Operator;
-use crate::{templates::TemplateParameters, EntityParser, IResult};
+use crate::{subparsers::templates::TemplateParameters, EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 

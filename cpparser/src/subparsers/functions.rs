@@ -2,12 +2,14 @@
 
 use crate::{
     interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
-    names::atoms::{IdentifierKey, IdentifierView},
-    types::{
-        qualifiers::{ConstVolatile, Reference},
-        TypeKey, TypeView,
+    subparsers::{
+        names::atoms::{IdentifierKey, IdentifierView},
+        types::{
+            qualifiers::{ConstVolatile, Reference},
+            TypeKey, TypeView,
+        },
+        values::{ValueKey, ValueView},
     },
-    values::{ValueKey, ValueView},
     Entities, EntityParser, IResult,
 };
 use asylum::{

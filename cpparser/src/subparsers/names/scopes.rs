@@ -2,12 +2,14 @@
 
 use super::unqualified::{UnqualifiedId, UnqualifiedIdView};
 use crate::{
-    functions::{FunctionSignature, FunctionSignatureView},
     interning::{
         recursion::SequenceEntry,
         slice::{SliceItemView, SliceView},
     },
-    types::qualifiers::{ConstVolatile, Reference},
+    subparsers::{
+        functions::{FunctionSignature, FunctionSignatureView},
+        types::qualifiers::{ConstVolatile, Reference},
+    },
     Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};

@@ -2,34 +2,30 @@
 
 #![deny(missing_docs)]
 
-pub mod anonymous;
-pub mod functions;
 mod interning;
-pub mod names;
-pub mod operators;
-pub mod templates;
-pub mod types;
-pub mod values;
+pub mod subparsers;
 
 use crate::{
-    functions::{
-        FunctionArgumentsKeyImpl, FunctionParametersKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS,
-        FUNCTION_PARAMETERS_LEN_BITS,
-    },
     interning::recursion::RecursiveSequenceInterner,
-    names::{
-        atoms::IdentifierKey,
-        scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
+    subparsers::{
+        functions::{
+            FunctionArgumentsKeyImpl, FunctionParametersKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS,
+            FUNCTION_PARAMETERS_LEN_BITS,
+        },
+        names::{
+            atoms::IdentifierKey,
+            scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
+        },
+        templates::{
+            TemplateParameter, TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS,
+        },
+        types::{
+            declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
+            specifiers::legacy::{self, LegacyName},
+            TypeKey, TypeLike, TypeView,
+        },
+        values::{AfterValue, ValueKey, ValueLike, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS},
     },
-    templates::{
-        TemplateParameter, TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS,
-    },
-    types::{
-        declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
-        specifiers::legacy::{self, LegacyName},
-        TypeKey, TypeLike, TypeView,
-    },
-    values::{AfterValue, ValueKey, ValueLike, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS},
 };
 use asylum::{
     lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},

@@ -7,7 +7,7 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
-    names::scopes::{IdExpression, IdExpressionView},
+    subparsers::names::scopes::{IdExpression, IdExpressionView},
     Entities, EntityParser, IResult,
 };
 use nom::Parser;

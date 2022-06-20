@@ -9,8 +9,8 @@ use self::{
     specifiers::{TypeSpecifier, TypeSpecifierView},
 };
 use crate::{
-    functions::{FunctionArgumentsKey, FunctionArgumentsView},
     interning::slice::SliceItemView,
+    subparsers::functions::{FunctionArgumentsKey, FunctionArgumentsView},
     Entities, EntityParser, IResult,
 };
 use asylum::lasso::Spur;

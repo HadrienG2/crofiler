@@ -2,8 +2,10 @@
 
 use crate::{
     interning::slice::{SliceItemView, SliceView},
-    types::{TypeKey, TypeView},
-    values::{ValueKey, ValueView},
+    subparsers::{
+        types::{TypeKey, TypeView},
+        values::{ValueKey, ValueView},
+    },
     Entities, EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
