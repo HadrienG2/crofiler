@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use clap::Parser;
-use cpparser::EntityParser;
+use cpparser::{display::CustomDisplay, EntityParser};
 
 /// Simplify a C++ entity name into a human-readable form
 ///
@@ -42,7 +42,9 @@ fn main() {
         .parse_entity(&entity)
         .expect("Failed to parse entity name");
     let entities = parser.finalize();
+    let entity = entities.entity(entity);
 
     // Display it
-    println!("{}", entities.entity(entity));
+    println!("{}", entity);
+    println!("Recursion depths are {:#?}", entity.recursion_depths());
 }

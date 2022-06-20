@@ -2,10 +2,12 @@
 
 #![deny(missing_docs)]
 
+pub mod display;
 mod interning;
 pub mod subparsers;
 
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     interning::recursion::RecursiveSequenceInterner,
     subparsers::{
         functions::{
@@ -290,6 +292,12 @@ impl<'entities> Display for EntityView<'entities> {
         } else {
             write!(f, "<unknown>")
         }
+    }
+}
+//
+impl<'entities> CustomDisplay for EntityView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.0.recursion_depths()
     }
 }
 

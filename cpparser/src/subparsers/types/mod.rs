@@ -9,6 +9,7 @@ use self::{
     specifiers::{TypeSpecifier, TypeSpecifierView},
 };
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     interning::slice::SliceItemView,
     subparsers::functions::{FunctionArgumentsKey, FunctionArgumentsView},
     Entities, EntityParser, IResult,
@@ -158,11 +159,24 @@ impl<'entities> Display for TypeView<'entities> {
     }
 }
 //
+impl<'entities> CustomDisplay for TypeView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.attributes()
+            .recursion_depths()
+            .max(self.type_specifier().recursion_depths())
+            .max(self.declarator().recursion_depths())
+    }
+}
+//
 impl<'entities> SliceItemView<'entities> for TypeView<'entities> {
     type Inner = TypeKey;
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
+    }
+
+    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
+        &mut depths.function_parameters
     }
 
     const DISPLAY_HEADER: &'static str = "(";

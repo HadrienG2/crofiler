@@ -1,6 +1,7 @@
 //! Function-related parsing
 
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
@@ -317,6 +318,15 @@ impl<'entities> Display for FunctionSignatureView<'entities> {
             write!(f, " -> {ty}")?;
         }
         Ok(())
+    }
+}
+//
+impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.parameters()
+            .recursion_depths()
+            .max(self.noexcept().recursion_depths())
+            .max(self.trailing_return().recursion_depths())
     }
 }
 

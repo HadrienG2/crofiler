@@ -7,6 +7,7 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     subparsers::names::scopes::{IdExpression, IdExpressionView},
     Entities, EntityParser, IResult,
 };
@@ -131,6 +132,12 @@ impl<'entities> Display for TypeSpecifierView<'entities> {
         write!(f, "{}", self.simple_type())
     }
 }
+//
+impl<'entities> CustomDisplay for TypeSpecifierView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.simple_type().recursion_depths()
+    }
+}
 
 /// Inner simple type specifiers that TypeSpecifier can wrap
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -187,6 +194,16 @@ impl<'entities> Display for SimpleTypeView<'entities> {
             Self::IdExpression(i) => write!(f, "{i}"),
             Self::LegacyName(l) => write!(f, "{l}"),
             Self::LibibertyAuto(u) => write!(f, "auto:{u}"),
+        }
+    }
+}
+//
+impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        match self {
+            Self::IdExpression(i) => i.recursion_depths(),
+            Self::LegacyName(_) => RecursionDepths::NONE,
+            Self::LibibertyAuto(_) => RecursionDepths::NONE,
         }
     }
 }

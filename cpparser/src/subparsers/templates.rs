@@ -1,6 +1,7 @@
 //! Things that could be templates
 
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         types::{TypeKey, TypeView},
@@ -155,6 +156,12 @@ impl<'entities> Display for TemplateParametersView<'entities> {
         }
     }
 }
+//
+impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.0.recursion_depths()
+    }
+}
 
 /// View of a set of template parameters, excluding clang's `<, void>` edge case
 pub type TemplateParameterListView<'entities> = SliceView<
@@ -204,11 +211,24 @@ impl<'entities> Display for TemplateParameterView<'entities> {
     }
 }
 //
+impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        match self {
+            Self::TypeLike(t) => t.recursion_depths(),
+            Self::ValueLike(v) => v.recursion_depths(),
+        }
+    }
+}
+//
 impl<'entities> SliceItemView<'entities> for TemplateParameterView<'entities> {
     type Inner = TemplateParameter;
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
+    }
+
+    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
+        &mut depths.templates
     }
 
     const DISPLAY_HEADER: &'static str = "<";

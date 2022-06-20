@@ -2,6 +2,7 @@
 //! including lambdas, anonymous classes, anonymous namespaces...
 
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     subparsers::{
         functions::{FunctionSignature, FunctionSignatureView},
         names::atoms::{IdentifierKey, IdentifierView},
@@ -211,6 +212,12 @@ impl<'entities> Display for LibibertyLambdaView<'entities> {
         write!(f, "{{lambda{}#{}}}", self.signature(), self.id())
     }
 }
+//
+impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.signature().recursion_depths()
+    }
+}
 
 /// Lambda function
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -247,6 +254,16 @@ impl<'entities> Display for LambdaView<'entities> {
         match self {
             Self::Clang(c) => write!(f, "{c}"),
             Self::Libiberty(l) => write!(f, "{l}"),
+        }
+    }
+}
+//
+impl<'entities> CustomDisplay for LambdaView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        match self {
+            // FIXME: Bring in simplified path display from crofiler
+            Self::Clang(_) => RecursionDepths::NONE,
+            Self::Libiberty(l) => l.recursion_depths(),
         }
     }
 }

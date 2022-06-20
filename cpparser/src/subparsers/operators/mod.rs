@@ -4,6 +4,7 @@ mod overloads;
 pub mod usage;
 
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
         types::{TypeKey, TypeView},
@@ -272,6 +273,21 @@ pub enum DisplayContext {
 
     /// Usage in postfix position
     PostfixUsage,
+}
+//
+impl<'entities> CustomDisplay for OperatorView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        match self {
+            Self::Basic { .. } => RecursionDepths::NONE,
+            Self::Deref { .. } => RecursionDepths::NONE,
+            Self::Spaceship => RecursionDepths::NONE,
+            Self::CallIndex { .. } => RecursionDepths::NONE,
+            Self::CustomLiteral(_) => RecursionDepths::NONE,
+            Self::NewDelete { .. } => RecursionDepths::NONE,
+            Self::CoAwait => RecursionDepths::NONE,
+            Self::Conversion(ty) => ty.recursion_depths(),
+        }
+    }
 }
 
 /// Parse arithmetic and comparison operators

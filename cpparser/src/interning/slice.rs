@@ -5,6 +5,7 @@ use crate::{
         lasso::{Key, Spur},
         sequence::{InternedSequences, SequenceKey},
     },
+    display::{CustomDisplay, RecursionDepths},
     Entities,
 };
 use std::{
@@ -101,6 +102,24 @@ impl<
         ItemView: SliceItemView<'entities, Inner = Item>,
         KeyImpl: Key,
         const LEN_BITS: u32,
+    > CustomDisplay for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
+{
+    fn recursion_depths(&self) -> RecursionDepths {
+        let mut depths = self
+            .iter()
+            .map(|item| item.recursion_depths())
+            .fold(RecursionDepths::NONE, |acc, item| acc.max(item));
+        *ItemView::get_recursion_depth(&mut depths) += (self.iter().count() != 0) as usize;
+        depths
+    }
+}
+//
+impl<
+        'entities,
+        Item: Clone,
+        ItemView: SliceItemView<'entities, Inner = Item>,
+        KeyImpl: Key,
+        const LEN_BITS: u32,
     > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
@@ -117,12 +136,16 @@ impl<
 }
 
 /// Trait to be implemented by views of all items that appear in a slice
-pub trait SliceItemView<'entities>: Display + PartialEq {
+// FIXME: Remove Display bound once CustomDisplay can replace it
+pub trait SliceItemView<'entities>: CustomDisplay + Display + PartialEq {
     /// Underlying storage type that this view wraps
     type Inner: 'entities;
 
     /// Wrap the storage type
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self;
+
+    /// Find the recursion depth for this in the RecursionDepths struct
+    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize;
 
     /// String to be used at the beginning of the display
     const DISPLAY_HEADER: &'static str;

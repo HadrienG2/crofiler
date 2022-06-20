@@ -2,6 +2,7 @@
 
 use super::unqualified::{UnqualifiedId, UnqualifiedIdView};
 use crate::{
+    display::{CustomDisplay, RecursionDepths},
     interning::{
         recursion::SequenceEntry,
         slice::{SliceItemView, SliceView},
@@ -248,6 +249,14 @@ impl<'entities> Display for IdExpressionView<'entities> {
         write!(f, "{}{}", self.path(), self.id())
     }
 }
+//
+impl<'entities> CustomDisplay for IdExpressionView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.path()
+            .recursion_depths()
+            .max(self.id().recursion_depths())
+    }
+}
 
 /// A nested name specifier
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -307,6 +316,12 @@ impl<'entities> Display for NestedNameSpecifierView<'entities> {
             write!(f, "::")?;
         }
         write!(f, "{}", self.scopes())
+    }
+}
+//
+impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        self.scopes().recursion_depths()
     }
 }
 
@@ -388,11 +403,21 @@ impl<'entities> Display for ScopeView<'entities> {
     }
 }
 //
+impl<'entities> CustomDisplay for ScopeView<'entities> {
+    fn recursion_depths(&self) -> RecursionDepths {
+        (self.id().recursion_depths()).max(self.function_signature().recursion_depths())
+    }
+}
+//
 impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
     type Inner = Scope;
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
+    }
+
+    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
+        &mut depths.scopes
     }
 
     const DISPLAY_HEADER: &'static str = "";
