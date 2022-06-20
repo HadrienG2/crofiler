@@ -109,7 +109,10 @@ impl<
             .iter()
             .map(|item| item.recursion_depths())
             .fold(RecursionDepths::NEVER, |acc, item| acc.max(item));
-        *ItemView::get_recursion_depth(&mut depths) += (self.iter().count() != 0) as usize;
+        if self.iter().count() > 0 {
+            depths.total += 1;
+            *ItemView::get_recursion_depth(&mut depths) += 1;
+        }
         depths
     }
 
@@ -120,7 +123,8 @@ impl<
     ) -> Result<(), fmt::Error> {
         write!(f, "{}", ItemView::DISPLAY_HEADER)?;
         let get_depth = ItemView::get_recursion_depth;
-        if *get_depth(&mut depths) > 0 {
+        if depths.total > 0 && *get_depth(&mut depths) > 0 {
+            depths.total -= 1;
             *get_depth(&mut depths) -= 1;
             let mut iterator = self.iter().peekable();
             while let Some(view) = iterator.next() {

@@ -327,11 +327,11 @@ impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
     }
 
     fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
-        if self.is_rooted() && depths.scopes > 0 {
+        if self.is_rooted() && depths.total > 0 && depths.scopes > 0 {
             write!(f, "::")?;
         }
         self.scopes().display(f, depths)?;
-        if depths.scopes == 0 && !self.scopes().is_empty() {
+        if (depths.total == 0 || depths.scopes == 0) && !self.scopes().is_empty() {
             write!(f, "::")?;
         }
         Ok(())

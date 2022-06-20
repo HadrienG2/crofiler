@@ -28,10 +28,14 @@ impl<T: CustomDisplay> CustomDisplay for Option<T> {
     }
 }
 
-/// Recursion depth to be used while rendering an entity
+/// Maximal recursion depth to be used while rendering an entity
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct RecursionDepths {
+    /// Total recursion depth no matter the entity type
+    #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
+    pub total: usize,
+
     /// Scopes (x::y::z::... paths)
     #[cfg_attr(feature = "clap", clap(long, default_value = "999999999"))]
     pub scopes: usize,
@@ -60,6 +64,7 @@ pub struct RecursionDepths {
 impl RecursionDepths {
     /// Prevent any form of grammatically allowed recursion
     pub const NEVER: Self = Self {
+        total: usize::MIN,
         scopes: usize::MIN,
         templates: usize::MIN,
         function_parameters: usize::MIN,
@@ -70,6 +75,7 @@ impl RecursionDepths {
 
     /// Allow unbounded recursion
     pub const ALWAYS: Self = Self {
+        total: usize::MAX,
         scopes: usize::MAX,
         templates: usize::MAX,
         function_parameters: usize::MAX,
@@ -81,6 +87,7 @@ impl RecursionDepths {
     /// Combine two recursion depths, picking the highest limits
     pub fn max(self, other: Self) -> Self {
         Self {
+            total: self.total.max(other.total),
             scopes: self.scopes.max(other.scopes),
             templates: self.templates.max(other.templates),
             function_parameters: self.function_parameters.max(other.function_parameters),
