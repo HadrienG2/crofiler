@@ -179,11 +179,15 @@ impl EntityParser {
     /// None will be returned upon encountering the special `<unknown>` entity
     /// that clang occasionally feels like referring to.
     ///
-    pub fn parse_entity<'source>(&self, s: &'source str) -> IResult<'source, EntityKey> {
+    pub fn parse_entity<'source>(
+        &self,
+        s: &'source str,
+    ) -> Result<EntityKey, nom::error::Error<&'source str>> {
         use nom::combinator::eof;
+        use nom_supreme::final_parser::final_parser;
         let type_like = (|s| self.parse_type_like(s)).map(Some);
         let unknown = Self::parse_unknown_entity.value(None);
-        type_like.or(unknown).terminated(eof).parse(s)
+        final_parser(type_like.or(unknown).terminated(eof))(s)
     }
 
     /// Done parsing entities, just keep access to them
@@ -311,10 +315,10 @@ pub(crate) mod tests {
         // Something that looks like a type name
         assert_eq!(
             parser.parse_entity("type_name"),
-            Ok(("", Some(unwrap_parse(parser.parse_type_like("type_name")))))
+            Ok(Some(unwrap_parse(parser.parse_type_like("type_name"))))
         );
 
         // The infamous unknown clang entity
-        assert_eq!(parser.parse_entity("<unknown>"), Ok(("", None)));
+        assert_eq!(parser.parse_entity("<unknown>"), Ok(None));
     }
 }
