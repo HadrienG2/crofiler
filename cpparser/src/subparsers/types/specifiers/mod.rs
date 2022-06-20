@@ -7,7 +7,7 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     subparsers::names::scopes::{IdExpression, IdExpressionView},
     Entities, EntityParser, IResult,
 };
@@ -125,7 +125,7 @@ impl<'entities> PartialEq for TypeSpecifierView<'entities> {
 //
 impl<'entities> Display for TypeSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -134,12 +134,12 @@ impl<'entities> CustomDisplay for TypeSpecifierView<'entities> {
         self.simple_type().recursion_depths()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         let cv = self.cv();
         if cv != ConstVolatile::default() {
             write!(f, "{cv} ")?;
         }
-        self.simple_type().display(f, depths)
+        self.simple_type().display(f, state)
     }
 }
 
@@ -194,7 +194,7 @@ impl<'entities> SimpleTypeView<'entities> {
 //
 impl<'entities> Display for SimpleTypeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -207,9 +207,9 @@ impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
-            Self::IdExpression(i) => i.display(f, depths),
+            Self::IdExpression(i) => i.display(f, state),
             Self::LegacyName(l) => write!(f, "{l}"),
             Self::LibibertyAuto(u) => write!(f, "auto:{u}"),
         }

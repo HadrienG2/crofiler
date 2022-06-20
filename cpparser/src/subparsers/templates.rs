@@ -1,7 +1,7 @@
 //! Things that could be templates
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         types::{TypeKey, TypeView},
@@ -149,7 +149,7 @@ impl<'entities> TemplateParametersView<'entities> {
 //
 impl<'entities> Display for TemplateParametersView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -158,9 +158,9 @@ impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
         self.0.recursion_depths()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(list) = &self.0 {
-            list.display(f, depths)
+            list.display(f, state)
         } else {
             write!(f, "<, void>")
         }
@@ -208,7 +208,7 @@ impl<'entities> TemplateParameterView<'entities> {
 //
 impl<'entities> Display for TemplateParameterView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -220,10 +220,10 @@ impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
-            Self::TypeLike(t) => t.display(f, depths),
-            Self::ValueLike(v) => v.display(f, depths),
+            Self::TypeLike(t) => t.display(f, state),
+            Self::ValueLike(v) => v.display(f, state),
         }
     }
 }

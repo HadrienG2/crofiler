@@ -1,7 +1,7 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     subparsers::{
         anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
         names::atoms::{IdentifierKey, IdentifierView},
@@ -231,7 +231,7 @@ impl<'entities> UnqualifiedIdView<'entities> {
 //
 impl<'entities> Display for UnqualifiedIdView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -255,7 +255,7 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Named {
                 is_destructor,
@@ -266,22 +266,22 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
                     write!(f, "~")?;
                 }
                 write!(f, "{id}")?;
-                template_parameters.display(f, depths)
+                template_parameters.display(f, state)
             }
             Self::Operator {
                 operator,
                 template_parameters,
             } => {
-                operator.display(f, depths, operators::DisplayContext::Declaration)?;
-                template_parameters.display(f, depths)
+                operator.display(f, state, operators::DisplayContext::Declaration)?;
+                template_parameters.display(f, state)
             }
             Self::Decltype(value) => {
                 // FIXME: Add decltype to list of elidable recursions
                 write!(f, "decltype(")?;
-                value.display(f, depths)?;
+                value.display(f, state)?;
                 write!(f, ")")
             }
-            Self::Lambda(lambda) => lambda.display(f, depths),
+            Self::Lambda(lambda) => lambda.display(f, state),
             Self::Anonymous(anonymous) => write!(f, "{anonymous}"),
         }
     }

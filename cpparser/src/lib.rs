@@ -7,7 +7,7 @@ mod interning;
 pub mod subparsers;
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::recursion::RecursiveSequenceInterner,
     subparsers::{
         functions::{
@@ -287,7 +287,7 @@ impl<'entities> EntityView<'entities> {
 //
 impl<'entities> Display for EntityView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -296,9 +296,9 @@ impl<'entities> CustomDisplay for EntityView<'entities> {
         self.0.recursion_depths()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(ty) = &self.0 {
-            ty.display(f, depths)
+            ty.display(f, state)
         } else {
             write!(f, "<unknown>")
         }

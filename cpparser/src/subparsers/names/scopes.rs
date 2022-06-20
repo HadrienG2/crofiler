@@ -2,7 +2,7 @@
 
 use super::unqualified::{UnqualifiedId, UnqualifiedIdView};
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::{
         recursion::SequenceEntry,
         slice::{SliceItemView, SliceView},
@@ -246,7 +246,7 @@ impl<'entities> PartialEq for IdExpressionView<'entities> {
 //
 impl<'entities> Display for IdExpressionView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -257,9 +257,9 @@ impl<'entities> CustomDisplay for IdExpressionView<'entities> {
             .max(self.id().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
-        self.path().display(f, depths)?;
-        self.id().display(f, depths)
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.path().display(f, state)?;
+        self.id().display(f, state)
     }
 }
 
@@ -317,7 +317,7 @@ impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
 //
 impl<'entities> Display for NestedNameSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -326,13 +326,14 @@ impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
         self.scopes().recursion_depths()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
-        if self.is_rooted() && depths.total > 0 && depths.scopes > 0 {
-            write!(f, "::")?;
-        }
-        self.scopes().display(f, depths)?;
-        if (depths.total == 0 || depths.scopes == 0) && !self.scopes().is_empty() {
-            write!(f, "::")?;
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        if state.can_recurse(|depths| &mut depths.scopes) {
+            if self.is_rooted() {
+                write!(f, "::")?;
+            }
+            self.scopes().display(f, state)?;
+        } else if !self.scopes().is_empty() {
+            write!(f, "…::")?;
         }
         Ok(())
     }
@@ -408,7 +409,7 @@ impl<'entities> PartialEq for ScopeView<'entities> {
 //
 impl<'entities> Display for ScopeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -417,9 +418,9 @@ impl<'entities> CustomDisplay for ScopeView<'entities> {
         (self.id().recursion_depths()).max(self.function_signature().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
-        self.id().display(f, depths)?;
-        self.function_signature().display(f, depths)?;
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.id().display(f, state)?;
+        self.function_signature().display(f, state)?;
         write!(f, "::")
     }
 }

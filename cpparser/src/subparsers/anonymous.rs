@@ -2,7 +2,7 @@
 //! including lambdas, anonymous classes, anonymous namespaces...
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     subparsers::{
         functions::{FunctionSignature, FunctionSignatureView},
         names::atoms::{IdentifierKey, IdentifierView},
@@ -209,7 +209,7 @@ impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
 //
 impl<'entities> Display for LibibertyLambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -218,9 +218,9 @@ impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
         self.signature().recursion_depths()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         write!(f, "{{lambda")?;
-        self.signature().display(f, depths)?;
+        self.signature().display(f, state)?;
         write!(f, "#{}}}", self.id())
     }
 }
@@ -257,7 +257,7 @@ impl<'entities> LambdaView<'entities> {
 //
 impl<'entities> Display for LambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -270,10 +270,10 @@ impl<'entities> CustomDisplay for LambdaView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Clang(c) => write!(f, "{c}"),
-            Self::Libiberty(l) => l.display(f, depths),
+            Self::Libiberty(l) => l.display(f, state),
         }
     }
 }

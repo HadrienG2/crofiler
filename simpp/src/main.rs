@@ -2,7 +2,7 @@ use std::{fmt::Display, io::Read};
 
 use clap::Parser;
 use cpparser::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     EntityParser,
 };
 
@@ -40,7 +40,7 @@ impl Display for Args {
 
         // Display it
         println!("Recursion depths are {:#?}", entity.recursion_depths());
-        entity.display(f, self.recursion_depths)
+        entity.display(f, &DisplayState::new(self.recursion_depths))
     }
 }
 

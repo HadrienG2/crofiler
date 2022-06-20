@@ -2,7 +2,7 @@
 
 use super::{Operator, Symbol};
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     subparsers::{
         functions::{FunctionArgumentsKey, FunctionArgumentsView},
         types::{TypeKey, TypeView},
@@ -230,7 +230,7 @@ impl<'entities> PartialEq for NewExpressionView<'entities> {
 //
 impl<'entities> Display for NewExpressionView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -242,15 +242,15 @@ impl<'entities> CustomDisplay for NewExpressionView<'entities> {
             .max(self.constructor().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if self.rooted() {
             write!(f, "::")?;
         }
         write!(f, "new")?;
-        self.placement().display(f, depths)?;
+        self.placement().display(f, state)?;
         write!(f, " ")?;
-        self.ty().display(f, depths)?;
-        self.constructor().display(f, depths)
+        self.ty().display(f, state)?;
+        self.constructor().display(f, state)
     }
 }
 

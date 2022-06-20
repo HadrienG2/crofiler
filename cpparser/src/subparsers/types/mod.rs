@@ -9,7 +9,7 @@ use self::{
     specifiers::{TypeSpecifier, TypeSpecifierView},
 };
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::slice::SliceItemView,
     subparsers::functions::{FunctionArgumentsKey, FunctionArgumentsView},
     Entities, EntityParser, IResult,
@@ -146,7 +146,7 @@ impl<'entities> PartialEq for TypeView<'entities> {
 //
 impl<'entities> Display for TypeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -158,18 +158,18 @@ impl<'entities> CustomDisplay for TypeView<'entities> {
             .max(self.declarator().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         let attributes = self.attributes();
         if !attributes.is_empty() {
             write!(f, "__attribute__(")?;
-            attributes.display(f, depths)?;
+            attributes.display(f, state)?;
             write!(f, ")")?;
         }
-        self.type_specifier().display(f, depths)?;
+        self.type_specifier().display(f, state)?;
         let declarator = self.declarator();
         if !declarator.is_empty() {
             write!(f, " ")?;
-            declarator.display(f, depths)?;
+            declarator.display(f, state)?;
         }
         Ok(())
     }

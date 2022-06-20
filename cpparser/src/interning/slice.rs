@@ -5,7 +5,7 @@ use crate::{
         lasso::{Key, Spur},
         sequence::{InternedSequences, SequenceKey},
     },
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     Entities,
 };
 use std::{
@@ -116,19 +116,12 @@ impl<
         depths
     }
 
-    fn display(
-        &self,
-        f: &mut Formatter<'_>,
-        mut depths: RecursionDepths,
-    ) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         write!(f, "{}", ItemView::DISPLAY_HEADER)?;
-        let get_depth = ItemView::get_recursion_depth;
-        if depths.total > 0 && *get_depth(&mut depths) > 0 {
-            depths.total -= 1;
-            *get_depth(&mut depths) -= 1;
+        if let Ok(_guard) = state.recurse(ItemView::get_recursion_depth) {
             let mut iterator = self.iter().peekable();
             while let Some(view) = iterator.next() {
-                view.display(f, depths)?;
+                view.display(f, state)?;
                 if iterator.peek().is_some() {
                     write!(f, "{}", ItemView::DISPLAY_SEPARATOR)?;
                 }
@@ -149,7 +142,7 @@ impl<
     > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 

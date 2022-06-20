@@ -4,7 +4,7 @@ mod overloads;
 pub mod usage;
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
         types::{TypeKey, TypeView},
@@ -179,7 +179,7 @@ impl<'entities> OperatorView<'entities> {
     pub fn display(
         &self,
         f: &mut Formatter<'_>,
-        depths: RecursionDepths,
+        state: &DisplayState,
         context: DisplayContext,
     ) -> Result<(), fmt::Error> {
         if context == DisplayContext::Declaration {
@@ -264,7 +264,7 @@ impl<'entities> OperatorView<'entities> {
                 } else if context == DisplayContext::PrefixUsage {
                     write!(f, "(")?;
                 }
-                ty.display(f, depths)?;
+                ty.display(f, state)?;
                 if context == DisplayContext::PrefixUsage {
                     write!(f, ")")?;
                 }

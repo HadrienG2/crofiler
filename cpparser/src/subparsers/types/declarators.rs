@@ -4,7 +4,7 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         functions::{FunctionSignature, FunctionSignatureView},
@@ -260,7 +260,7 @@ impl<'entities> DeclOperatorView<'entities> {
 //
 impl<'entities> Display for DeclOperatorView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -277,11 +277,11 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::ConstVolatile(cv) => write!(f, "{cv}")?,
             Self::Pointer { path, cv } => {
-                path.display(f, depths)?;
+                path.display(f, state)?;
                 write!(f, "*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
@@ -291,20 +291,20 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
             // FIXME: Add recursion bound based on [] sign
             Self::Array(a) => {
                 write!(f, "[")?;
-                a.display(f, depths)?;
+                a.display(f, state)?;
                 write!(f, "]")?;
             }
-            Self::Function(func) => func.display(f, depths)?,
+            Self::Function(func) => func.display(f, state)?,
             // FIXME: Add recursion bound based on () sign
             Self::Parenthesized(d) => {
                 write!(f, "(")?;
-                d.display(f, depths)?;
+                d.display(f, state)?;
                 write!(f, ")")?;
             }
             // FIXME: Add recursion bound based on () sign
             Self::VectorSize(s) => {
                 write!(f, "__vector(")?;
-                s.display(f, depths)?;
+                s.display(f, state)?;
                 write!(f, ")")?;
             }
         }

@@ -1,7 +1,7 @@
 //! Function-related parsing
 
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
@@ -289,7 +289,7 @@ impl<'entities> PartialEq for FunctionSignatureView<'entities> {
 //
 impl<'entities> Display for FunctionSignatureView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -301,12 +301,12 @@ impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
             .max(self.trailing_return().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(abi) = self.abi() {
             write!(f, "[abi:{abi}]")?;
         }
 
-        self.parameters().display(f, depths)?;
+        self.parameters().display(f, state)?;
 
         let cv = self.cv();
         if cv != ConstVolatile::default() {
@@ -323,7 +323,7 @@ impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
             write!(f, " noexcept")?;
             if let Some(value) = value {
                 write!(f, "(")?;
-                value.display(f, depths)?;
+                value.display(f, state)?;
                 write!(f, ")")?;
             }
         }
@@ -331,7 +331,7 @@ impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
         let trailing_return = self.trailing_return();
         if let Some(ty) = trailing_return {
             write!(f, " -> ")?;
-            ty.display(f, depths)?;
+            ty.display(f, state)?;
         }
         Ok(())
     }

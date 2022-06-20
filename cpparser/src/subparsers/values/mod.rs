@@ -4,7 +4,7 @@ pub mod literals;
 
 use self::literals::{Literal, LiteralView};
 use crate::{
-    display::{CustomDisplay, RecursionDepths},
+    display::{CustomDisplay, DisplayState, RecursionDepths},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         functions::{FunctionArgumentsKey, FunctionArgumentsView},
@@ -306,7 +306,7 @@ impl<'entities> PartialEq for ValueView<'entities> {
 //
 impl<'entities> Display for ValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -317,9 +317,9 @@ impl<'entities> CustomDisplay for ValueView<'entities> {
             .max(self.trailer().recursion_depths())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
-        self.header().display(f, depths)?;
-        self.trailer().display(f, depths)
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.header().display(f, state)?;
+        self.trailer().display(f, state)
     }
 }
 //
@@ -427,7 +427,7 @@ impl<'entities> ValueHeaderView<'entities> {
 //
 impl<'entities> Display for ValueHeaderView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -443,21 +443,21 @@ impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Literal(l) => write!(f, "{l}"),
             // FIXME: Add a recursion bound for parentheses
             Self::Parenthesized(v) => {
                 write!(f, "(")?;
-                v.display(f, depths)?;
+                v.display(f, state)?;
                 write!(f, ")")
             }
             Self::UnaryOp(o, v) => {
-                o.display(f, depths, operators::DisplayContext::PrefixUsage)?;
-                v.display(f, depths)
+                o.display(f, state, operators::DisplayContext::PrefixUsage)?;
+                v.display(f, state)
             }
-            Self::NewExpression(n) => n.display(f, depths),
-            Self::IdExpression(i) => i.display(f, depths),
+            Self::NewExpression(n) => n.display(f, state),
+            Self::IdExpression(i) => i.display(f, state),
             Self::Ellipsis => write!(f, "..."),
         }
     }
@@ -549,7 +549,7 @@ impl<'entities> AfterValueView<'entities> {
 //
 impl<'entities> Display for AfterValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, RecursionDepths::ALWAYS)
+        self.display(f, &DisplayState::default())
     }
 }
 //
@@ -566,30 +566,30 @@ impl<'entities> CustomDisplay for AfterValueView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, depths: RecursionDepths) -> Result<(), fmt::Error> {
+    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             // FIXME: Add a recursion bound on array indexing
             Self::ArrayIndex(i) => {
                 write!(f, "[")?;
-                i.display(f, depths)?;
+                i.display(f, state)?;
                 write!(f, "]")
             }
-            Self::FunctionCall(a) => a.display(f, depths),
+            Self::FunctionCall(a) => a.display(f, state),
             Self::BinaryOp(o, v) => {
-                o.display(f, depths, operators::DisplayContext::BinaryUsage)?;
-                v.display(f, depths)
+                o.display(f, state, operators::DisplayContext::BinaryUsage)?;
+                v.display(f, state)
             }
             Self::TernaryOp(v1, v2) => {
                 write!(f, " ? ")?;
-                v1.display(f, depths)?;
+                v1.display(f, state)?;
                 write!(f, " : ")?;
-                v2.display(f, depths)
+                v2.display(f, state)
             }
             Self::MemberAccess(m) => {
                 write!(f, ".")?;
-                m.display(f, depths)
+                m.display(f, state)
             }
-            Self::PostfixOp(o) => o.display(f, depths, operators::DisplayContext::PostfixUsage),
+            Self::PostfixOp(o) => o.display(f, state, operators::DisplayContext::PostfixUsage),
             Self::Ellipsis => write!(f, "..."),
         }
     }
