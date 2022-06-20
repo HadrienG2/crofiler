@@ -5,13 +5,13 @@ use cpparser::EntityParser;
 
 /// Simplify a C++ entity name into a human-readable form
 ///
-/// The entity can be provided from either the command line (with suitable
-/// quoting and escaping) or by piping a file into standard input;
+/// The entity can be provided from either directly on the command line (with
+/// suitable quoting and escaping) or by piping a file into standard input.
 ///
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// C++ entity name to be simplified
+    /// C++ entity name to be simplified (can also be specified via stdin)
     entity: Option<String>,
 }
 
