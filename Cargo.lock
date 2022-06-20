@@ -831,6 +831,7 @@ dependencies = [
 name = "simpp"
 version = "0.1.0"
 dependencies = [
+ "atty",
  "clap 3.2.5",
  "cpparser",
 ]
