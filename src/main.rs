@@ -4,7 +4,7 @@
 
 mod path;
 
-use clang_time_trace::{ActivityArgument, ClangTrace, Duration, MangledSymbol};
+use clang_time_trace::{ActivityArgument, ActivityTrace, ClangTrace, Duration, MangledSymbol};
 use std::collections::HashMap;
 
 fn main() {
@@ -39,36 +39,51 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
-    const FLAT_PROFILE_THRESHOLD: Duration = 0.01;
-    println!("\nHot activities by self-duration:");
-    //
-    let norm = 1.0 / root_duration;
-    let mut activities = trace
-        .all_activities()
-        .filter(|a| a.self_duration() * norm >= FLAT_PROFILE_THRESHOLD)
-        .collect::<Box<[_]>>();
-    //
-    activities
-        .sort_unstable_by(|a1, a2| a2.self_duration().partial_cmp(&a1.self_duration()).unwrap());
-    //
-    for activity_trace in activities.iter() {
-        let activity = activity_trace.activity();
-        let self_duration = activity_trace.self_duration();
-        let percent = self_duration * norm * 100.0;
-        println!("- {activity:?} ({self_duration} µs, {percent:.2} %)");
-    }
-    //
-    let num_activities = trace.all_activities().count();
-    if activities.len() < num_activities {
-        let other_activities = num_activities - activities.len();
-        println!(
-            "- ... and {other_activities} other activities below {} % threshold ...",
-            FLAT_PROFILE_THRESHOLD * 100.0
-        );
-    }
+    let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
+        println!("\nHot activities by {name}:");
+        //
+        let norm = 1.0 / root_duration;
+        let mut activities = trace
+            .all_activities()
+            .filter(|a| duration(a) * norm >= threshold)
+            .collect::<Box<[_]>>();
+        //
+        activities.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
+        //
+        for activity_trace in activities.iter() {
+            let activity_name = activity_trace.activity().name();
+            let activity_arg = activity_trace.activity().argument();
+            let duration = duration(&activity_trace);
+            let percent = duration * norm * 100.0;
+            print!("- {activity_name}");
+            match activity_arg {
+                ActivityArgument::Nothing => {}
+                ActivityArgument::String(s)
+                | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
+                | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => print!("({s})"),
+                ActivityArgument::FilePath(p) => print!("({})", trace.file_path(p)),
+                ActivityArgument::CppEntity(e)
+                | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
+                    print!("({})", trace.entity(e))
+                }
+            }
+            println!(" ({duration} µs, {percent:.2} %)");
+        }
+        //
+        let num_activities = trace.all_activities().count();
+        if activities.len() < num_activities {
+            let other_activities = num_activities - activities.len();
+            println!(
+                "- ... and {other_activities} other activities below {} % threshold ...",
+                threshold * 100.0
+            );
+        }
+    };
+    profile("self-duration", Box::new(|a| a.self_duration()), 0.01);
+    profile("total duration", Box::new(|a| a.duration()), 0.01);
 
     // Print a list of file paths
-    println!("\nFile paths:");
+    /*println!("\nFile paths:");
     let (width, _height) = termion::terminal_size().unwrap();
     for activity_trace in trace.all_activities() {
         if let ActivityArgument::FilePath(p) = activity_trace.activity().argument() {
@@ -77,7 +92,7 @@ fn main() {
                 path::truncate_path(&trace.file_path(p), width.min(80))
             )
         }
-    }
+    }*/
 
     // Play around with collected C++ entities
     println!("\nProcessing C++ entities...");
