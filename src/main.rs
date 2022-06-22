@@ -90,7 +90,7 @@ fn main() {
             let header = format!("- {activity_name}");
 
             let mut trailer = " (".to_string();
-            display_duration(&mut trailer, duration, HMS::None).unwrap();
+            display_duration(&mut trailer, duration, None).unwrap();
             write!(&mut trailer, ", {percent:.2} %)").unwrap();
 
             let arg_cols = max_cols - header.width() as u16 - trailer.width() as u16 - 2;
@@ -196,7 +196,7 @@ fn truncate_string(input: &str, max_cols: u16) -> String {
 }
 
 /// Display a duration in a human-readable format
-fn display_duration(mut output: impl Write, duration: Duration, hms: HMS) -> fmt::Result {
+fn display_duration(mut output: impl Write, duration: Duration, hms: Option<HMS>) -> fmt::Result {
     const MILLISECOND: Duration = 1000.0;
     const SECOND: Duration = 1000.0 * MILLISECOND;
     const MINUTE: Duration = 60.0 * SECOND;
@@ -204,14 +204,14 @@ fn display_duration(mut output: impl Write, duration: Duration, hms: HMS) -> fmt
     if duration >= HOUR {
         let hours = (duration / HOUR).floor();
         write!(&mut output, "{}:", hours)?;
-        display_duration(output, duration - hours * HOUR, HMS::ForceMinute)
-    } else if duration >= MINUTE || hms == HMS::ForceMinute {
+        display_duration(output, duration - hours * HOUR, Some(HMS::ForceMinute))
+    } else if duration >= MINUTE || hms == Some(HMS::ForceMinute) {
         let minutes = (duration / MINUTE).floor();
         write!(&mut output, "{}:", minutes)?;
-        display_duration(output, duration - minutes * MINUTE, HMS::ForceSecond)
-    } else if duration >= SECOND || hms == HMS::ForceSecond {
+        display_duration(output, duration - minutes * MINUTE, Some(HMS::ForceSecond))
+    } else if duration >= SECOND || hms == Some(HMS::ForceSecond) {
         write!(&mut output, "{:.2}", duration / SECOND)?;
-        if hms != HMS::ForceSecond {
+        if hms != Some(HMS::ForceSecond) {
             write!(&mut output, " s")?;
         }
         Ok(())
@@ -224,7 +224,6 @@ fn display_duration(mut output: impl Write, duration: Duration, hms: HMS) -> fmt
 //
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum HMS {
-    None,
     ForceMinute,
     ForceSecond,
 }
