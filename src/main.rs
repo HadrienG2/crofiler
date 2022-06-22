@@ -10,7 +10,7 @@ use clang_time_trace::{
 use clap::Parser;
 use std::{
     collections::HashMap,
-    fmt::{self, Write},
+    io::{self, Write},
     path::PathBuf,
 };
 use unicode_width::UnicodeWidthStr;
@@ -24,11 +24,11 @@ struct Args {
     max_cols: u16,
 
     /// Self-profile display threshold, as a percentage of total duration
-    #[clap(short, long, default_value = "1.0")]
+    #[clap(short, long, default_value = "0.5")]
     self_threshold: f32,
 
     /// Hierarchical profile display threshold, as a percentage of total duration
-    #[clap(short, long, default_value = "5.0")]
+    #[clap(short, long, default_value = "0.5")]
     hierarchical_threshold: f32,
 
     /// Clang time-trace file to be analyzed
@@ -48,6 +48,7 @@ fn main() {
         .root_activities()
         .map(|root| root.duration())
         .sum::<f64>();
+    let duration_norm = 1.0 / root_duration;
 
     // Activity types by self-duration
     println!("\nSelf-duration breakdown by activity type:");
@@ -73,56 +74,33 @@ fn main() {
     let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
         println!("\nHot activities by {name}:");
         //
-        let norm = 1.0 / root_duration;
         let mut activities = trace
             .all_activities()
-            .filter(|a| duration(a) * norm >= threshold)
+            .filter(|a| duration(a) * duration_norm >= threshold)
             .collect::<Box<[_]>>();
         //
         activities.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
         //
         for activity_trace in activities.iter() {
-            let activity_name = activity_trace.activity().name();
-            let activity_arg = activity_trace.activity().argument();
             let duration = duration(&activity_trace);
-            let percent = duration * norm * 100.0;
-
-            let header = format!("- {activity_name}");
-
-            let mut trailer = " (".to_string();
-            display_duration(&mut trailer, duration, None).unwrap();
-            write!(&mut trailer, ", {percent:.2} %)").unwrap();
-
-            let arg_cols = max_cols - header.width() as u16 - trailer.width() as u16 - 2;
-
-            print!("{header}");
-            match activity_arg {
-                ActivityArgument::Nothing => {}
-                ActivityArgument::String(s)
-                | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-                | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
-                    if s.width() <= arg_cols.into() {
-                        print!("({s})")
-                    } else {
-                        print!("({})", truncate_string(&s, arg_cols))
-                    }
-                }
-                ActivityArgument::FilePath(p) => {
-                    print!("({})", path::truncate_path(&trace.file_path(p), arg_cols))
-                }
-                ActivityArgument::CppEntity(e)
-                | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-                    print!("({})", trace.entity(e).bounded_display(arg_cols))
-                }
-            }
-            println!("{trailer}");
+            let percent = duration * duration_norm * 100.0;
+            print!("- ");
+            display_activity(
+                std::io::stdout(),
+                &trace,
+                activity_trace,
+                max_cols - 2,
+                duration,
+                percent,
+            )
+            .unwrap();
         }
         //
         let num_activities = trace.all_activities().count();
         if activities.len() < num_activities {
             let other_activities = num_activities - activities.len();
             println!(
-                "- ... and {other_activities} other activities below {} % threshold ...",
+                "- ... and {other_activities} other activities below {}% threshold ...",
                 threshold * 100.0
             );
         }
@@ -196,29 +174,33 @@ fn truncate_string(input: &str, max_cols: u16) -> String {
 }
 
 /// Display a duration in a human-readable format
-fn display_duration(mut output: impl Write, duration: Duration, hms: Option<HMS>) -> fmt::Result {
+fn display_duration(
+    mut output: impl io::Write,
+    duration: Duration,
+    hms: Option<HMS>,
+) -> io::Result<()> {
     const MILLISECOND: Duration = 1000.0;
     const SECOND: Duration = 1000.0 * MILLISECOND;
     const MINUTE: Duration = 60.0 * SECOND;
     const HOUR: Duration = 60.0 * MINUTE;
     if duration >= HOUR {
         let hours = (duration / HOUR).floor();
-        write!(&mut output, "{}:", hours)?;
+        write!(output, "{}:", hours)?;
         display_duration(output, duration - hours * HOUR, Some(HMS::ForceMinute))
     } else if duration >= MINUTE || hms == Some(HMS::ForceMinute) {
         let minutes = (duration / MINUTE).floor();
-        write!(&mut output, "{}:", minutes)?;
+        write!(output, "{}:", minutes)?;
         display_duration(output, duration - minutes * MINUTE, Some(HMS::ForceSecond))
     } else if duration >= SECOND || hms == Some(HMS::ForceSecond) {
-        write!(&mut output, "{:.2}", duration / SECOND)?;
+        write!(output, "{:.2}", duration / SECOND)?;
         if hms != Some(HMS::ForceSecond) {
-            write!(&mut output, " s")?;
+            write!(output, "s")?;
         }
         Ok(())
     } else if duration >= MILLISECOND {
-        write!(&mut output, "{:.2} ms", duration / MILLISECOND)
+        write!(output, "{:.2}ms", duration / MILLISECOND)
     } else {
-        write!(&mut output, "{duration} µs")
+        write!(output, "{duration}µs")
     }
 }
 //
@@ -226,4 +208,53 @@ fn display_duration(mut output: impl Write, duration: Duration, hms: Option<HMS>
 enum HMS {
     ForceMinute,
     ForceSecond,
+}
+
+/// Display an activity trace
+fn display_activity(
+    mut output: impl io::Write,
+    trace: &ClangTrace,
+    activity_trace: &ActivityTrace,
+    max_cols: u16,
+    duration: Duration,
+    percent: Duration,
+) -> io::Result<()> {
+    let activity_name = activity_trace.activity().name();
+    let activity_arg = activity_trace.activity().argument();
+
+    let header = format!("{activity_name}");
+    write!(output, "{header}")?;
+
+    let mut trailer = Vec::<u8>::new();
+    write!(trailer, " [")?;
+    display_duration(&mut trailer, duration, None)?;
+    write!(trailer, ", {percent:.2}%]")?;
+    let trailer = std::str::from_utf8(&trailer[..]).unwrap();
+
+    let arg_cols = (max_cols - header.width() as u16 - trailer.width() as u16).saturating_sub(2);
+
+    match activity_arg {
+        ActivityArgument::Nothing => {}
+        ActivityArgument::String(s)
+        | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
+        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
+            if s.width() <= arg_cols.into() {
+                write!(output, "({s})")?;
+            } else {
+                write!(output, "({})", truncate_string(&s, arg_cols))?;
+            }
+        }
+        ActivityArgument::FilePath(p) => {
+            write!(
+                output,
+                "({})",
+                path::truncate_path(&trace.file_path(p), arg_cols)
+            )?;
+        }
+        ActivityArgument::CppEntity(e)
+        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
+            write!(output, "({})", trace.entity(e).bounded_display(arg_cols))?;
+        }
+    }
+    writeln!(output, "{trailer}")
 }
