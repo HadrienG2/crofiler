@@ -45,9 +45,10 @@ fn main() {
         .unwrap_or(args.max_cols);
 
     // Load the clang trace
+    println!("Processing input data...");
     let trace = ClangTrace::from_file(args.input).unwrap();
 
-    println!("Data from {}", trace.process_name());
+    println!("\nData from {}", trace.process_name());
 
     // Total clang execution time
     let root_duration = trace
@@ -146,6 +147,14 @@ fn make_activity_tree(
     let root_display = String::from_utf8(root_display).unwrap().into_boxed_str();
     let mut tree = Tree::new(root_display).with_glyphs(palette);
 
+    // Stop recursion when there is no space to render children
+    let child_cols = max_cols
+        .saturating_sub(palette.middle_item.width() as u16)
+        .saturating_sub(palette.item_indent.width() as u16);
+    if child_cols == 0 {
+        return tree;
+    }
+
     // Collect hottest children
     let num_children = root.direct_children().count();
     let hottest_children = hottest_activities(
@@ -156,34 +165,27 @@ fn make_activity_tree(
     let num_hottest = hottest_children.len();
 
     // Render children
-    let make_child_tree = |child| {
-        make_activity_tree(
-            trace,
-            palette,
-            child,
-            duration_norm,
-            threshold,
-            max_cols - palette.middle_item.width() as u16 - palette.item_indent.width() as u16,
-        )
-    };
+    let make_child_tree =
+        |child| make_activity_tree(trace, palette, child, duration_norm, threshold, child_cols);
     tree = if num_hottest == num_children {
         tree.with_leaves(hottest_children.into_vec().into_iter().map(make_child_tree))
     } else {
+        let mut terminator = format!(
+            "…{} callee(s) below {}%…",
+            num_children - num_hottest,
+            threshold * 100.0
+        );
+        if terminator.width() > child_cols.into() {
+            terminator.clear();
+            terminator.push('…');
+        }
         tree.with_leaves(
             hottest_children
                 .into_vec()
                 .into_iter()
                 .map(make_child_tree)
                 .chain(std::iter::once(
-                    Tree::new(
-                        format!(
-                            "…{} callee(s) below {}%…",
-                            num_children - num_hottest,
-                            threshold * 100.0
-                        )
-                        .into(),
-                    )
-                    .with_glyphs(palette),
+                    Tree::new(terminator.into()).with_glyphs(palette),
                 )),
         )
     };
@@ -207,6 +209,7 @@ fn hottest_activities<'activities>(
 fn truncate_string(input: &str, max_cols: u16) -> String {
     // Make sure the request makes sense, set up common infrastructure
     debug_assert!(input.width() > max_cols.into());
+    debug_assert!(max_cols >= 1);
     let bytes = input.as_bytes();
     let mut result = String::new();
     let mut last_good = "";
@@ -294,24 +297,35 @@ fn display_activity(
     mut output: impl io::Write,
     trace: &ClangTrace,
     activity_trace: &ActivityTrace,
-    max_cols: u16,
+    mut max_cols: u16,
     duration: Duration,
     percent: Duration,
 ) -> io::Result<()> {
+    assert!(max_cols >= 1);
     let activity_name = activity_trace.activity().name();
     let activity_arg = activity_trace.activity().argument();
 
-    let header = format!("{activity_name}");
-    write!(output, "{header}")?;
+    // Can we display at least ActivityName(…)?
+    if usize::from(max_cols) < activity_name.width() + 3 {
+        // If not, display just an ellipsis
+        return write!(output, "…");
+    } else {
+        // If so, display the activity name...
+        write!(output, "{activity_name}")?;
+    }
+    // ...and account for the reserved space
+    max_cols -= activity_name.width() as u16 + 2;
 
+    // Do a test display of the trailing profiling numbers
     let mut trailer = Vec::<u8>::new();
     write!(trailer, " [")?;
     display_duration(&mut trailer, duration, None)?;
     write!(trailer, ", {percent:.2}%]")?;
     let trailer = std::str::from_utf8(&trailer[..]).unwrap();
 
-    let arg_cols = (max_cols - header.width() as u16 - trailer.width() as u16).saturating_sub(2);
-
+    // Allocate space for the activity name and display it
+    let arg_cols = max_cols.saturating_sub(trailer.width() as u16).max(1);
+    max_cols -= arg_cols;
     match activity_arg {
         ActivityArgument::Nothing => {}
         ActivityArgument::String(s)
@@ -335,5 +349,10 @@ fn display_activity(
             write!(output, "({})", trace.entity(e).bounded_display(arg_cols))?;
         }
     }
-    write!(output, "{trailer}")
+
+    // Display the trailer if there's room for it
+    if usize::from(max_cols) >= trailer.width() {
+        write!(output, "{trailer}")?;
+    }
+    Ok(())
 }
