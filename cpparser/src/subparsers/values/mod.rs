@@ -306,7 +306,7 @@ impl<'entities> PartialEq for ValueView<'entities> {
 //
 impl<'entities> Display for ValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -317,9 +317,9 @@ impl<'entities> CustomDisplay for ValueView<'entities> {
             .max(self.trailer().recursion_depth())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
-        self.header().display(f, state)?;
-        self.trailer().display(f, state)
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.header().display_impl(f, state)?;
+        self.trailer().display_impl(f, state)
     }
 }
 //
@@ -423,7 +423,7 @@ impl<'entities> ValueHeaderView<'entities> {
 //
 impl<'entities> Display for ValueHeaderView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -439,21 +439,21 @@ impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Literal(l) => write!(f, "{l}"),
             // FIXME: Add a recursion bound for parentheses
             Self::Parenthesized(v) => {
                 write!(f, "(")?;
-                v.display(f, state)?;
+                v.display_impl(f, state)?;
                 write!(f, ")")
             }
             Self::UnaryOp(o, v) => {
                 o.display(f, state, operators::DisplayContext::PrefixUsage)?;
-                v.display(f, state)
+                v.display_impl(f, state)
             }
-            Self::NewExpression(n) => n.display(f, state),
-            Self::IdExpression(i) => i.display(f, state),
+            Self::NewExpression(n) => n.display_impl(f, state),
+            Self::IdExpression(i) => i.display_impl(f, state),
             Self::Ellipsis => write!(f, "..."),
         }
     }
@@ -545,7 +545,7 @@ impl<'entities> AfterValueView<'entities> {
 //
 impl<'entities> Display for AfterValueView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -562,28 +562,28 @@ impl<'entities> CustomDisplay for AfterValueView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             // FIXME: Add a recursion bound on array indexing
             Self::ArrayIndex(i) => {
                 write!(f, "[")?;
-                i.display(f, state)?;
+                i.display_impl(f, state)?;
                 write!(f, "]")
             }
-            Self::FunctionCall(a) => a.display(f, state),
+            Self::FunctionCall(a) => a.display_impl(f, state),
             Self::BinaryOp(o, v) => {
                 o.display(f, state, operators::DisplayContext::BinaryUsage)?;
-                v.display(f, state)
+                v.display_impl(f, state)
             }
             Self::TernaryOp(v1, v2) => {
                 write!(f, " ? ")?;
-                v1.display(f, state)?;
+                v1.display_impl(f, state)?;
                 write!(f, " : ")?;
-                v2.display(f, state)
+                v2.display_impl(f, state)
             }
             Self::MemberAccess(m) => {
                 write!(f, ".")?;
-                m.display(f, state)
+                m.display_impl(f, state)
             }
             Self::PostfixOp(o) => o.display(f, state, operators::DisplayContext::PostfixUsage),
             Self::Ellipsis => write!(f, "..."),

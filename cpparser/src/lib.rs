@@ -287,7 +287,7 @@ impl<'entities> EntityView<'entities> {
 //
 impl<'entities> Display for EntityView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -296,9 +296,9 @@ impl<'entities> CustomDisplay for EntityView<'entities> {
         self.0.recursion_depth()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(ty) = &self.0 {
-            ty.display(f, state)
+            ty.display_impl(f, state)
         } else {
             write!(f, "<unknown>")
         }

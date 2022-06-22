@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    fmt::{self, Formatter},
+    fmt::{self, Display, Formatter},
 };
 
 /// Trait implemented by entities with a customizable display
@@ -11,10 +11,31 @@ pub trait CustomDisplay {
     /// the grammar, when rendering this entity
     fn recursion_depth(&self) -> usize;
 
-    /// Display the type, honoring a recursion depth constraint
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error>;
+    /// Display the type, honoring user-specified constraints
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error>;
+
+    /// Convenience layer over display_impl, returns a type that implements Display
+    fn display<'a>(&'a self, state: &'a DisplayState) -> CustomDisplayView<Self> {
+        CustomDisplayView { inner: self, state }
+    }
 }
 //
+/// View of a CustomDisplay type + display configuration that can be displayed
+pub struct CustomDisplayView<'inner, Inner: CustomDisplay + ?Sized> {
+    /// Entity to be displayed
+    inner: &'inner Inner,
+
+    /// Display configuration
+    state: &'inner DisplayState,
+}
+//
+impl<Inner: CustomDisplay> Display for CustomDisplayView<'_, Inner> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.inner.display_impl(f, self.state)
+    }
+}
+
+// Optional types get an optional display
 impl<T: CustomDisplay> CustomDisplay for Option<T> {
     fn recursion_depth(&self) -> usize {
         self.as_ref()
@@ -22,9 +43,9 @@ impl<T: CustomDisplay> CustomDisplay for Option<T> {
             .unwrap_or(0)
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(inner) = self {
-            inner.display(f, state)
+            inner.display_impl(f, state)
         } else {
             Ok(())
         }
@@ -53,7 +74,7 @@ impl DisplayState {
         state.max_recursion > 0
     }
 
-    /// Enter a new level of recursion, returns Err if recursion limit reached
+    /// Enter a new level of recursion or return Err if recursion limit reached
     pub fn recurse(&self) -> Result<RecursionGuard, ()> {
         if !self.can_recurse() {
             return Err(());
@@ -68,7 +89,7 @@ impl DisplayState {
 //
 /// Marker that recursion is ongoing, to be dropped automatically
 pub struct RecursionGuard<'state> {
-    /// Display state to be incremented after recursion finishes
+    /// Display state to be updated after recursion finishes
     state: &'state DisplayState,
 }
 //

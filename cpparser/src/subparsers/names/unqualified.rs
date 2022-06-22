@@ -231,7 +231,7 @@ impl<'entities> UnqualifiedIdView<'entities> {
 //
 impl<'entities> Display for UnqualifiedIdView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -255,7 +255,7 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Named {
                 is_destructor,
@@ -266,22 +266,22 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
                     write!(f, "~")?;
                 }
                 write!(f, "{id}")?;
-                template_parameters.display(f, state)
+                template_parameters.display_impl(f, state)
             }
             Self::Operator {
                 operator,
                 template_parameters,
             } => {
                 operator.display(f, state, operators::DisplayContext::Declaration)?;
-                template_parameters.display(f, state)
+                template_parameters.display_impl(f, state)
             }
             Self::Decltype(value) => {
                 // FIXME: Add decltype to list of elidable recursions
                 write!(f, "decltype(")?;
-                value.display(f, state)?;
+                value.display_impl(f, state)?;
                 write!(f, ")")
             }
-            Self::Lambda(lambda) => lambda.display(f, state),
+            Self::Lambda(lambda) => lambda.display_impl(f, state),
             Self::Anonymous(anonymous) => write!(f, "{anonymous}"),
         }
     }

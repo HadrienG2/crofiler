@@ -24,21 +24,6 @@ struct Args {
     entity: Option<String>,
 }
 
-/// Helper to display a C++ entity with a custom configuration
-struct EntityDisplay<'entities> {
-    /// C++ entity to be displayed
-    entity: &'entities EntityView<'entities>,
-
-    /// Initial display state
-    state: DisplayState,
-}
-//
-impl Display for EntityDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.entity.display(f, &self.state)
-    }
-}
-
 fn main() {
     // Parse CLI arguments
     let mut args = Args::parse();
@@ -75,17 +60,13 @@ fn main() {
         write!(
             &mut curr_display,
             "{}",
-            EntityDisplay {
-                entity: &entity,
-                state: DisplayState::new(recursion_depth)
-            }
+            entity.display(&DisplayState::new(recursion_depth))
         )
-        .unwrap();
+        .expect("Failed to display entity");
         if curr_display.width() > args.cols {
             break;
         } else {
-            prev_display.clear();
-            prev_display.clone_from(&curr_display);
+            std::mem::swap(&mut prev_display, &mut curr_display);
             curr_display.clear()
         }
     }

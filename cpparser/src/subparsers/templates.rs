@@ -149,7 +149,7 @@ impl<'entities> TemplateParametersView<'entities> {
 //
 impl<'entities> Display for TemplateParametersView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -158,9 +158,9 @@ impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
         self.0.recursion_depth()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(list) = &self.0 {
-            list.display(f, state)
+            list.display_impl(f, state)
         } else {
             write!(f, "<, void>")
         }
@@ -208,7 +208,7 @@ impl<'entities> TemplateParameterView<'entities> {
 //
 impl<'entities> Display for TemplateParameterView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -220,10 +220,10 @@ impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
-            Self::TypeLike(t) => t.display(f, state),
-            Self::ValueLike(v) => v.display(f, state),
+            Self::TypeLike(t) => t.display_impl(f, state),
+            Self::ValueLike(v) => v.display_impl(f, state),
         }
     }
 }

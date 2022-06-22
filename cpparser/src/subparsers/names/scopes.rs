@@ -246,7 +246,7 @@ impl<'entities> PartialEq for IdExpressionView<'entities> {
 //
 impl<'entities> Display for IdExpressionView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -257,9 +257,9 @@ impl<'entities> CustomDisplay for IdExpressionView<'entities> {
             .max(self.id().recursion_depth())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
-        self.path().display(f, state)?;
-        self.id().display(f, state)
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.path().display_impl(f, state)?;
+        self.id().display_impl(f, state)
     }
 }
 
@@ -317,7 +317,7 @@ impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
 //
 impl<'entities> Display for NestedNameSpecifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -326,12 +326,12 @@ impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
         self.scopes().recursion_depth()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if state.can_recurse() {
             if self.is_rooted() {
                 write!(f, "::")?;
             }
-            self.scopes().display(f, state)?;
+            self.scopes().display_impl(f, state)?;
         } else if !self.scopes().is_empty() {
             write!(f, "…::")?;
         }
@@ -409,7 +409,7 @@ impl<'entities> PartialEq for ScopeView<'entities> {
 //
 impl<'entities> Display for ScopeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -418,9 +418,9 @@ impl<'entities> CustomDisplay for ScopeView<'entities> {
         (self.id().recursion_depth()).max(self.function_signature().recursion_depth())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
-        self.id().display(f, state)?;
-        self.function_signature().display(f, state)?;
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        self.id().display_impl(f, state)?;
+        self.function_signature().display_impl(f, state)?;
         write!(f, "::")
     }
 }

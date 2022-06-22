@@ -146,7 +146,7 @@ impl<'entities> PartialEq for TypeView<'entities> {
 //
 impl<'entities> Display for TypeView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -158,18 +158,18 @@ impl<'entities> CustomDisplay for TypeView<'entities> {
             .max(self.declarator().recursion_depth())
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         let attributes = self.attributes();
         if !attributes.is_empty() {
             write!(f, "__attribute__(")?;
-            attributes.display(f, state)?;
+            attributes.display_impl(f, state)?;
             write!(f, ")")?;
         }
-        self.type_specifier().display(f, state)?;
+        self.type_specifier().display_impl(f, state)?;
         let declarator = self.declarator();
         if !declarator.is_empty() {
             write!(f, " ")?;
-            declarator.display(f, state)?;
+            declarator.display_impl(f, state)?;
         }
         Ok(())
     }

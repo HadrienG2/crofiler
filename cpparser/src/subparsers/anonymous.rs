@@ -209,7 +209,7 @@ impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
 //
 impl<'entities> Display for LibibertyLambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -218,9 +218,9 @@ impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
         self.signature().recursion_depth()
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         write!(f, "{{lambda")?;
-        self.signature().display(f, state)?;
+        self.signature().display_impl(f, state)?;
         write!(f, "#{}}}", self.id())
     }
 }
@@ -257,7 +257,7 @@ impl<'entities> LambdaView<'entities> {
 //
 impl<'entities> Display for LambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -270,10 +270,10 @@ impl<'entities> CustomDisplay for LambdaView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::Clang(c) => write!(f, "{c}"),
-            Self::Libiberty(l) => l.display(f, state),
+            Self::Libiberty(l) => l.display_impl(f, state),
         }
     }
 }

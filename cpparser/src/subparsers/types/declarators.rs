@@ -260,7 +260,7 @@ impl<'entities> DeclOperatorView<'entities> {
 //
 impl<'entities> Display for DeclOperatorView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 //
@@ -277,11 +277,11 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
         }
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::ConstVolatile(cv) => write!(f, "{cv}")?,
             Self::Pointer { path, cv } => {
-                path.display(f, state)?;
+                path.display_impl(f, state)?;
                 write!(f, "*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
@@ -291,20 +291,20 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
             // FIXME: Add recursion bound based on [] sign
             Self::Array(a) => {
                 write!(f, "[")?;
-                a.display(f, state)?;
+                a.display_impl(f, state)?;
                 write!(f, "]")?;
             }
-            Self::Function(func) => func.display(f, state)?,
+            Self::Function(func) => func.display_impl(f, state)?,
             // FIXME: Add recursion bound based on () sign
             Self::Parenthesized(d) => {
                 write!(f, "(")?;
-                d.display(f, state)?;
+                d.display_impl(f, state)?;
                 write!(f, ")")?;
             }
             // FIXME: Add recursion bound based on () sign
             Self::VectorSize(s) => {
                 write!(f, "__vector(")?;
-                s.display(f, state)?;
+                s.display_impl(f, state)?;
                 write!(f, ")")?;
             }
         }

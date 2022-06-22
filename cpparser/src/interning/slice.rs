@@ -115,12 +115,12 @@ impl<
         depth
     }
 
-    fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         write!(f, "{}", ItemView::DISPLAY_HEADER)?;
         if let Ok(_guard) = state.recurse() {
             let mut iterator = self.iter().peekable();
             while let Some(view) = iterator.next() {
-                view.display(f, state)?;
+                view.display_impl(f, state)?;
                 if iterator.peek().is_some() {
                     write!(f, "{}", ItemView::DISPLAY_SEPARATOR)?;
                 }
@@ -141,7 +141,7 @@ impl<
     > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::default())
     }
 }
 

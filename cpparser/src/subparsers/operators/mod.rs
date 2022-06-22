@@ -264,7 +264,7 @@ impl<'entities> OperatorView<'entities> {
                 } else if context == DisplayContext::PrefixUsage {
                     write!(f, "(")?;
                 }
-                ty.display(f, state)?;
+                ty.display_impl(f, state)?;
                 if context == DisplayContext::PrefixUsage {
                     write!(f, ")")?;
                 }
