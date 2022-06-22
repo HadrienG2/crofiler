@@ -835,6 +835,7 @@ dependencies = [
  "atty",
  "clap 3.2.5",
  "cpparser",
+ "unicode-width",
 ]
 
 [[package]]
