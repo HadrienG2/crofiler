@@ -2,8 +2,9 @@
 
 #![deny(missing_docs)]
 
-mod path;
+mod display;
 
+use crate::display::{duration::display_duration, path};
 use clang_time_trace::{
     ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, Duration, MangledSymbol,
 };
@@ -206,93 +207,6 @@ fn hottest_activities<'activities>(
     children
 }
 
-/// Truncate a string so that it only eats up n columns, by eating up the middle
-fn truncate_string(input: &str, max_cols: u16) -> String {
-    // Make sure the request makes sense, set up common infrastructure
-    debug_assert!(input.width() > max_cols.into());
-    debug_assert!(max_cols >= 1);
-    let bytes = input.as_bytes();
-    let mut result = String::new();
-    let mut last_good = "";
-
-    // Split our column budget into a header and trailer
-    let trailer_cols = (max_cols - 1) / 2;
-    let header_cols = max_cols - 1 - trailer_cols;
-
-    // Find a terminal header with the right number of columns
-    let mut header_bytes = header_cols;
-    loop {
-        let header_candidate = std::str::from_utf8(&bytes[..header_bytes.into()]);
-        if let Ok(candidate) = header_candidate {
-            if candidate.width() > header_cols.into() {
-                break;
-            } else {
-                last_good = candidate;
-            }
-        }
-        header_bytes += 1;
-    }
-
-    // Start printing out the result accordingly
-    result.push_str(last_good);
-    result.push('…');
-
-    // Find a terminal trailer with the right amount of columns
-    let mut trailer_start = bytes.len() - usize::from(trailer_cols);
-    loop {
-        let trailer_candidate = std::str::from_utf8(&bytes[trailer_start..]);
-        if let Ok(candidate) = trailer_candidate {
-            if candidate.width() > trailer_cols.into() {
-                break;
-            } else {
-                last_good = candidate;
-            }
-        }
-        trailer_start -= 1;
-    }
-
-    // Emit the result
-    result.push_str(last_good);
-    result
-}
-
-/// Display a duration in a human-readable format
-fn display_duration(
-    mut output: impl io::Write,
-    duration: Duration,
-    hms: Option<HMS>,
-) -> io::Result<()> {
-    const MILLISECOND: Duration = 1000.0;
-    const SECOND: Duration = 1000.0 * MILLISECOND;
-    const MINUTE: Duration = 60.0 * SECOND;
-    const HOUR: Duration = 60.0 * MINUTE;
-    if duration >= HOUR {
-        let hours = (duration / HOUR).floor();
-        write!(output, "{}:", hours)?;
-        display_duration(output, duration - hours * HOUR, Some(HMS::ForceMinute))
-    } else if duration >= MINUTE || hms == Some(HMS::ForceMinute) {
-        let minutes = (duration / MINUTE).floor();
-        write!(output, "{}:", minutes)?;
-        display_duration(output, duration - minutes * MINUTE, Some(HMS::ForceSecond))
-    } else if duration >= SECOND || hms == Some(HMS::ForceSecond) {
-        write!(output, "{:.2}", duration / SECOND)?;
-        if hms != Some(HMS::ForceSecond) {
-            write!(output, "s")?;
-        }
-        Ok(())
-    } else if duration >= MILLISECOND {
-        write!(output, "{:.2}ms", duration / MILLISECOND)
-    } else {
-        write!(output, "{duration}µs")
-    }
-}
-//
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum HMS {
-    ForceMinute,
-    ForceSecond,
-}
-
 /// Display an activity trace
 fn display_activity(
     mut output: impl io::Write,
@@ -320,7 +234,7 @@ fn display_activity(
     // Do a test display of the trailing profiling numbers
     let mut trailer = Vec::<u8>::new();
     write!(trailer, " [")?;
-    display_duration(&mut trailer, duration, None)?;
+    display_duration(&mut trailer, duration)?;
     write!(trailer, ", {percent:.2}%]")?;
     let trailer = std::str::from_utf8(&trailer[..]).unwrap();
 
@@ -335,7 +249,7 @@ fn display_activity(
             if s.width() <= arg_cols.into() {
                 write!(output, "({s})")?;
             } else {
-                write!(output, "({})", truncate_string(&s, arg_cols))?;
+                write!(output, "({})", display::truncate_string(&s, arg_cols))?;
             }
         }
         ActivityArgument::FilePath(p) => {
