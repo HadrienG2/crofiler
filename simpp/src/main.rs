@@ -1,7 +1,6 @@
-use std::io::Read;
-
 use clap::Parser;
 use cpparser::{display::CustomDisplay, EntityParser};
+use std::io::Read;
 
 /// Simplify a C++ entity name into a human-readable form
 ///
@@ -13,7 +12,7 @@ use cpparser::{display::CustomDisplay, EntityParser};
 struct Args {
     /// Number of terminal columns available to display the entity
     #[clap(short = 'c', long = "cols")]
-    max_cols: usize,
+    max_cols: u16,
 
     /// C++ entity name to be simplified (can also be specified via stdin)
     entity: Option<String>,

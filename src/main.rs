@@ -7,14 +7,35 @@ mod path;
 use clang_time_trace::{
     ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, Duration, MangledSymbol,
 };
-use std::collections::HashMap;
+use clap::Parser;
+use std::{collections::HashMap, path::PathBuf};
 use unicode_width::UnicodeWidthStr;
+
+/// Turn a clang time-trace dump into a profiler-like visualization
+#[derive(Parser, Debug)]
+#[clap(author, version, about)]
+struct Args {
+    /// Number of terminal columns available to display the entity
+    #[clap(short = 'c', long = "cols", default_value = "150")]
+    max_cols: u16,
+
+    /// Self-profile display threshold, as a percentage of total duration
+    #[clap(short, long, default_value = "1.0")]
+    self_threshold: f32,
+
+    /// Hierarchical profile display threshold, as a percentage of total duration
+    #[clap(short, long, default_value = "5.0")]
+    hierarchical_threshold: f32,
+
+    /// Clang time-trace file to be analyzed
+    input: PathBuf,
+}
 
 fn main() {
     env_logger::init();
+    let args = Args::parse();
 
-    let trace =
-        ClangTrace::from_file("2020-05-25_CombinatorialKalmanFilterTests.cpp.json").unwrap();
+    let trace = ClangTrace::from_file(args.input).unwrap();
 
     println!("Profile from {}", trace.process_name());
 
@@ -42,7 +63,6 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
-    const MAX_COLS: u16 = 150;
     let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
         println!("\nHot activities by {name}:");
         //
@@ -65,18 +85,21 @@ fn main() {
                 ActivityArgument::String(s)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
                 | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
-                    if s.width() <= MAX_COLS.into() {
+                    if s.width() <= args.max_cols.into() {
                         print!("({s})")
                     } else {
-                        print!("({})", truncate_string(&s, MAX_COLS))
+                        print!("({})", truncate_string(&s, args.max_cols))
                     }
                 }
                 ActivityArgument::FilePath(p) => {
-                    print!("({})", path::truncate_path(&trace.file_path(p), MAX_COLS))
+                    print!(
+                        "({})",
+                        path::truncate_path(&trace.file_path(p), args.max_cols)
+                    )
                 }
                 ActivityArgument::CppEntity(e)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-                    print!("({})", trace.entity(e).bounded_display(MAX_COLS))
+                    print!("({})", trace.entity(e).bounded_display(args.max_cols))
                 }
             }
             println!(" ({duration} µs, {percent:.2} %)");
@@ -91,8 +114,16 @@ fn main() {
             );
         }
     };
-    profile("self-duration", Box::new(|a| a.self_duration()), 0.01);
-    profile("total duration", Box::new(|a| a.duration()), 0.01);
+    profile(
+        "self-duration",
+        Box::new(|a| a.self_duration()),
+        args.self_threshold as Duration / 100.0,
+    );
+    profile(
+        "total duration",
+        Box::new(|a| a.duration()),
+        args.hierarchical_threshold as Duration / 100.0,
+    );
 
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)

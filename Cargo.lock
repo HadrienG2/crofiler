@@ -252,6 +252,7 @@ name = "crofiler"
 version = "0.1.0"
 dependencies = [
  "clang-time-trace",
+ "clap 3.2.5",
  "env_logger",
  "once_cell",
  "termion",
