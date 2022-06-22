@@ -40,6 +40,7 @@ pub use self::{
 };
 pub use cpparser::{
     asylum::path::{InternedComponent, InternedPath, PathError},
+    display::CustomDisplay,
     PathComponentKey, PathKey,
 };
 pub use json::Error as CtfParseError;

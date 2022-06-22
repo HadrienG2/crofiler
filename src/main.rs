@@ -4,8 +4,11 @@
 
 mod path;
 
-use clang_time_trace::{ActivityArgument, ActivityTrace, ClangTrace, Duration, MangledSymbol};
+use clang_time_trace::{
+    ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, Duration, MangledSymbol,
+};
 use std::collections::HashMap;
+use unicode_width::UnicodeWidthStr;
 
 fn main() {
     env_logger::init();
@@ -39,6 +42,7 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
+    const MAX_COLS: u16 = 150;
     let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
         println!("\nHot activities by {name}:");
         //
@@ -60,11 +64,19 @@ fn main() {
                 ActivityArgument::Nothing => {}
                 ActivityArgument::String(s)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-                | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => print!("({s})"),
-                ActivityArgument::FilePath(p) => print!("({})", trace.file_path(p)),
+                | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
+                    if s.width() <= MAX_COLS.into() {
+                        print!("({s})")
+                    } else {
+                        print!("({})", truncate_string(&s, MAX_COLS))
+                    }
+                }
+                ActivityArgument::FilePath(p) => {
+                    print!("({})", path::truncate_path(&trace.file_path(p), MAX_COLS))
+                }
                 ActivityArgument::CppEntity(e)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-                    print!("({})", trace.entity(e))
+                    print!("({})", trace.entity(e).bounded_display(MAX_COLS))
                 }
             }
             println!(" ({duration} µs, {percent:.2} %)");
@@ -82,57 +94,59 @@ fn main() {
     profile("self-duration", Box::new(|a| a.self_duration()), 0.01);
     profile("total duration", Box::new(|a| a.duration()), 0.01);
 
-    // Print a list of file paths
-    /*println!("\nFile paths:");
-    let (width, _height) = termion::terminal_size().unwrap();
-    for activity_trace in trace.all_activities() {
-        if let ActivityArgument::FilePath(p) = activity_trace.activity().argument() {
-            println!(
-                "- {}",
-                path::truncate_path(&trace.file_path(p), width.min(80))
-            )
-        }
-    }*/
-
-    // Play around with collected C++ entities
-    println!("\nProcessing C++ entities...");
-    for activity_trace in trace.all_activities() {
-        match activity_trace.activity().argument() {
-            /*ActivityArgument::MangledSymbol(MangledSymbol::Demangled(m))
-            | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(m)) => {
-                println!("{m:?}");
-            } *//*ActivityArgument::CppEntity(e) => {
-            println!(
-            "- {}({})",
-            activity_trace.activity().name(),
-            trace.entity(e)
-            );
-            }*/
-            _ => {}
-        }
-    }
-    println!("...all good!");
-
-    // DEBUG
-    /* use cpparser::values::*;
-    use std::sync::atomic::AtomicUsize;
-    println!();
-    let print_branch = |name: &str, ctr: &AtomicUsize| {
-        println!("    -> {name}: {ctr:?}");
-    };
-    println!("value_header parser was called {HEADER_CALLS:?} times");
-    println!("... with the following outcomes:");
-    print_branch("Literal", &HEADER_LITERAL);
-    print_branch("Unary operator", &HEADER_UNARY);
-    print_branch("Parenthesized value", &HEADER_PAREN);
-    print_branch("new-expression", &HEADER_NEW);
-    print_branch("id-expression", &HEADER_ID);
-    println!(); */
-
     // Hierarchical profile prototype
     // (TODO: Make this more hierarchical and display using termtree)
     println!("\nTree roots:");
     for root in trace.root_activities() {
         println!("- {root:#?}");
     }
+}
+
+/// Truncate a string so that it only eats up n columns, by eating up the middle
+fn truncate_string(input: &str, max_cols: u16) -> String {
+    // Make sure the request makes sense, set up common infrastructure
+    debug_assert!(input.width() > max_cols.into());
+    let bytes = input.as_bytes();
+    let mut result = String::new();
+    let mut last_good = "";
+
+    // Split our column budget into a header and trailer
+    let trailer_cols = (max_cols - 1) / 2;
+    let header_cols = max_cols - 1 - trailer_cols;
+
+    // Find a terminal header with the right number of columns
+    let mut header_bytes = header_cols;
+    loop {
+        let header_candidate = std::str::from_utf8(&bytes[..header_bytes.into()]);
+        if let Ok(candidate) = header_candidate {
+            if candidate.width() > header_cols.into() {
+                break;
+            } else {
+                last_good = candidate;
+            }
+        }
+        header_bytes += 1;
+    }
+
+    // Start printing out the result accordingly
+    result.push_str(last_good);
+    result.push('…');
+
+    // Find a terminal trailer with the right amount of columns
+    let mut trailer_start = bytes.len() - usize::from(trailer_cols);
+    loop {
+        let trailer_candidate = std::str::from_utf8(&bytes[trailer_start..]);
+        if let Ok(candidate) = trailer_candidate {
+            if candidate.width() > trailer_cols.into() {
+                break;
+            } else {
+                last_good = candidate;
+            }
+        }
+        trailer_start -= 1;
+    }
+
+    // Emit the result
+    result.push_str(last_good);
+    result
 }

@@ -207,6 +207,7 @@ dependencies = [
  "nom",
  "nom-supreme",
  "pretty_assertions",
+ "unicode-width",
  "unicode-xid",
 ]
 
@@ -835,7 +836,6 @@ dependencies = [
  "atty",
  "clap 3.2.5",
  "cpparser",
- "unicode-width",
 ]
 
 [[package]]

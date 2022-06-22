@@ -1,12 +1,7 @@
-use std::{fmt::Display, io::Read};
+use std::io::Read;
 
 use clap::Parser;
-use cpparser::{
-    display::{CustomDisplay, DisplayState},
-    EntityParser, EntityView,
-};
-use std::fmt::Write;
-use unicode_width::UnicodeWidthStr;
+use cpparser::{display::CustomDisplay, EntityParser};
 
 /// Simplify a C++ entity name into a human-readable form
 ///
@@ -16,9 +11,9 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
-    /// Terminal column budget
-    #[clap(short, long)]
-    cols: usize,
+    /// Number of terminal columns available to display the entity
+    #[clap(short = 'c', long = "cols")]
+    max_cols: usize,
 
     /// C++ entity name to be simplified (can also be specified via stdin)
     entity: Option<String>,
@@ -54,21 +49,5 @@ fn main() {
     let entity = entities.entity(entity);
 
     // Display it
-    let mut prev_display = "…".to_string();
-    let mut curr_display = String::new();
-    for recursion_depth in 0..entity.recursion_depth() {
-        write!(
-            &mut curr_display,
-            "{}",
-            entity.display(&DisplayState::new(recursion_depth))
-        )
-        .expect("Failed to display entity");
-        if curr_display.width() > args.cols {
-            break;
-        } else {
-            std::mem::swap(&mut prev_display, &mut curr_display);
-            curr_display.clear()
-        }
-    }
-    println!("{prev_display}");
+    println!("{}", entity.bounded_display(args.max_cols));
 }

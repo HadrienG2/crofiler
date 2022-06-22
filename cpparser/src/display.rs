@@ -2,8 +2,9 @@
 
 use std::{
     cell::RefCell,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Display, Formatter, Write},
 };
+use unicode_width::UnicodeWidthStr;
 
 /// Trait implemented by entities with a customizable display
 pub trait CustomDisplay {
@@ -12,11 +13,42 @@ pub trait CustomDisplay {
     fn recursion_depth(&self) -> usize;
 
     /// Display the type, honoring user-specified constraints
+    ///
+    /// It is guaranteed that the DisplayState at the end of execution will be
+    /// configured as it was in the beginning of execution. Please reuse it when
+    /// displaying entities in a row in order to benefit from features like
+    /// allocation reuse and redundant text deduplication.
+    ///
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error>;
 
     /// Convenience layer over display_impl, returns a type that implements Display
     fn display<'a>(&'a self, state: &'a DisplayState) -> CustomDisplayView<Self> {
         CustomDisplayView { inner: self, state }
+    }
+
+    /// Display something, using up at most N terminal columns
+    //
+    // FIXME: Integrate char budget and buffers into DisplayState and
+    //        display_impl in the final tree-based display implementation.
+    //
+    fn bounded_display(&self, max_cols: u16) -> String {
+        let mut prev_display = "…".to_string();
+        let mut curr_display = String::new();
+        for recursion_depth in 0..self.recursion_depth() {
+            write!(
+                &mut curr_display,
+                "{}",
+                self.display(&DisplayState::new(recursion_depth))
+            )
+            .expect("Failed to display entity");
+            if curr_display.width() > max_cols.into() {
+                break;
+            } else {
+                std::mem::swap(&mut prev_display, &mut curr_display);
+                curr_display.clear()
+            }
+        }
+        prev_display
     }
 }
 //
@@ -29,7 +61,7 @@ pub struct CustomDisplayView<'inner, Inner: CustomDisplay + ?Sized> {
     state: &'inner DisplayState,
 }
 //
-impl<Inner: CustomDisplay> Display for CustomDisplayView<'_, Inner> {
+impl<Inner: CustomDisplay + ?Sized> Display for CustomDisplayView<'_, Inner> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.inner.display_impl(f, self.state)
     }
@@ -99,3 +131,5 @@ impl Drop for RecursionGuard<'_> {
         state.max_recursion += 1;
     }
 }
+
+// FIXME: Add tests of this + every CustomDisplay impl
