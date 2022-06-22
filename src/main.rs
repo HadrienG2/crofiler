@@ -8,7 +8,11 @@ use clang_time_trace::{
     ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, Duration, MangledSymbol,
 };
 use clap::Parser;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write},
+    path::PathBuf,
+};
 use unicode_width::UnicodeWidthStr;
 
 /// Turn a clang time-trace dump into a profiler-like visualization
@@ -82,9 +86,15 @@ fn main() {
             let activity_arg = activity_trace.activity().argument();
             let duration = duration(&activity_trace);
             let percent = duration * norm * 100.0;
+
             let header = format!("- {activity_name}");
-            let trailer = format!(" ({duration} µs, {percent:.2} %)");
+
+            let mut trailer = " (".to_string();
+            display_duration(&mut trailer, duration, HMS::None).unwrap();
+            write!(&mut trailer, ", {percent:.2} %)").unwrap();
+
             let arg_cols = max_cols - header.width() as u16 - trailer.width() as u16 - 2;
+
             print!("{header}");
             match activity_arg {
                 ActivityArgument::Nothing => {}
@@ -183,4 +193,38 @@ fn truncate_string(input: &str, max_cols: u16) -> String {
     // Emit the result
     result.push_str(last_good);
     result
+}
+
+/// Display a duration in a human-readable format
+fn display_duration(mut output: impl Write, duration: Duration, hms: HMS) -> fmt::Result {
+    const MILLISECOND: Duration = 1000.0;
+    const SECOND: Duration = 1000.0 * MILLISECOND;
+    const MINUTE: Duration = 60.0 * SECOND;
+    const HOUR: Duration = 60.0 * MINUTE;
+    if duration >= HOUR {
+        let hours = (duration / HOUR).floor();
+        write!(&mut output, "{}:", hours)?;
+        display_duration(output, duration - hours * HOUR, HMS::ForceMinute)
+    } else if duration >= MINUTE || hms == HMS::ForceMinute {
+        let minutes = (duration / MINUTE).floor();
+        write!(&mut output, "{}:", minutes)?;
+        display_duration(output, duration - minutes * MINUTE, HMS::ForceSecond)
+    } else if duration >= SECOND || hms == HMS::ForceSecond {
+        write!(&mut output, "{:.2}", duration / SECOND)?;
+        if hms != HMS::ForceSecond {
+            write!(&mut output, " s")?;
+        }
+        Ok(())
+    } else if duration >= MILLISECOND {
+        write!(&mut output, "{:.2} ms", duration / MILLISECOND)
+    } else {
+        write!(&mut output, "{duration} µs")
+    }
+}
+//
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum HMS {
+    None,
+    ForceMinute,
+    ForceSecond,
 }
