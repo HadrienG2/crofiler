@@ -45,7 +45,7 @@ fn main() {
         .unwrap_or(args.max_cols);
 
     // Load the clang trace
-    println!("Processing input data...");
+    eprintln!("Processing input data...");
     let trace = ClangTrace::from_file(args.input).unwrap();
 
     println!("\nData from {}", trace.process_name());
@@ -119,7 +119,7 @@ fn main() {
     assert_eq!(trace.root_activities().count(), 1);
     println!(
         "{}",
-        make_activity_tree(
+        hierarchical_profile_tree(
             &trace,
             palette,
             trace.root_activities().next().unwrap(),
@@ -131,7 +131,7 @@ fn main() {
 }
 
 /// Make a tree display of the hierarchical profile of some build
-fn make_activity_tree(
+fn hierarchical_profile_tree(
     trace: &ClangTrace,
     palette: GlyphPalette,
     root: ActivityTrace,
@@ -165,8 +165,9 @@ fn make_activity_tree(
     let num_hottest = hottest_children.len();
 
     // Render children
-    let make_child_tree =
-        |child| make_activity_tree(trace, palette, child, duration_norm, threshold, child_cols);
+    let make_child_tree = |child| {
+        hierarchical_profile_tree(trace, palette, child, duration_norm, threshold, child_cols)
+    };
     tree = if num_hottest == num_children {
         tree.with_leaves(hottest_children.into_vec().into_iter().map(make_child_tree))
     } else {
