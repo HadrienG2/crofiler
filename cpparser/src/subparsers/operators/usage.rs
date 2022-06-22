@@ -2,7 +2,7 @@
 
 use super::{Operator, Symbol};
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     subparsers::{
         functions::{FunctionArgumentsKey, FunctionArgumentsView},
         types::{TypeKey, TypeView},
@@ -235,11 +235,11 @@ impl<'entities> Display for NewExpressionView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for NewExpressionView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         self.placement()
-            .recursion_depths()
-            .max(self.ty().recursion_depths())
-            .max(self.constructor().recursion_depths())
+            .recursion_depth()
+            .max(self.ty().recursion_depth())
+            .max(self.constructor().recursion_depth())
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {

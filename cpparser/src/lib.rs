@@ -7,7 +7,7 @@ mod interning;
 pub mod subparsers;
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::recursion::RecursiveSequenceInterner,
     subparsers::{
         functions::{
@@ -292,8 +292,8 @@ impl<'entities> Display for EntityView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for EntityView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.0.recursion_depths()
+    fn recursion_depth(&self) -> usize {
+        self.0.recursion_depth()
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {

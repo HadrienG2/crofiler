@@ -4,7 +4,7 @@ mod overloads;
 pub mod usage;
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
         types::{TypeKey, TypeView},
@@ -162,16 +162,16 @@ impl<'entities> OperatorView<'entities> {
     }
 
     /// Tell how much recursion would need to be performed when displaying this
-    pub fn recursion_depths(&self) -> RecursionDepths {
+    pub fn recursion_depth(&self) -> usize {
         match self {
-            Self::Basic { .. } => RecursionDepths::NEVER,
-            Self::Deref { .. } => RecursionDepths::NEVER,
-            Self::Spaceship => RecursionDepths::NEVER,
-            Self::CallIndex { .. } => RecursionDepths::NEVER,
-            Self::CustomLiteral(_) => RecursionDepths::NEVER,
-            Self::NewDelete { .. } => RecursionDepths::NEVER,
-            Self::CoAwait => RecursionDepths::NEVER,
-            Self::Conversion(ty) => ty.recursion_depths(),
+            Self::Basic { .. } => 0,
+            Self::Deref { .. } => 0,
+            Self::Spaceship => 0,
+            Self::CallIndex { .. } => 0,
+            Self::CustomLiteral(_) => 0,
+            Self::NewDelete { .. } => 0,
+            Self::CoAwait => 0,
+            Self::Conversion(ty) => ty.recursion_depth(),
         }
     }
 

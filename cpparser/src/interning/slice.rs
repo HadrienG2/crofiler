@@ -5,7 +5,7 @@ use crate::{
         lasso::{Key, Spur},
         sequence::{InternedSequences, SequenceKey},
     },
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     Entities,
 };
 use std::{
@@ -104,21 +104,20 @@ impl<
         const LEN_BITS: u32,
     > CustomDisplay for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
-    fn recursion_depths(&self) -> RecursionDepths {
-        let mut depths = self
+    fn recursion_depth(&self) -> usize {
+        let mut depth = self
             .iter()
-            .map(|item| item.recursion_depths())
-            .fold(RecursionDepths::NEVER, |acc, item| acc.max(item));
+            .map(|item| item.recursion_depth())
+            .fold(0, |acc, item| acc.max(item));
         if self.iter().count() > 0 {
-            depths.total += 1;
-            *ItemView::get_recursion_depth(&mut depths) += 1;
+            depth += 1;
         }
-        depths
+        depth
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         write!(f, "{}", ItemView::DISPLAY_HEADER)?;
-        if let Ok(_guard) = state.recurse(ItemView::get_recursion_depth) {
+        if let Ok(_guard) = state.recurse() {
             let mut iterator = self.iter().peekable();
             while let Some(view) = iterator.next() {
                 view.display(f, state)?;
@@ -154,9 +153,6 @@ pub trait SliceItemView<'entities>: CustomDisplay + Display + PartialEq {
 
     /// Wrap the storage type
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self;
-
-    /// Find the recursion depth for this in the RecursionDepths struct
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize;
 
     /// String to be used at the beginning of the display
     const DISPLAY_HEADER: &'static str;

@@ -1,7 +1,7 @@
 //! Things that could be templates
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         types::{TypeKey, TypeView},
@@ -154,8 +154,8 @@ impl<'entities> Display for TemplateParametersView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.0.recursion_depths()
+    fn recursion_depth(&self) -> usize {
+        self.0.recursion_depth()
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -213,10 +213,10 @@ impl<'entities> Display for TemplateParameterView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
-            Self::TypeLike(t) => t.recursion_depths(),
-            Self::ValueLike(v) => v.recursion_depths(),
+            Self::TypeLike(t) => t.recursion_depth(),
+            Self::ValueLike(v) => v.recursion_depth(),
         }
     }
 
@@ -233,10 +233,6 @@ impl<'entities> SliceItemView<'entities> for TemplateParameterView<'entities> {
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
-    }
-
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
-        &mut depths.templates
     }
 
     const DISPLAY_HEADER: &'static str = "<";

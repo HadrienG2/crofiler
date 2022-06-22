@@ -2,7 +2,7 @@
 
 use super::unqualified::{UnqualifiedId, UnqualifiedIdView};
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::{
         recursion::SequenceEntry,
         slice::{SliceItemView, SliceView},
@@ -251,10 +251,10 @@ impl<'entities> Display for IdExpressionView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for IdExpressionView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         self.path()
-            .recursion_depths()
-            .max(self.id().recursion_depths())
+            .recursion_depth()
+            .max(self.id().recursion_depth())
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -322,12 +322,12 @@ impl<'entities> Display for NestedNameSpecifierView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.scopes().recursion_depths()
+    fn recursion_depth(&self) -> usize {
+        self.scopes().recursion_depth()
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
-        if state.can_recurse(|depths| &mut depths.scopes) {
+        if state.can_recurse() {
             if self.is_rooted() {
                 write!(f, "::")?;
             }
@@ -414,8 +414,8 @@ impl<'entities> Display for ScopeView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for ScopeView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        (self.id().recursion_depths()).max(self.function_signature().recursion_depths())
+    fn recursion_depth(&self) -> usize {
+        (self.id().recursion_depth()).max(self.function_signature().recursion_depth())
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -430,10 +430,6 @@ impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
-    }
-
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
-        &mut depths.scopes
     }
 
     const DISPLAY_HEADER: &'static str = "";

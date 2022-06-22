@@ -1,7 +1,7 @@
 //! Function-related parsing
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
@@ -294,11 +294,11 @@ impl<'entities> Display for FunctionSignatureView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         self.parameters()
-            .recursion_depths()
-            .max(self.noexcept().recursion_depths())
-            .max(self.trailing_return().recursion_depths())
+            .recursion_depth()
+            .max(self.noexcept().recursion_depth())
+            .max(self.trailing_return().recursion_depth())
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {

@@ -1,7 +1,7 @@
 //! Unqualified id-expressions (those that do not feature the :: scope operator)
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     subparsers::{
         anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
         names::atoms::{IdentifierKey, IdentifierView},
@@ -236,22 +236,22 @@ impl<'entities> Display for UnqualifiedIdView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
             Self::Named {
                 template_parameters,
                 ..
-            } => template_parameters.recursion_depths(),
+            } => template_parameters.recursion_depth(),
             Self::Operator {
                 operator,
                 template_parameters,
             } => operator
-                .recursion_depths()
-                .max(template_parameters.recursion_depths()),
+                .recursion_depth()
+                .max(template_parameters.recursion_depth()),
             // FIXME: Add decltype to list of elidable recursions
-            Self::Decltype(value) => value.recursion_depths(),
-            Self::Lambda(lambda) => lambda.recursion_depths(),
-            Self::Anonymous(_) => RecursionDepths::NEVER,
+            Self::Decltype(value) => value.recursion_depth(),
+            Self::Lambda(lambda) => lambda.recursion_depth(),
+            Self::Anonymous(_) => 0,
         }
     }
 

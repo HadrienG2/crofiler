@@ -2,7 +2,7 @@ use std::{fmt::Display, io::Read};
 
 use clap::Parser;
 use cpparser::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     EntityParser,
 };
 
@@ -15,8 +15,8 @@ use cpparser::{
 #[clap(author, version, about)]
 struct Args {
     /// Recursion depth
-    #[clap(flatten)]
-    recursion_depths: RecursionDepths,
+    #[clap(long)]
+    recursion_depth: usize,
 
     /// C++ entity name to be simplified (can also be specified via stdin)
     entity: Option<String>,
@@ -39,8 +39,8 @@ impl Display for Args {
         let entity = entities.entity(entity);
 
         // Display it
-        println!("Recursion depths are {:#?}", entity.recursion_depths());
-        entity.display(f, &DisplayState::new(self.recursion_depths))
+        println!("Recursion depth is {:#?}", entity.recursion_depth());
+        entity.display(f, &DisplayState::new(self.recursion_depth))
     }
 }
 

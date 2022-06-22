@@ -7,7 +7,7 @@ pub mod legacy;
 use self::legacy::LegacyName;
 use super::qualifiers::ConstVolatile;
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     subparsers::names::scopes::{IdExpression, IdExpressionView},
     Entities, EntityParser, IResult,
 };
@@ -130,8 +130,8 @@ impl<'entities> Display for TypeSpecifierView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for TypeSpecifierView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.simple_type().recursion_depths()
+    fn recursion_depth(&self) -> usize {
+        self.simple_type().recursion_depth()
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -199,11 +199,11 @@ impl<'entities> Display for SimpleTypeView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
-            Self::IdExpression(i) => i.recursion_depths(),
-            Self::LegacyName(_) => RecursionDepths::NEVER,
-            Self::LibibertyAuto(_) => RecursionDepths::NEVER,
+            Self::IdExpression(i) => i.recursion_depth(),
+            Self::LegacyName(_) => 0,
+            Self::LibibertyAuto(_) => 0,
         }
     }
 

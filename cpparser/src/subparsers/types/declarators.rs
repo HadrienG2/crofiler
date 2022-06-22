@@ -4,7 +4,7 @@
 
 use super::qualifiers::{ConstVolatile, Reference};
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         functions::{FunctionSignature, FunctionSignatureView},
@@ -265,15 +265,15 @@ impl<'entities> Display for DeclOperatorView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
-            Self::ConstVolatile(_) => RecursionDepths::NEVER,
-            Self::Pointer { path, .. } => path.recursion_depths(),
-            Self::Reference(_) => RecursionDepths::NEVER,
-            Self::Array(a) => a.recursion_depths(),
-            Self::Function(func) => func.recursion_depths(),
-            Self::Parenthesized(d) => d.recursion_depths(),
-            Self::VectorSize(s) => s.recursion_depths(),
+            Self::ConstVolatile(_) => 0,
+            Self::Pointer { path, .. } => path.recursion_depth(),
+            Self::Reference(_) => 0,
+            Self::Array(a) => a.recursion_depth(),
+            Self::Function(func) => func.recursion_depth(),
+            Self::Parenthesized(d) => d.recursion_depth(),
+            Self::VectorSize(s) => s.recursion_depth(),
         }
     }
 
@@ -317,10 +317,6 @@ impl<'entities> SliceItemView<'entities> for DeclOperatorView<'entities> {
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
-    }
-
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
-        &mut depths.declarators
     }
 
     const DISPLAY_HEADER: &'static str = "";

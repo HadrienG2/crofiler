@@ -4,7 +4,7 @@ pub mod literals;
 
 use self::literals::{Literal, LiteralView};
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     interning::slice::{SliceItemView, SliceView},
     subparsers::{
         functions::{FunctionArgumentsKey, FunctionArgumentsView},
@@ -311,10 +311,10 @@ impl<'entities> Display for ValueView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for ValueView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         self.header()
-            .recursion_depths()
-            .max(self.trailer().recursion_depths())
+            .recursion_depth()
+            .max(self.trailer().recursion_depth())
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -328,10 +328,6 @@ impl<'entities> SliceItemView<'entities> for ValueView<'entities> {
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
-    }
-
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
-        &mut depths.function_calls
     }
 
     const DISPLAY_HEADER: &'static str = "(";
@@ -432,14 +428,14 @@ impl<'entities> Display for ValueHeaderView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
-            Self::Literal(_) => RecursionDepths::NEVER,
-            Self::Parenthesized(v) => v.recursion_depths(),
-            Self::UnaryOp(o, v) => o.recursion_depths().max(v.recursion_depths()),
-            Self::NewExpression(n) => n.recursion_depths(),
-            Self::IdExpression(i) => i.recursion_depths(),
-            Self::Ellipsis => RecursionDepths::NEVER,
+            Self::Literal(_) => 0,
+            Self::Parenthesized(v) => v.recursion_depth(),
+            Self::UnaryOp(o, v) => o.recursion_depth().max(v.recursion_depth()),
+            Self::NewExpression(n) => n.recursion_depth(),
+            Self::IdExpression(i) => i.recursion_depth(),
+            Self::Ellipsis => 0,
         }
     }
 
@@ -554,15 +550,15 @@ impl<'entities> Display for AfterValueView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for AfterValueView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
-            Self::ArrayIndex(i) => i.recursion_depths(),
-            Self::FunctionCall(a) => a.recursion_depths(),
-            Self::BinaryOp(o, v) => o.recursion_depths().max(v.recursion_depths()),
-            Self::TernaryOp(v1, v2) => v1.recursion_depths().max(v2.recursion_depths()),
-            Self::MemberAccess(m) => m.recursion_depths(),
-            Self::PostfixOp(o) => o.recursion_depths(),
-            Self::Ellipsis => RecursionDepths::NEVER,
+            Self::ArrayIndex(i) => i.recursion_depth(),
+            Self::FunctionCall(a) => a.recursion_depth(),
+            Self::BinaryOp(o, v) => o.recursion_depth().max(v.recursion_depth()),
+            Self::TernaryOp(v1, v2) => v1.recursion_depth().max(v2.recursion_depth()),
+            Self::MemberAccess(m) => m.recursion_depth(),
+            Self::PostfixOp(o) => o.recursion_depth(),
+            Self::Ellipsis => 0,
         }
     }
 
@@ -600,10 +596,6 @@ impl<'entities> SliceItemView<'entities> for AfterValueView<'entities> {
 
     fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
         Self::new(inner, entities)
-    }
-
-    fn get_recursion_depth(depths: &mut RecursionDepths) -> &mut usize {
-        &mut depths.expressions
     }
 
     const DISPLAY_HEADER: &'static str = "";

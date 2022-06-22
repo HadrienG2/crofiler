@@ -2,7 +2,7 @@
 //! including lambdas, anonymous classes, anonymous namespaces...
 
 use crate::{
-    display::{CustomDisplay, DisplayState, RecursionDepths},
+    display::{CustomDisplay, DisplayState},
     subparsers::{
         functions::{FunctionSignature, FunctionSignatureView},
         names::atoms::{IdentifierKey, IdentifierView},
@@ -214,8 +214,8 @@ impl<'entities> Display for LibibertyLambdaView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
-        self.signature().recursion_depths()
+    fn recursion_depth(&self) -> usize {
+        self.signature().recursion_depth()
     }
 
     fn display(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -262,11 +262,11 @@ impl<'entities> Display for LambdaView<'entities> {
 }
 //
 impl<'entities> CustomDisplay for LambdaView<'entities> {
-    fn recursion_depths(&self) -> RecursionDepths {
+    fn recursion_depth(&self) -> usize {
         match self {
             // FIXME: Bring in simplified path display from crofiler
-            Self::Clang(_) => RecursionDepths::NEVER,
-            Self::Libiberty(l) => l.recursion_depths(),
+            Self::Clang(_) => 0,
+            Self::Libiberty(l) => l.recursion_depth(),
         }
     }
 
