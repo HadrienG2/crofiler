@@ -256,6 +256,7 @@ dependencies = [
  "env_logger",
  "once_cell",
  "termion",
+ "termtree",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -876,6 +877,12 @@ dependencies = [
  "redox_syscall",
  "redox_termios",
 ]
+
+[[package]]
+name = "termtree"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95059e91184749cb66be6dc994f67f182b6d897cb3df74a5bf66b5e709295fd8"
 
 [[package]]
 name = "textwrap"

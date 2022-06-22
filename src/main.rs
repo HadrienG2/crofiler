@@ -13,6 +13,7 @@ use std::{
     io::{self, Write},
     path::PathBuf,
 };
+use termtree::{GlyphPalette, Tree};
 use unicode_width::UnicodeWidthStr;
 
 /// Turn a clang time-trace dump into a profiler-like visualization
@@ -36,12 +37,17 @@ struct Args {
 }
 
 fn main() {
+    // Read various configuration
     env_logger::init();
     let args = Args::parse();
+    let max_cols = termion::terminal_size()
+        .map(|(width, _height)| width.min(args.max_cols))
+        .unwrap_or(args.max_cols);
 
+    // Load the clang trace
     let trace = ClangTrace::from_file(args.input).unwrap();
 
-    println!("Profile from {}", trace.process_name());
+    println!("Data from {}", trace.process_name());
 
     // Total clang execution time
     let root_duration = trace
@@ -68,60 +74,133 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
-    let max_cols = termion::terminal_size()
-        .map(|(width, _height)| width.min(args.max_cols))
-        .unwrap_or(args.max_cols);
-    let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
-        println!("\nHot activities by {name}:");
-        //
-        let mut activities = trace
-            .all_activities()
-            .filter(|a| duration(a) * duration_norm >= threshold)
-            .collect::<Box<[_]>>();
-        //
-        activities.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
-        //
-        for activity_trace in activities.iter() {
-            let duration = duration(&activity_trace);
-            let percent = duration * duration_norm * 100.0;
-            print!("- ");
-            display_activity(
-                std::io::stdout(),
-                &trace,
-                activity_trace,
-                max_cols - 2,
-                duration,
-                percent,
-            )
-            .unwrap();
-        }
-        //
-        let num_activities = trace.all_activities().count();
-        if activities.len() < num_activities {
-            let other_activities = num_activities - activities.len();
-            println!(
-                "- ... and {other_activities} other activities below {}% threshold ...",
-                threshold * 100.0
-            );
-        }
-    };
-    profile(
-        "self-duration",
-        Box::new(|a| a.self_duration()),
+    println!("\nHottest activities by self-duration:");
+    let hottest = hottest_activities(
+        trace.all_activities(),
+        |a| a.self_duration() * duration_norm,
         args.self_threshold as Duration / 100.0,
     );
-    profile(
-        "total duration",
-        Box::new(|a| a.duration()),
-        args.hierarchical_threshold as Duration / 100.0,
-    );
-
-    // Hierarchical profile prototype
-    // (TODO: Make this more hierarchical and display using termtree)
-    println!("\nTree roots:");
-    for root in trace.root_activities() {
-        println!("- {root:#?}");
+    let num_hottest = hottest.len();
+    for activity_trace in hottest.iter() {
+        let duration = activity_trace.self_duration();
+        let percent = duration * duration_norm * 100.0;
+        print!("- ");
+        display_activity(
+            std::io::stdout(),
+            &trace,
+            activity_trace,
+            max_cols - 2,
+            duration,
+            percent,
+        )
+        .unwrap();
+        println!();
     }
+    let num_activities = trace.all_activities().count();
+    if num_hottest < num_activities {
+        let other_activities = num_activities - num_hottest;
+        println!(
+            "- ... and {other_activities} other activities below {}% ...",
+            args.self_threshold
+        );
+    }
+
+    // Hierarchical profile
+    let palette = GlyphPalette {
+        middle_item: "├",
+        last_item: "└",
+        item_indent: "─",
+        middle_skip: "│",
+        last_skip: " ",
+        skip_indent: " ",
+    };
+    println!("\nHierarchical profile:");
+    assert_eq!(trace.root_activities().count(), 1);
+    println!(
+        "{}",
+        make_activity_tree(
+            &trace,
+            palette,
+            trace.root_activities().next().unwrap(),
+            duration_norm,
+            args.hierarchical_threshold as Duration / 100.0,
+            max_cols
+        )
+    );
+}
+
+/// Make a tree display of the hierarchical profile of some build
+fn make_activity_tree(
+    trace: &ClangTrace,
+    palette: GlyphPalette,
+    root: ActivityTrace,
+    duration_norm: Duration,
+    threshold: Duration,
+    max_cols: u16,
+) -> Tree<Box<str>> {
+    // Render root node
+    let mut root_display = Vec::<u8>::new();
+    let duration = root.duration();
+    let percent = duration * duration_norm * 100.0;
+    display_activity(&mut root_display, trace, &root, max_cols, duration, percent).unwrap();
+    let root_display = String::from_utf8(root_display).unwrap().into_boxed_str();
+    let mut tree = Tree::new(root_display).with_glyphs(palette);
+
+    // Collect hottest children
+    let num_children = root.direct_children().count();
+    let hottest_children = hottest_activities(
+        root.direct_children(),
+        |a| a.duration() * duration_norm,
+        threshold,
+    );
+    let num_hottest = hottest_children.len();
+
+    // Render children
+    let make_child_tree = |child| {
+        make_activity_tree(
+            trace,
+            palette,
+            child,
+            duration_norm,
+            threshold,
+            max_cols - palette.middle_item.width() as u16 - palette.item_indent.width() as u16,
+        )
+    };
+    tree = if num_hottest == num_children {
+        tree.with_leaves(hottest_children.into_vec().into_iter().map(make_child_tree))
+    } else {
+        tree.with_leaves(
+            hottest_children
+                .into_vec()
+                .into_iter()
+                .map(make_child_tree)
+                .chain(std::iter::once(
+                    Tree::new(
+                        format!(
+                            "…{} callee(s) below {}%…",
+                            num_children - num_hottest,
+                            threshold * 100.0
+                        )
+                        .into(),
+                    )
+                    .with_glyphs(palette),
+                )),
+        )
+    };
+    tree
+}
+
+/// Extract the hottest children from an activity iterator
+fn hottest_activities<'activities>(
+    activities: impl Iterator<Item = ActivityTrace<'activities>> + Clone,
+    mut duration: impl FnMut(&ActivityTrace) -> Duration,
+    threshold: Duration,
+) -> Box<[ActivityTrace<'activities>]> {
+    let mut children = activities
+        .filter(|a| duration(a) >= threshold)
+        .collect::<Box<[_]>>();
+    children.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
+    children
 }
 
 /// Truncate a string so that it only eats up n columns, by eating up the middle
@@ -256,5 +335,5 @@ fn display_activity(
             write!(output, "({})", trace.entity(e).bounded_display(arg_cols))?;
         }
     }
-    writeln!(output, "{trailer}")
+    write!(output, "{trailer}")
 }
