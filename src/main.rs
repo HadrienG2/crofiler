@@ -15,8 +15,8 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
-    /// Number of terminal columns available to display the entity
-    #[clap(short = 'c', long = "cols", default_value = "150")]
+    /// Maximal number of terminal columns to be used in the display
+    #[clap(short = 'c', long = "cols", default_value = "200")]
     max_cols: u16,
 
     /// Self-profile display threshold, as a percentage of total duration
@@ -63,6 +63,9 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
+    let max_cols = termion::terminal_size()
+        .map(|(width, _height)| width.min(args.max_cols))
+        .unwrap_or(args.max_cols);
     let profile = |name, duration: Box<dyn Fn(&ActivityTrace) -> Duration>, threshold: Duration| {
         println!("\nHot activities by {name}:");
         //
@@ -79,30 +82,30 @@ fn main() {
             let activity_arg = activity_trace.activity().argument();
             let duration = duration(&activity_trace);
             let percent = duration * norm * 100.0;
-            print!("- {activity_name}");
+            let header = format!("- {activity_name}");
+            let trailer = format!(" ({duration} µs, {percent:.2} %)");
+            let arg_cols = max_cols - header.width() as u16 - trailer.width() as u16 - 2;
+            print!("{header}");
             match activity_arg {
                 ActivityArgument::Nothing => {}
                 ActivityArgument::String(s)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
                 | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
-                    if s.width() <= args.max_cols.into() {
+                    if s.width() <= arg_cols.into() {
                         print!("({s})")
                     } else {
-                        print!("({})", truncate_string(&s, args.max_cols))
+                        print!("({})", truncate_string(&s, arg_cols))
                     }
                 }
                 ActivityArgument::FilePath(p) => {
-                    print!(
-                        "({})",
-                        path::truncate_path(&trace.file_path(p), args.max_cols)
-                    )
+                    print!("({})", path::truncate_path(&trace.file_path(p), arg_cols))
                 }
                 ActivityArgument::CppEntity(e)
                 | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-                    print!("({})", trace.entity(e).bounded_display(args.max_cols))
+                    print!("({})", trace.entity(e).bounded_display(arg_cols))
                 }
             }
-            println!(" ({duration} µs, {percent:.2} %)");
+            println!("{trailer}");
         }
         //
         let num_activities = trace.all_activities().count();
