@@ -10,11 +10,7 @@ use crate::display::{
 };
 use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
 use clap::Parser;
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-    path::PathBuf,
-};
+use std::{collections::HashMap, io, path::PathBuf};
 use termtree::{GlyphPalette, Tree};
 use unicode_width::UnicodeWidthStr;
 
@@ -77,9 +73,9 @@ fn main() {
     profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
     //
     for (name, duration) in profile.iter() {
-        let percent = duration * duration_norm * 100.0;
-        // FIXME: Extract profile display from display_activity and use it here
-        println!("- {name} ({duration} µs, {percent:.2} %)");
+        print!("- {name}");
+        display_profile_info(std::io::stdout(), *duration, duration_norm).unwrap();
+        println!();
     }
 
     // Flat activity profile by self-duration
@@ -93,7 +89,6 @@ fn main() {
     let num_hottest = hottest.len();
     for activity_trace in hottest.iter() {
         let duration = activity_trace.self_duration();
-        let percent = duration * duration_norm * 100.0;
         print!("- ");
         display_activity(
             std::io::stdout(),
@@ -101,7 +96,7 @@ fn main() {
             activity_trace,
             max_cols - 2,
             duration,
-            percent,
+            duration_norm,
         )
         .unwrap();
         println!();
@@ -227,10 +222,7 @@ fn display_activity(
     // Display the trailing profiling numbers in a private string to know its
     // display width and how many columns that leaves for the activity id.
     let mut trailer = Vec::<u8>::new();
-    write!(trailer, " [")?;
-    display_duration(&mut trailer, duration)?;
-    let percent = duration * duration_norm * 100.0;
-    write!(trailer, ", {percent:.2}%]")?;
+    display_profile_info(&mut trailer, duration, duration_norm)?;
     let trailer = std::str::from_utf8(&trailer[..]).unwrap();
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
@@ -253,6 +245,20 @@ fn display_activity(
         }
         Err(ActivityIdError::IoError(e)) => Err(e),
     }
+}
+
+/// Display profiling information
+//
+// FIXME: Extract this to display::stdio.
+fn display_profile_info(
+    mut output: impl io::Write,
+    duration: Duration,
+    duration_norm: Duration,
+) -> io::Result<()> {
+    write!(output, " [")?;
+    display_duration(&mut output, duration)?;
+    let percent = duration * duration_norm * 100.0;
+    write!(output, ", {percent:.2}%]")
 }
 
 /// Extract the hottest activities from an activity iterator
