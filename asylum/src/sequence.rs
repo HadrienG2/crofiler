@@ -68,7 +68,7 @@ pub struct InternedSequences<Item, KeyImpl: Key = Spur, const LEN_BITS: u32 = 8>
     concatenated: Box<[Item]>,
 
     /// Added to please rustc
-    phantom: PhantomData<*const KeyImpl>,
+    phantom: PhantomData<KeyImpl>,
 }
 //
 impl<Item, KeyImpl: Key, const LEN_BITS: u32> InternedSequences<Item, KeyImpl, LEN_BITS> {

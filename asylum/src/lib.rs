@@ -14,7 +14,7 @@ pub use lasso;
 
 /// Interned things
 #[derive(Clone, Debug, PartialEq)]
-pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<*const K>);
+pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<K>);
 //
 impl<Item, K: Key> Interned<Item, K> {
     /// Retrieve a previously interned thing
@@ -28,10 +28,7 @@ impl<Item, K: Key> Interned<Item, K> {
 // Holds unique items received so far, along with interning order
 //
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Interner<Item: Clone + Eq + Hash, K: Key = Spur>(
-    HashMap<Item, usize>,
-    PhantomData<*const K>,
-);
+pub struct Interner<Item: Clone + Eq + Hash, K: Key = Spur>(HashMap<Item, usize>, PhantomData<K>);
 //
 impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
     /// Set up an interner
