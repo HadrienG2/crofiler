@@ -4,10 +4,11 @@
 
 mod display;
 
-use crate::display::{duration::display_duration, path};
-use clang_time_trace::{
-    ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, Duration, MangledSymbol,
+use crate::display::{
+    activity::{self, ActivityIdError},
+    duration::display_duration,
 };
+use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
 use clap::Parser;
 use std::{
     collections::HashMap,
@@ -15,7 +16,6 @@ use std::{
     path::PathBuf,
 };
 use termtree::{GlyphPalette, Tree};
-use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
 /// Turn a clang time-trace dump into a profiler-like visualization
@@ -42,7 +42,7 @@ struct Args {
 }
 
 fn main() {
-    // Read various configuration
+    // Set up infrastructure and process CLI arguments
     env_logger::init();
     let args = Args::parse();
     let max_cols = termion::terminal_size()
@@ -77,7 +77,7 @@ fn main() {
     profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
     //
     for (name, duration) in profile.iter() {
-        let percent = duration / root_duration * 100.0;
+        let percent = duration * duration_norm * 100.0;
         println!("- {name} ({duration} µs, {percent:.2} %)");
     }
 
@@ -204,19 +204,6 @@ fn hierarchical_profile_tree(
     tree
 }
 
-/// Extract the hottest children from an activity iterator
-fn hottest_activities<'activities>(
-    activities: impl Iterator<Item = ActivityTrace<'activities>> + Clone,
-    mut duration: impl FnMut(&ActivityTrace) -> Duration,
-    threshold: Duration,
-) -> Box<[ActivityTrace<'activities>]> {
-    let mut children = activities
-        .filter(|a| duration(a) >= threshold)
-        .collect::<Box<[_]>>();
-    children.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
-    children
-}
-
 /// Display an activity trace
 //
 // FIXME: Extract this to display::stdio.
@@ -240,14 +227,14 @@ fn display_activity(
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
     // Try to display both the activity id and the profiling numbers
-    match display_activity_id(&mut output, trace, activity_trace, other_cols) {
+    match activity::display_activity_id(&mut output, trace, activity_trace, other_cols) {
         Ok(()) => {
             // Success, can just print out the profiling numbers
             write!(output, "{trailer}")
         }
         Err(ActivityIdError::NotEnoughCols(_)) => {
             // Not enough space for both, try to display activity ID alone
-            match display_activity_id(&mut output, trace, activity_trace, max_cols) {
+            match activity::display_activity_id(&mut output, trace, activity_trace, max_cols) {
                 Ok(()) => Ok(()),
                 Err(ActivityIdError::IoError(e)) => Err(e),
                 Err(ActivityIdError::NotEnoughCols(_)) => {
@@ -260,68 +247,20 @@ fn display_activity(
     }
 }
 
-/// Try to display an activity's name and argument in finite space
+/// Extract the hottest activities from an activity iterator
 ///
-/// Returns Err(NotEnoughCols) if not even the activity name can fit in that
-/// space. You may want to retry after eliminating other display elements if
-/// they are deemed less important, or just display "…".
+/// - `duration` is the sorting criterion (can be duration(), self_duration(),
+///   or a normalized version thereof for percentages)
+/// - `threshold` is the duration threshold below which activities are dropped
 ///
-// FIXME: Extract to display::activity
-pub fn display_activity_id(
-    mut output: impl io::Write,
-    trace: &ClangTrace,
-    activity_trace: &ActivityTrace,
-    mut max_cols: u16,
-) -> Result<(), ActivityIdError> {
-    let activity_name = activity_trace.activity().name();
-    let activity_arg = activity_trace.activity().argument();
-
-    // Can we display at least ActivityName(…)?
-    if usize::from(max_cols) < activity_name.width() + 3 {
-        // If not, error out
-        return Err(ActivityIdError::NotEnoughCols(max_cols));
-    } else {
-        // If so, display the activity name...
-        write!(output, "{activity_name}")?;
-    }
-    // ...and account for the reserved space
-    max_cols -= activity_name.width() as u16 + 2;
-
-    // Display the activity argument
-    match activity_arg {
-        ActivityArgument::Nothing => {}
-        ActivityArgument::String(s)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
-            if s.width() <= max_cols.into() {
-                write!(output, "({s})")?;
-            } else {
-                write!(output, "({})", display::truncate_string(&s, max_cols))?;
-            }
-        }
-        ActivityArgument::FilePath(p) => {
-            write!(
-                output,
-                "({})",
-                path::truncate_path(&trace.file_path(p), max_cols)
-            )?;
-        }
-        ActivityArgument::CppEntity(e)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-            write!(output, "({})", trace.entity(e).bounded_display(max_cols))?;
-        }
-    }
-    Ok(())
-}
-//
-/// Error that is emitted when an activity id cannot be displayed
-#[derive(Debug, Error)]
-pub enum ActivityIdError {
-    /// Not enough space to display activity name
-    #[error("cannot display activity name in {0} terminal column(s)")]
-    NotEnoughCols(u16),
-
-    /// Output device errored out
-    #[error("failed to write to output device ({0})")]
-    IoError(#[from] io::Error),
+fn hottest_activities<'activities>(
+    activities: impl Iterator<Item = ActivityTrace<'activities>>,
+    mut duration: impl FnMut(&ActivityTrace) -> Duration,
+    threshold: Duration,
+) -> Box<[ActivityTrace<'activities>]> {
+    let mut children = activities
+        .filter(|a| duration(a) >= threshold)
+        .collect::<Box<[_]>>();
+    children.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
+    children
 }

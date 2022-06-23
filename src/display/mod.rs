@@ -2,6 +2,7 @@
 
 use unicode_width::UnicodeWidthStr;
 
+pub mod activity;
 pub mod duration;
 pub mod path;
 
