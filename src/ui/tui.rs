@@ -272,7 +272,7 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
         };
         match column {
             // FIXME: Add a way to switch to percentage display, which will
-            //        likely require use of a global variable.
+            //        likely require use of a global variable. Default to %total
             HierarchicalColumn::Duration => format_duration(self.duration),
             HierarchicalColumn::SelfDuration => format_duration(self.self_duration),
             HierarchicalColumn::ActivityId => self.activity_id.clone().into(),
