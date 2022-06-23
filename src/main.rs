@@ -52,12 +52,8 @@ fn main() {
     println!("\nData from {}", trace.process_name());
 
     // Total clang execution time and associated normalization factor for
-    // computing relative overheads.
-    let root_duration = trace
-        .root_activities()
-        .map(|root| root.duration())
-        .sum::<f64>();
-    let duration_norm = 1.0 / root_duration;
+    // computing relative overheads
+    let duration_norm = duration_norm(trace.root_activities());
 
     // Activity types by self-duration
     // FIXME: Extract this into a display function in display::stdio
@@ -94,9 +90,9 @@ fn main() {
     }
     let num_activities = trace.all_activities().count();
     if num_hottest < num_activities {
-        let other_activities = num_activities - num_hottest;
         println!(
-            "- ... and {other_activities} other activities below {}% ...",
+            "- ... and {} other activities below {}% ...",
+            num_activities - num_hottest,
             args.self_threshold
         );
     }
@@ -251,6 +247,13 @@ fn display_profile_info(
     display_duration(&mut output, duration)?;
     let percent = duration * duration_norm * 100.0;
     write!(output, ", {percent:.2}%]")
+}
+
+/// Given a set of root nodes, compute the associated duration norm used to go
+/// from absolute child durations to percentages of the root durations
+pub fn duration_norm<'a>(roots: impl Iterator<Item = ActivityTrace<'a>>) -> Duration {
+    let root_duration = roots.map(|root| root.duration()).sum::<f64>();
+    1.0 / root_duration
 }
 
 /// Breakdown of self-duration by activity type, ordered by decreasing duration
