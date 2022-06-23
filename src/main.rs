@@ -60,19 +60,10 @@ fn main() {
     let duration_norm = 1.0 / root_duration;
 
     // Activity types by self-duration
-    // FIXME: Extract this into a data extraction function & display function in display::stdio
+    // FIXME: Extract this into a display function in display::stdio
     println!("\nSelf-duration breakdown by activity type:");
-    //
-    let mut profile = HashMap::<_, Duration>::new();
-    for activity_trace in trace.all_activities() {
-        *profile.entry(activity_trace.activity().name()).or_default() +=
-            activity_trace.self_duration();
-    }
-    //
-    let mut profile = profile.into_iter().collect::<Box<[_]>>();
-    profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
-    //
-    for (name, duration) in profile.iter() {
+    let activity_type_breakdown = activity_type_breakdown(&trace);
+    for (name, duration) in activity_type_breakdown.iter() {
         print!("- {name}");
         display_profile_info(std::io::stdout(), *duration, duration_norm).unwrap();
         println!();
@@ -177,13 +168,14 @@ fn hierarchical_profile_tree(
     );
     let num_hottest = hottest_children.len();
 
-    // Render children
+    // Render hottest children
     let make_child_tree = |child| {
         hierarchical_profile_tree(trace, palette, child, duration_norm, threshold, child_cols)
     };
     tree = if num_hottest == num_children {
         tree.with_leaves(hottest_children.into_vec().into_iter().map(make_child_tree))
     } else {
+        // If there are more children, warn about it
         let mut terminator = format!(
             "…{} callee(s) below {}%…",
             num_children - num_hottest,
@@ -261,13 +253,25 @@ fn display_profile_info(
     write!(output, ", {percent:.2}%]")
 }
 
+/// Breakdown of self-duration by activity type, ordered by decreasing duration
+pub fn activity_type_breakdown(trace: &ClangTrace) -> Box<[(&str, Duration)]> {
+    let mut profile = HashMap::<_, Duration>::new();
+    for activity_trace in trace.all_activities() {
+        *profile.entry(activity_trace.activity().name()).or_default() +=
+            activity_trace.self_duration();
+    }
+    let mut profile = profile.into_iter().collect::<Box<[_]>>();
+    profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
+    profile
+}
+
 /// Extract the hottest activities from an activity iterator
 ///
 /// - `duration` is the sorting criterion (can be duration(), self_duration(),
 ///   or a normalized version thereof for percentages)
 /// - `threshold` is the duration threshold below which activities are dropped
 ///
-fn hottest_activities<'activities>(
+pub fn hottest_activities<'activities>(
     activities: impl Iterator<Item = ActivityTrace<'activities>>,
     mut duration: impl FnMut(&ActivityTrace) -> Duration,
     threshold: Duration,
