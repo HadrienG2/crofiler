@@ -152,9 +152,15 @@ fn hierarchical_profile_tree(
 ) -> Tree<Box<str>> {
     // Render root node
     let mut root_display = Vec::<u8>::new();
-    let duration = root.duration();
-    let percent = duration * duration_norm * 100.0;
-    display_activity(&mut root_display, trace, &root, max_cols, duration, percent).unwrap();
+    display_activity(
+        &mut root_display,
+        trace,
+        &root,
+        max_cols,
+        root.duration(),
+        duration_norm,
+    )
+    .unwrap();
     let root_display = String::from_utf8(root_display).unwrap().into_boxed_str();
     let mut tree = Tree::new(root_display).with_glyphs(palette);
 
@@ -213,7 +219,7 @@ fn display_activity(
     activity_trace: &ActivityTrace,
     max_cols: u16,
     duration: Duration,
-    percent: Duration,
+    duration_norm: Duration,
 ) -> io::Result<()> {
     assert!(max_cols >= 1);
 
@@ -222,6 +228,7 @@ fn display_activity(
     let mut trailer = Vec::<u8>::new();
     write!(trailer, " [")?;
     display_duration(&mut trailer, duration)?;
+    let percent = duration * duration_norm * 100.0;
     write!(trailer, ", {percent:.2}%]")?;
     let trailer = std::str::from_utf8(&trailer[..]).unwrap();
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
