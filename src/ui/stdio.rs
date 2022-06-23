@@ -1,17 +1,17 @@
 //! Display facilities which are specific to the non-interactive stdio display
 
-use super::{
+use super::display::{
     activity::{self, ActivityIdError},
     duration::display_duration,
 };
-use crate::{profile, Args};
+use crate::{profile, CliArgs};
 use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
 use std::io;
 use termtree::{GlyphPalette, Tree};
 use unicode_width::UnicodeWidthStr;
 
 /// Run the analysis using the stdio display
-pub fn run_on_stdio(args: Args) {
+pub fn run(args: CliArgs) {
     // Determine column budget
     let max_cols = termion::terminal_size()
         .map(|(width, _height)| width.min(args.max_cols))
@@ -22,7 +22,7 @@ pub fn run_on_stdio(args: Args) {
     let trace = ClangTrace::from_file(args.input).unwrap();
 
     // Display basic metadata
-    println!("\nData from {}", trace.process_name());
+    println!("Data from {}", trace.process_name());
 
     // Use total clang execution time as a duration norm
     let duration_norm = profile::duration_norm(trace.root_activities());

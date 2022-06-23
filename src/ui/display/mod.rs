@@ -5,7 +5,6 @@ use unicode_width::UnicodeWidthStr;
 pub mod activity;
 pub mod duration;
 pub mod path;
-pub mod stdio;
 
 /// Truncate a string so that it only eats up n columns, by eating up the middle
 pub fn truncate_string(input: &str, max_cols: u16) -> String {
