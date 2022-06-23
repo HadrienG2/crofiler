@@ -36,7 +36,7 @@ pub use self::{
         global::{GlobalStat, GlobalStatParseError},
         ArgParseError,
     },
-    tree::{ActivityTrace, ActivityTreeError},
+    tree::{ActivityId, ActivityTrace, ActivityTreeError},
 };
 pub use cpparser::{
     asylum::path::{InternedComponent, InternedPath, PathError},
@@ -91,6 +91,11 @@ impl ClangTrace {
     /// duration() and anything derived from all_children().
     pub fn all_activities(&self) -> impl Iterator<Item = ActivityTrace> + Clone {
         self.activities.all_activities()
+    }
+
+    /// Retrieve an activity by a previously acquired identifier
+    pub fn activity(&self, id: ActivityId) -> ActivityTrace {
+        self.activities.activity(id)
     }
 
     /// Global statistics on clang activities

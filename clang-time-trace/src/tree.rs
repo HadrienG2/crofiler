@@ -70,6 +70,15 @@ impl ActivityTree {
                 activity_idx,
             })
     }
+
+    /// Get an activity using its activity ID
+    pub fn activity(&self, id: ActivityId) -> ActivityTrace {
+        ActivityTrace {
+            tree: self,
+            activity: &self.activities[id],
+            activity_idx: id,
+        }
+    }
 }
 
 /// Hierarchical view of an activity which clang engaged in
@@ -86,6 +95,11 @@ pub struct ActivityTrace<'a> {
 }
 //
 impl ActivityTrace<'_> {
+    /// Identifier that can be used to refer to this ActivityTrace
+    pub fn id(&self) -> ActivityId {
+        self.activity_idx
+    }
+
     /// What clang was doing
     pub fn activity(&self) -> &Activity {
         self.activity.stat.activity()
@@ -160,6 +174,9 @@ impl Debug for ActivityTrace<'_> {
             .finish_non_exhaustive()
     }
 }
+
+/// Identifier that can be used to refer to an ActivityTrace
+pub type ActivityId = usize;
 
 /// Individual clang activity within the activity tree
 #[derive(Debug, PartialEq)]
