@@ -78,6 +78,7 @@ fn main() {
     //
     for (name, duration) in profile.iter() {
         let percent = duration * duration_norm * 100.0;
+        // FIXME: Extract profile display from display_activity and use it here
         println!("- {name} ({duration} µs, {percent:.2} %)");
     }
 
