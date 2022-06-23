@@ -257,6 +257,7 @@ dependencies = [
  "once_cell",
  "termion",
  "termtree",
+ "thiserror",
  "unicode-segmentation",
  "unicode-width",
 ]

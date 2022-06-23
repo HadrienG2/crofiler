@@ -15,6 +15,7 @@ use std::{
     path::PathBuf,
 };
 use termtree::{GlyphPalette, Tree};
+use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
 /// Turn a clang time-trace dump into a profiler-like visualization
@@ -35,6 +36,9 @@ struct Args {
 
     /// Clang time-trace file to be analyzed
     input: PathBuf,
+    //
+    // FIXME: After resolving the stdio-isms, add a CLI switch to flip between
+    // stdio and tui, and start making a tui w/ cursive and cursive_table_view.
 }
 
 fn main() {
@@ -51,7 +55,8 @@ fn main() {
 
     println!("\nData from {}", trace.process_name());
 
-    // Total clang execution time
+    // Total clang execution time and associated normalization factor for
+    // computing relative overheads.
     let root_duration = trace
         .root_activities()
         .map(|root| root.duration())
@@ -59,6 +64,7 @@ fn main() {
     let duration_norm = 1.0 / root_duration;
 
     // Activity types by self-duration
+    // FIXME: Extract this into a data extraction function & display function in display::stdio
     println!("\nSelf-duration breakdown by activity type:");
     //
     let mut profile = HashMap::<_, Duration>::new();
@@ -76,6 +82,7 @@ fn main() {
     }
 
     // Flat activity profile by self-duration
+    // FIXME: Extract this into a display function in display::stdio
     println!("\nHottest activities by self-duration:");
     let hottest = hottest_activities(
         trace.all_activities(),
@@ -108,6 +115,8 @@ fn main() {
     }
 
     // Hierarchical profile
+    // FIXME: Extract this into a display function in display::stdio that acts
+    //        as the public frontend to hierarchical_profile_tree
     let palette = GlyphPalette {
         middle_item: "├",
         last_item: "└",
@@ -132,6 +141,7 @@ fn main() {
 }
 
 /// Make a tree display of the hierarchical profile of some build
+// FIXME: Extract this into display::stdio
 fn hierarchical_profile_tree(
     trace: &ClangTrace,
     palette: GlyphPalette,
@@ -208,22 +218,68 @@ fn hottest_activities<'activities>(
 }
 
 /// Display an activity trace
+//
+// FIXME: Extract this to display::stdio.
 fn display_activity(
     mut output: impl io::Write,
     trace: &ClangTrace,
     activity_trace: &ActivityTrace,
-    mut max_cols: u16,
+    max_cols: u16,
     duration: Duration,
     percent: Duration,
 ) -> io::Result<()> {
     assert!(max_cols >= 1);
+
+    // Display the trailing profiling numbers in a private string to know its
+    // display width and how many columns that leaves for the activity id.
+    let mut trailer = Vec::<u8>::new();
+    write!(trailer, " [")?;
+    display_duration(&mut trailer, duration)?;
+    write!(trailer, ", {percent:.2}%]")?;
+    let trailer = std::str::from_utf8(&trailer[..]).unwrap();
+    let other_cols = max_cols.saturating_sub(trailer.width() as u16);
+
+    // Try to display both the activity id and the profiling numbers
+    match display_activity_id(&mut output, trace, activity_trace, other_cols) {
+        Ok(()) => {
+            // Success, can just print out the profiling numbers
+            write!(output, "{trailer}")
+        }
+        Err(ActivityIdError::NotEnoughCols(_)) => {
+            // Not enough space for both, try to display activity ID alone
+            match display_activity_id(&mut output, trace, activity_trace, max_cols) {
+                Ok(()) => Ok(()),
+                Err(ActivityIdError::IoError(e)) => Err(e),
+                Err(ActivityIdError::NotEnoughCols(_)) => {
+                    // Seems the best we can do is an ellipsis placeholder...
+                    write!(output, "…")
+                }
+            }
+        }
+        Err(ActivityIdError::IoError(e)) => Err(e),
+    }
+}
+
+/// Try to display an activity's name and argument in finite space
+///
+/// Returns Err(NotEnoughCols) if not even the activity name can fit in that
+/// space. You may want to retry after eliminating other display elements if
+/// they are deemed less important, or just display "…".
+///
+// FIXME: Extract to display::activity
+pub fn display_activity_id(
+    mut output: impl io::Write,
+    trace: &ClangTrace,
+    activity_trace: &ActivityTrace,
+    mut max_cols: u16,
+) -> Result<(), ActivityIdError> {
     let activity_name = activity_trace.activity().name();
     let activity_arg = activity_trace.activity().argument();
 
     // Can we display at least ActivityName(…)?
     if usize::from(max_cols) < activity_name.width() + 3 {
-        // If not, display just an ellipsis
-        return write!(output, "…");
+        // If not, error out
+        return Err(ActivityIdError::NotEnoughCols(max_cols));
     } else {
         // If so, display the activity name...
         write!(output, "{activity_name}")?;
@@ -231,43 +287,41 @@ fn display_activity(
     // ...and account for the reserved space
     max_cols -= activity_name.width() as u16 + 2;
 
-    // Do a test display of the trailing profiling numbers
-    let mut trailer = Vec::<u8>::new();
-    write!(trailer, " [")?;
-    display_duration(&mut trailer, duration)?;
-    write!(trailer, ", {percent:.2}%]")?;
-    let trailer = std::str::from_utf8(&trailer[..]).unwrap();
-
-    // Allocate space for the activity name and display it
-    let arg_cols = max_cols.saturating_sub(trailer.width() as u16).max(1);
-    max_cols -= arg_cols;
+    // Display the activity argument
     match activity_arg {
         ActivityArgument::Nothing => {}
         ActivityArgument::String(s)
         | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
         | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
-            if s.width() <= arg_cols.into() {
+            if s.width() <= max_cols.into() {
                 write!(output, "({s})")?;
             } else {
-                write!(output, "({})", display::truncate_string(&s, arg_cols))?;
+                write!(output, "({})", display::truncate_string(&s, max_cols))?;
             }
         }
         ActivityArgument::FilePath(p) => {
             write!(
                 output,
                 "({})",
-                path::truncate_path(&trace.file_path(p), arg_cols)
+                path::truncate_path(&trace.file_path(p), max_cols)
             )?;
         }
         ActivityArgument::CppEntity(e)
         | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-            write!(output, "({})", trace.entity(e).bounded_display(arg_cols))?;
+            write!(output, "({})", trace.entity(e).bounded_display(max_cols))?;
         }
     }
-
-    // Display the trailer if there's room for it
-    if usize::from(max_cols) >= trailer.width() {
-        write!(output, "{trailer}")?;
-    }
     Ok(())
+}
+//
+/// Error that is emitted when an activity id cannot be displayed
+#[derive(Debug, Error)]
+pub enum ActivityIdError {
+    /// Not enough space to display activity name
+    #[error("cannot display activity name in {0} terminal column(s)")]
+    NotEnoughCols(u16),
+
+    /// Output device errored out
+    #[error("failed to write to output device ({0})")]
+    IoError(#[from] io::Error),
 }
