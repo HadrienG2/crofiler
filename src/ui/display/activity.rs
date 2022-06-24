@@ -33,10 +33,12 @@ pub fn display_activity_id(
 
     // Display the activity argument
     match activity_arg {
-        ActivityArgument::Nothing => {}
+        ActivityArgument::Nothing | ActivityArgument::MangledSymbolOpt(None) => {}
         ActivityArgument::String(s)
         | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
+        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s))
+        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Demangled(s)))
+        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Mangled(s))) => {
             if s.width() <= max_cols.into() {
                 write!(output, "({s})")?;
             } else {
@@ -51,7 +53,8 @@ pub fn display_activity_id(
             )?;
         }
         ActivityArgument::CppEntity(e)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
+        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e))
+        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Parsed(e))) => {
             write!(output, "({})", trace.entity(e).bounded_display(max_cols))?;
         }
     }

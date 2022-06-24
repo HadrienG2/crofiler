@@ -4,28 +4,46 @@ use crate::ctf::events::metadata::{MetadataEvent, MetadataOptions, NameArgs};
 use thiserror::Error;
 
 /// Parse the clang process name
-pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, ProcessNameParseError> {
+pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> {
     match m {
         MetadataEvent::process_name {
-            pid: _,
+            pid,
             args: NameArgs { name, extra },
-            tid: Some(0),
+            tid,
             options:
                 MetadataOptions {
                     cat: Some(cat),
                     ts: Some(ts),
                     tts: None,
                 },
-        } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 => Ok(name),
-        _ => Err(ProcessNameParseError::UnexpectedInput(m)),
+        } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 && tid == Some(pid) => Ok(name),
+        _ => Err(NameParseError::UnexpectedInput(m)),
     }
 }
 
-/// What can go wrong while parsing a process name
+/// Parse the clang thread name
+pub fn parse_thread_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> {
+    match m {
+        MetadataEvent::thread_name {
+            tid,
+            args: NameArgs { name, extra },
+            pid,
+            options:
+                MetadataOptions {
+                    cat: Some(cat),
+                    ts: Some(ts),
+                    tts: None,
+                },
+        } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 && pid == Some(tid) => Ok(name),
+        _ => Err(NameParseError::UnexpectedInput(m)),
+    }
+}
+
+/// What can go wrong while parsing a name
 #[derive(Error, Debug, PartialEq)]
-pub enum ProcessNameParseError {
-    /// Encountered unexpected input while trying to parse the process name
-    #[error("attempted to parse clang process name from unexpected {0:#?}")]
+pub enum NameParseError {
+    /// Encountered unexpected input while trying to parse a clang name
+    #[error("attempted to parse clang name from unexpected {0:#?}")]
     UnexpectedInput(MetadataEvent),
 }
 

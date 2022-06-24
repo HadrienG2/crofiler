@@ -28,7 +28,7 @@ use thiserror::Error;
 // Reexport types which appear in the public interface
 pub use self::{
     ctf::{Duration, Pid, Timestamp},
-    metadata::ProcessNameParseError,
+    metadata::NameParseError,
     stats::{
         activity::{
             Activity, ActivityArgument, ActivityParseError, ActivityStatParseError, MangledSymbol,
@@ -60,10 +60,13 @@ pub struct ClangTrace {
     /// Name of the clang process
     process_name: Box<str>,
 
-    /// Pid of the clang process (if not obviously invalid)
+    /// Pid of the clang process, if not obviously invalid
     pid: Option<Pid>,
 
-    /// Beginning of time (if specified)
+    /// Name of the clang thread, if known
+    thread_name: Option<Box<str>>,
+
+    /// Beginning of time, if specified
     beginning_of_time: Option<u64>,
 }
 //
@@ -127,6 +130,11 @@ impl ClangTrace {
         self.pid
     }
 
+    /// Name of the clang thread that acquired this data
+    pub fn thread_name(&self) -> Option<&str> {
+        self.thread_name.as_ref().map(|s| s.as_ref())
+    }
+
     /// Beginning of time
     ///
     /// This metadata is emitted by newer versions of clang and can be used to
@@ -187,6 +195,7 @@ impl FromStr for ClangTrace {
         let mut demangling_buf = String::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
+        let mut thread_name = None;
         let mut clang_pid = None;
         let merge_pid =
             |curr_pid: &mut Option<Pid>, proposed_pid: Pid| match (*curr_pid, proposed_pid) {
@@ -223,8 +232,9 @@ impl FromStr for ClangTrace {
                     }
                 }
 
-                // Process name metadata
+                // Metadata
                 TraceEvent::M(m) => match m {
+                    // Name of the clang process
                     MetadataEvent::process_name { ref pid, .. } => {
                         merge_pid(&mut clang_pid, *pid)?;
                         let name = metadata::parse_process_name(m)?;
@@ -237,6 +247,24 @@ impl FromStr for ClangTrace {
                             process_name = Some(name);
                         }
                     }
+
+                    // Name of the clang thread
+                    MetadataEvent::thread_name { ref pid, .. } => {
+                        if let Some(pid) = pid {
+                            merge_pid(&mut clang_pid, *pid)?;
+                        }
+                        let name = metadata::parse_thread_name(m)?;
+                        if let Some(thread_name) = thread_name {
+                            return Err(ClangTraceParseError::DuplicateThreadName(
+                                thread_name,
+                                name,
+                            ));
+                        } else {
+                            thread_name = Some(name);
+                        }
+                    }
+
+                    // No other metadata is expected from -ftime-trace
                     _ => return Err(ClangTraceParseError::UnexpectedMetadataEvent(m)),
                 },
 
@@ -258,6 +286,7 @@ impl FromStr for ClangTrace {
                 entities: entities.finalize(),
                 global_stats,
                 process_name,
+                thread_name,
                 pid,
                 beginning_of_time,
             })
@@ -355,10 +384,6 @@ pub enum ClangTraceParseError {
     #[error("encountered global statistic \"{0}\" twice ({1:?} then {2:?})")]
     DuplicateGlobalStat(Box<str>, GlobalStat, GlobalStat),
 
-    /// Failed to parse the clang process' name
-    #[error("failed to parse process name ({0})")]
-    ProcessNameParseError(#[from] ProcessNameParseError),
-
     /// Encountered two occurences of the process name
     #[error("encountered process name twice (\"{0}\" then \"{1}\")")]
     DuplicateProcessName(Box<str>, Box<str>),
@@ -366,6 +391,14 @@ pub enum ClangTraceParseError {
     /// Did not find the clang process' name
     #[error("did not encounter process name")]
     NoProcessName,
+
+    /// Failed to parse the clang thread' name
+    #[error("failed to parse name ({0})")]
+    NameParseError(#[from] NameParseError),
+
+    /// Encountered two occurences of the process name
+    #[error("encountered thread name twice (\"{0}\" then \"{1}\")")]
+    DuplicateThreadName(Box<str>, Box<str>),
 
     /// The clang pid was reported twice with different valies
     #[error("inconsistant clang pid values ({0} then {1})")]
@@ -679,7 +712,7 @@ mod tests {
     }]
 }"#
             ),
-            Err(ClangTraceParseError::ProcessNameParseError(_))
+            Err(ClangTraceParseError::NameParseError(_))
         );
     }
 

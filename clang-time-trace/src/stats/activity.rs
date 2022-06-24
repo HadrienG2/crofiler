@@ -107,6 +107,7 @@ pub enum ActivityStatParseError {
 }
 
 /// Activity that Clang can engage in during the compilation process
+// FIXME: Replace this enum with a perfect hash map
 #[derive(Clone, Debug, PartialEq)]
 pub enum Activity {
     /// Processing a source file
@@ -174,8 +175,8 @@ pub enum Activity {
     /// Infer function attributes
     InferFunctionAttrsPass(PathKey),
 
-    /// Function pass manager (aka "PassManager<llvm::Function>")
-    FunctionPassManager(MangledSymbol),
+    /// Function pass manager (aka `PassManager<llvm::Function>`)
+    FunctionPassManager(Option<MangledSymbol>),
 
     /// Scalar replacement of aggregates pass
     SROAPass(MangledSymbol),
@@ -201,8 +202,140 @@ pub enum Activity {
     /// Instruction combination pass
     InstCombinePass(MangledSymbol),
 
-    /// Alias analysis pass for globals
+    /// Alias analysis pass for globals (aka `RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>`)
     ModuleGlobalsAAPass(PathKey),
+
+    /// Adaptor that maps from a SCC to its functions
+    CGSCCToFunctionPassAdaptor,
+
+    /// A helper that repeats an SCC pass each time an indirect call is refined to a direct call by that pass
+    DevirtSCCRepeatedPass,
+
+    /// Function to loop pass adaptor
+    FunctionToLoopPassAdaptor(MangledSymbol),
+
+    /// Inliner pass
+    InlinerPass,
+
+    /// Jump threading pass
+    JumpThreadingPass(MangledSymbol),
+
+    /// Loop full unrolling pass
+    LoopFullUnrollPass,
+
+    /// Loop analysis manager
+    ///
+    /// aka `PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>`
+    ///
+    LoopAnalysisManager,
+
+    /// Global Value Numbering pass
+    GVNPass(MangledSymbol),
+
+    /// Early Common Subexpression Elimination pass
+    EarlyCSEPass(MangledSymbol),
+
+    /// Memcpy optimization pass
+    MemCpyOptPass(MangledSymbol),
+
+    /// Correlated value propagation pass
+    CorrelatedValuePropagationPass(MangledSymbol),
+
+    /// Control flow graph simplification pass
+    SimplifyCFGPass(MangledSymbol),
+
+    /// Tail call elimination pass
+    TailCallElimPass(MangledSymbol),
+
+    /// Commutative expression reassociation pass
+    ReassociatePass(MangledSymbol),
+
+    /// Loop rotation pass
+    LoopRotatePass,
+
+    /// Loop invariant code motion pass
+    LICMPass,
+
+    /// Function-level constant propagation and merging pass
+    SCCPPass(MangledSymbol),
+
+    /// Bit-tracking dead code elimination pass
+    BDCEPass(MangledSymbol),
+
+    /// DCE pass that assumes instructions are dead until proven otherwise
+    ADCEPass(MangledSymbol),
+
+    /// Dead Store Elimination pass
+    DSEPass(MangledSymbol),
+
+    /// Induction variable simplification pass
+    IndVarSimplifyPass,
+
+    /// Pass that computes function attributes in post-order over the call graph
+    PostOrderFunctionAttrsPass,
+
+    /// Loop canonicalization pass
+    LoopSimplifyPass(MangledSymbol),
+
+    /// Loop instruction simplification pass
+    LoopInstSimplifyPass,
+
+    /// Pass that does a post-order walk of the SCCs and runs a CGSCC pass over each
+    ModuleToPostOrderCGSCCPassAdaptor(PathKey),
+
+    /// Module pass wrapping the inliner pass
+    ModuleInlinerWrapperPass(PathKey),
+
+    /// Global Dead Code Elimination pass
+    GlobalDCEPass(PathKey),
+
+    /// Eliminate available external globals
+    EliminateAvailableExternallyPass(PathKey),
+
+    /// Pass that walks SCCs of the call graph in RPO to deduce and propagate function attributes
+    ReversePostOrderFunctionAttrsPass(PathKey),
+
+    /// SLP vectorizer pass (tries to vectorize store sequences)
+    SLPVectorizerPass(MangledSymbol),
+
+    /// Pass that demotes FP operations to work on integers when losslessly possible
+    Float2IntPass(MangledSymbol),
+
+    /// Loop vectorization pass
+    LoopVectorizePass(MangledSymbol),
+
+    /// Constant instrinsics lowering pass
+    LowerConstantIntrinsicsPass(MangledSymbol),
+
+    /// Loop unrolling pass
+    LoopUnrollPass(MangledSymbol),
+
+    /// Pass that performes profile-guided sinking of instructions into loops
+    LoopSinkPass(MangledSymbol),
+
+    /// Pass that runs instruction simplification across each instruction in the function
+    InstSimplifyPass(MangledSymbol),
+
+    /// Loop load elimination pass
+    LoopLoadEliminationPass(MangledSymbol),
+
+    /// Pass that populates the VFABI attribute with scalar-to-vector mappings from TargetLibraryInfo
+    InjectTLIMappings(MangledSymbol),
+
+    /// Pass that optimizes scalar/vector interactions in IR using target cost models
+    VectorCombinePass(MangledSymbol),
+
+    /// Call Graph Profile pass
+    CGProfilePass(PathKey),
+
+    /// Constant deduplication pass
+    ConstantMergePass(PathKey),
+
+    /// Pass that converts lookup tables to relative lookup tables for PIC-friendliness
+    RelLookupTableConverterPass(PathKey),
+
+    /// Top-level optimizer activity?
+    Optimizer,
 }
 //
 impl Activity {
@@ -241,6 +374,49 @@ impl Activity {
             DeadArgumentEliminationPass(_) => "DeadArgumentEliminationPass",
             InstCombinePass(_) => "InstCombinePass",
             ModuleGlobalsAAPass(_) => "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>",
+            CGSCCToFunctionPassAdaptor => "CGSCCToFunctionPassAdaptor",
+            DevirtSCCRepeatedPass => "DevirtSCCRepeatedPass",
+            FunctionToLoopPassAdaptor(_) => "FunctionToLoopPassAdaptor",
+            InlinerPass => "InlinerPass",
+            JumpThreadingPass(_) => "JumpThreadingPass",
+            LoopFullUnrollPass => "LoopFullUnrollPass(<unnamed loop>)",
+            LoopAnalysisManager => "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>",
+            GVNPass(_) => "GVNPass",
+            EarlyCSEPass(_) => "EarlyCSEPass",
+            MemCpyOptPass(_) => "MemCpyOptPass",
+            CorrelatedValuePropagationPass(_) => "CorrelatedValuePropagationPass",
+            SimplifyCFGPass(_) => "SimplifyCFGPass",
+            TailCallElimPass(_) => "TailCallElimPass",
+            ReassociatePass(_) => "ReassociatePass",
+            LoopRotatePass => "LoopRotatePass",
+            LICMPass => "LICMPass",
+            SCCPPass(_) => "SCCPPass",
+            BDCEPass(_) => "BDCEPass",
+            ADCEPass(_) => "ADCEPass",
+            DSEPass(_) => "DSEPass",
+            IndVarSimplifyPass => "IndVarSimplifyPass",
+            PostOrderFunctionAttrsPass => "PostOrderFunctionAttrsPass",
+            LoopSimplifyPass(_) => "LoopSimplifyPass",
+            LoopInstSimplifyPass => "LoopInstSimplifyPass",
+            ModuleToPostOrderCGSCCPassAdaptor(_) => "ModuleToPostOrderCGSCCPassAdaptor",
+            ModuleInlinerWrapperPass(_) => "ModuleInlinerWrapperPass",
+            GlobalDCEPass(_) => "GlobalDCEPass",
+            EliminateAvailableExternallyPass(_) => "EliminateAvailableExternallyPass",
+            ReversePostOrderFunctionAttrsPass(_) => "ReversePostOrderFunctionAttrsPass",
+            SLPVectorizerPass(_) => "SLPVectorizerPass",
+            Float2IntPass(_) => "Float2IntPass",
+            LoopVectorizePass(_) => "LoopVectorizePass",
+            LowerConstantIntrinsicsPass(_) => "LowerConstantIntrinsicsPass",
+            LoopUnrollPass(_) => "LoopUnrollPass",
+            LoopSinkPass(_) => "LoopSinkPass",
+            InstSimplifyPass(_) => "InstSimplifyPass",
+            LoopLoadEliminationPass(_) => "LoopLoadEliminationPass",
+            InjectTLIMappings(_) => "InjectTLIMappings",
+            VectorCombinePass(_) => "VectorCombinePass",
+            CGProfilePass(_) => "CGProfilePass",
+            ConstantMergePass(_) => "ConstantMergePass",
+            RelLookupTableConverterPass(_) => "RelLookupTableConverterPass",
+            Optimizer => "Optimizer",
         }
     }
 
@@ -255,7 +431,18 @@ impl Activity {
             | PerModulePasses
             | CodeGenPasses
             | Backend
-            | ExecuteCompiler => Nothing,
+            | ExecuteCompiler
+            | CGSCCToFunctionPassAdaptor
+            | DevirtSCCRepeatedPass
+            | InlinerPass
+            | LoopFullUnrollPass
+            | LoopAnalysisManager
+            | LoopRotatePass
+            | LICMPass
+            | IndVarSimplifyPass
+            | PostOrderFunctionAttrsPass
+            | LoopInstSimplifyPass
+            | Optimizer => Nothing,
             RunPass(s) | RunLoopPass(s) => String(s.clone()),
             Source(p)
             | OptModule(p)
@@ -265,7 +452,15 @@ impl Activity {
             | CalledValuePropagationPass(p)
             | GlobalOptPass(p)
             | DeadArgumentEliminationPass(p)
-            | ModuleGlobalsAAPass(p) => FilePath(*p),
+            | ModuleGlobalsAAPass(p)
+            | ModuleToPostOrderCGSCCPassAdaptor(p)
+            | ModuleInlinerWrapperPass(p)
+            | GlobalDCEPass(p)
+            | EliminateAvailableExternallyPass(p)
+            | ReversePostOrderFunctionAttrsPass(p)
+            | CGProfilePass(p)
+            | ConstantMergePass(p)
+            | RelLookupTableConverterPass(p) => FilePath(*p),
             ParseClass(e)
             | InstantiateClass(e)
             | ParseTemplate(e)
@@ -275,10 +470,34 @@ impl Activity {
             | CodeGenFunction(e)
             | DebugFunction(e) => CppEntity(e.clone()),
             OptFunction(m)
-            | FunctionPassManager(m)
             | SROAPass(m)
             | PromotePass(m)
-            | InstCombinePass(m) => MangledSymbol(m.clone()),
+            | InstCombinePass(m)
+            | FunctionToLoopPassAdaptor(m)
+            | JumpThreadingPass(m)
+            | GVNPass(m)
+            | EarlyCSEPass(m)
+            | MemCpyOptPass(m)
+            | CorrelatedValuePropagationPass(m)
+            | SimplifyCFGPass(m)
+            | TailCallElimPass(m)
+            | ReassociatePass(m)
+            | SCCPPass(m)
+            | BDCEPass(m)
+            | ADCEPass(m)
+            | DSEPass(m)
+            | LoopSimplifyPass(m)
+            | SLPVectorizerPass(m)
+            | Float2IntPass(m)
+            | LoopVectorizePass(m)
+            | LowerConstantIntrinsicsPass(m)
+            | LoopUnrollPass(m)
+            | LoopSinkPass(m)
+            | InstSimplifyPass(m)
+            | LoopLoadEliminationPass(m)
+            | InjectTLIMappings(m)
+            | VectorCombinePass(m) => MangledSymbol(m.clone()),
+            FunctionPassManager(o) => MangledSymbolOpt(o.clone()),
         }
     }
 
@@ -287,7 +506,7 @@ impl Activity {
         name: Box<str>,
         args: Option<HashMap<Box<str>, json::Value>>,
         parser: &EntityParser,
-        mut demangling_buf: &mut String,
+        demangling_buf: &mut String,
     ) -> Result<Self, ActivityParseError> {
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
@@ -326,55 +545,93 @@ impl Activity {
                 Ok(constructor(parse_entity(entity)?))
             };
         //
-        let mut fill_mangled_arg =
-            |constructor: fn(MangledSymbol) -> Activity| -> Result<Activity, ActivityParseError> {
-                let symbol = detail_arg()?;
+        let demangling_buf = RefCell::new(demangling_buf);
+        let mangled_arg = || -> Result<MangledSymbol, ActivityParseError> {
+            let symbol = detail_arg()?;
+            let mut demangling_buf = demangling_buf.borrow_mut();
 
-                let parse_demangled = |entity: Box<str>| -> MangledSymbol {
-                    if let Ok(parsed) = parse_entity(&*entity) {
-                        MangledSymbol::Parsed(parsed)
-                    } else {
-                        MangledSymbol::Demangled(entity)
-                    }
-                };
-
-                let demangling_result = match Symbol::new_with_options(
-                    &*symbol,
-                    &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
-                )
-                .map(|s| {
-                    demangling_buf.clear();
-                    s.structured_demangle(
-                        &mut demangling_buf,
-                        &DemangleOptions::default()
-                            .hide_expression_literal_types()
-                            .no_return_type()
-                            .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
-                    )
-                }) {
-                    // Mangled symbol was successfully demangled, intern it along with the rest
-                    Ok(Ok(())) => parse_demangled(demangling_buf.clone().into_boxed_str()),
-
-                    // Symbol failed to demangle, try some patterns that cpp_demangle
-                    // should not reject but actually does reject before giving up
-                    Ok(Err(_)) | Err(_) => match &*symbol {
-                        "main" | "__clang_call_terminate" => parse_demangled(symbol),
-                        _ => MangledSymbol::Mangled(symbol),
-                    },
-                };
-
-                match &demangling_result {
-                    MangledSymbol::Parsed(_) => {}
-                    MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
-                    MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+            let parse_demangled = |entity: Box<str>| -> MangledSymbol {
+                if let Ok(parsed) = parse_entity(&*entity) {
+                    MangledSymbol::Parsed(parsed)
+                } else {
+                    MangledSymbol::Demangled(entity)
                 }
-
-                Ok(constructor(demangling_result))
             };
+
+            let demangling_result = match Symbol::new_with_options(
+                &*symbol,
+                &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+            )
+            .map(|s| {
+                demangling_buf.clear();
+                s.structured_demangle(
+                    &mut *demangling_buf,
+                    &DemangleOptions::default()
+                        .hide_expression_literal_types()
+                        .no_return_type()
+                        .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+                )
+            }) {
+                // Mangled symbol was successfully demangled, intern it along with the rest
+                Ok(Ok(())) => parse_demangled(demangling_buf.clone().into_boxed_str()),
+
+                // Symbol failed to demangle, try some patterns that cpp_demangle
+                // should not reject but actually does reject before giving up
+                Ok(Err(_)) | Err(_) => match &*symbol {
+                    "main" | "__clang_call_terminate" => parse_demangled(symbol),
+                    _ => MangledSymbol::Mangled(symbol),
+                },
+            };
+
+            match &demangling_result {
+                MangledSymbol::Parsed(_) => {}
+                MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
+                MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+            }
+
+            Ok(demangling_result)
+        };
+        //
+        let fill_mangled_arg =
+            |constructor: fn(MangledSymbol) -> Activity| -> Result<Activity, ActivityParseError> {
+                Ok(constructor(mangled_arg()?))
+            };
+        //
+        let fill_mangled_arg_opt =
+            |constructor: fn(Option<MangledSymbol>) -> Activity| -> Result<Activity, ActivityParseError> {
+                match mangled_arg() {
+                    Ok(arg) => Ok(constructor(Some(arg))),
+                    Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => Ok(constructor(None)),
+                    Err(e) => Err(e)?
+                }
+            };
+        //
+        let unnamed_loop_arg = |constructor: Activity| -> Result<Activity, ActivityParseError> {
+            let loop_name = detail_arg()?;
+            if &*loop_name == "<unnamed loop>" {
+                Ok(constructor)
+            } else {
+                Err(ActivityParseError::UnexpectedLoopName(loop_name))
+            }
+        };
+        //
+        let unnamed_loop_arg_opt = |constructor: Activity| -> Result<Activity, ActivityParseError> {
+            match detail_arg() {
+                Ok(loop_name) => {
+                    if &*loop_name == "<unnamed loop>" {
+                        Ok(constructor)
+                    } else {
+                        Err(ActivityParseError::UnexpectedLoopName(loop_name))
+                    }
+                }
+                Err(ArgParseError::MissingKey("detail")) => Ok(constructor),
+                Err(e) => Err(e)?,
+            }
+        };
 
         // Parse the activity name and parse arguments accordingly
         use Activity::*;
-        match &*name {
+        let result = match &*name {
             "PerformPendingInstantiations" => no_args(PerformPendingInstantiations),
             "Frontend" => no_args(Frontend),
             "PerFunctionPasses" => no_args(PerFunctionPasses),
@@ -396,7 +653,7 @@ impl Activity {
             "RunLoopPass" => fill_str_arg(RunLoopPass),
             "OptModule" => fill_path_arg(OptModule),
             "InferFunctionAttrsPass" => fill_path_arg(InferFunctionAttrsPass),
-            "PassManager<llvm::Function>" => fill_mangled_arg(FunctionPassManager),
+            "PassManager<llvm::Function>" => fill_mangled_arg_opt(FunctionPassManager),
             "SROAPass" => fill_mangled_arg(SROAPass),
             "ModuleToFunctionPassAdaptor" => fill_path_arg(ModuleToFunctionPassAdaptor),
             "IPSCCPPass" => fill_path_arg(IPSCCPPass),
@@ -408,11 +665,59 @@ impl Activity {
             "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => {
                 fill_path_arg(ModuleGlobalsAAPass)
             }
+            "CGSCCToFunctionPassAdaptor" => no_args(CGSCCToFunctionPassAdaptor),
+            "DevirtSCCRepeatedPass" => no_args(DevirtSCCRepeatedPass),
+            "FunctionToLoopPassAdaptor" => fill_mangled_arg(FunctionToLoopPassAdaptor),
+            "InlinerPass" => no_args(InlinerPass),
+            "JumpThreadingPass" => fill_mangled_arg(JumpThreadingPass),
+            "LoopFullUnrollPass" => unnamed_loop_arg(LoopFullUnrollPass),
+            "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>" => no_args(LoopAnalysisManager),
+            "GVNPass" => fill_mangled_arg(GVNPass),
+            "EarlyCSEPass" => fill_mangled_arg(EarlyCSEPass),
+            "MemCpyOptPass" => fill_mangled_arg(MemCpyOptPass),
+            "CorrelatedValuePropagationPass" => fill_mangled_arg(CorrelatedValuePropagationPass),
+            "SimplifyCFGPass" => fill_mangled_arg(SimplifyCFGPass),
+            "TailCallElimPass" => fill_mangled_arg(TailCallElimPass),
+            "ReassociatePass" => fill_mangled_arg(ReassociatePass),
+            "LoopRotatePass" => unnamed_loop_arg(LoopRotatePass),
+            "LICMPass" => unnamed_loop_arg_opt(LICMPass),
+            "SCCPPass" => fill_mangled_arg(SCCPPass),
+            "BDCEPass" => fill_mangled_arg(BDCEPass),
+            "ADCEPass" => fill_mangled_arg(ADCEPass),
+            "DSEPass" => fill_mangled_arg(DSEPass),
+            "IndVarSimplifyPass" => unnamed_loop_arg(IndVarSimplifyPass),
+            "PostOrderFunctionAttrsPass" => no_args(PostOrderFunctionAttrsPass),
+            "LoopSimplifyPass" => fill_mangled_arg(LoopSimplifyPass),
+            "LoopInstSimplifyPass" => unnamed_loop_arg(LoopInstSimplifyPass),
+            "ModuleToPostOrderCGSCCPassAdaptor" => fill_path_arg(ModuleToPostOrderCGSCCPassAdaptor),
+            "ModuleInlinerWrapperPass" => fill_path_arg(ModuleInlinerWrapperPass),
+            "GlobalDCEPass" => fill_path_arg(GlobalDCEPass),
+            "EliminateAvailableExternallyPass" => fill_path_arg(EliminateAvailableExternallyPass),
+            "ReversePostOrderFunctionAttrsPass" => fill_path_arg(ReversePostOrderFunctionAttrsPass),
+            "SLPVectorizerPass" => fill_mangled_arg(SLPVectorizerPass),
+            "Float2IntPass" => fill_mangled_arg(Float2IntPass),
+            "LoopVectorizePass" => fill_mangled_arg(LoopVectorizePass),
+            "LowerConstantIntrinsicsPass" => fill_mangled_arg(LowerConstantIntrinsicsPass),
+            "LoopUnrollPass" => fill_mangled_arg(LoopUnrollPass),
+            "LoopSinkPass" => fill_mangled_arg(LoopSinkPass),
+            "InstSimplifyPass" => fill_mangled_arg(InstSimplifyPass),
+            "LoopLoadEliminationPass" => fill_mangled_arg(LoopLoadEliminationPass),
+            "InjectTLIMappings" => fill_mangled_arg(InjectTLIMappings),
+            "VectorCombinePass" => fill_mangled_arg(VectorCombinePass),
+            "CGProfilePass" => fill_path_arg(CGProfilePass),
+            "ConstantMergePass" => fill_path_arg(ConstantMergePass),
+            "RelLookupTableConverterPass" => fill_path_arg(RelLookupTableConverterPass),
+            "Optimizer" => no_args(Optimizer),
             _ => Err(ActivityParseError::UnknownActivity(
                 name.clone(),
                 args.borrow_mut().take(),
             )),
+        };
+
+        if let Err(e) = result {
+            panic!("Failed to parse {name}: {e}");
         }
+        result
     }
 
     /// Check for absence of arguments
@@ -484,6 +789,9 @@ pub enum ActivityArgument {
 
     /// A C++ mangled symbol
     MangledSymbol(MangledSymbol),
+
+    /// Either a C++ mangled symbol or nothing
+    MangledSymbolOpt(Option<MangledSymbol>),
 }
 //
 /// A mangled C++ symbol that we tried to demangle and parse
@@ -527,6 +835,10 @@ pub enum ActivityParseError {
     /// Failed to parse a C++ entity name
     #[error("failed to parse C++ entity ({0})")]
     BadCppEntity(#[from] nom::error::Error<Box<str>>),
+
+    /// Unexpected loop name
+    #[error("unexpected loop name ({0})")]
+    UnexpectedLoopName(Box<str>),
 }
 
 #[cfg(test)]
