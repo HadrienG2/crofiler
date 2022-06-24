@@ -168,6 +168,41 @@ pub enum Activity {
 
     /// Compiler execution
     ExecuteCompiler,
+
+    // FIXME: Add new tests for these new passes
+    //
+    /// Infer function attributes
+    InferFunctionAttrsPass(PathKey),
+
+    /// Function pass manager (aka "PassManager<llvm::Function>")
+    FunctionPassManager(MangledSymbol),
+
+    /// Scalar replacement of aggregates pass
+    SROAPass(MangledSymbol),
+
+    /// Module-to-function pass adaptor
+    ModuleToFunctionPassAdaptor(PathKey),
+
+    /// Interprocedural Sparse Conditional Constant Propagation pass
+    IPSCCPPass(PathKey),
+
+    /// Called value propagation pass
+    CalledValuePropagationPass(PathKey),
+
+    /// Global optimization pass
+    GlobalOptPass(PathKey),
+
+    /// Promotion pass
+    PromotePass(MangledSymbol),
+
+    /// Dead argument elimination pass
+    DeadArgumentEliminationPass(PathKey),
+
+    /// Instruction combination pass
+    InstCombinePass(MangledSymbol),
+
+    /// Alias analysis pass for globals
+    ModuleGlobalsAAPass(PathKey),
 }
 //
 impl Activity {
@@ -195,6 +230,17 @@ impl Activity {
             CodeGenPasses => "CodeGenPasses",
             Backend => "Backend",
             ExecuteCompiler => "ExecuteCompiler",
+            InferFunctionAttrsPass(_) => "InferFunctionAttrsPass",
+            FunctionPassManager(_) => "PassManager<llvm::Function>",
+            SROAPass(_) => "SROAPass",
+            ModuleToFunctionPassAdaptor(_) => "ModuleToFunctionPassAdaptor",
+            IPSCCPPass(_) => "IPSCCPPass",
+            CalledValuePropagationPass(_) => "CalledValuePropagationPass",
+            GlobalOptPass(_) => "GlobalOptPass",
+            PromotePass(_) => "PromotePass",
+            DeadArgumentEliminationPass(_) => "DeadArgumentEliminationPass",
+            InstCombinePass(_) => "InstCombinePass",
+            ModuleGlobalsAAPass(_) => "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>",
         }
     }
 
@@ -211,7 +257,15 @@ impl Activity {
             | Backend
             | ExecuteCompiler => Nothing,
             RunPass(s) | RunLoopPass(s) => String(s.clone()),
-            Source(p) | OptModule(p) => FilePath(*p),
+            Source(p)
+            | OptModule(p)
+            | InferFunctionAttrsPass(p)
+            | ModuleToFunctionPassAdaptor(p)
+            | IPSCCPPass(p)
+            | CalledValuePropagationPass(p)
+            | GlobalOptPass(p)
+            | DeadArgumentEliminationPass(p)
+            | ModuleGlobalsAAPass(p) => FilePath(*p),
             ParseClass(e)
             | InstantiateClass(e)
             | ParseTemplate(e)
@@ -220,7 +274,11 @@ impl Activity {
             | DebugGlobalVariable(e)
             | CodeGenFunction(e)
             | DebugFunction(e) => CppEntity(e.clone()),
-            OptFunction(m) => MangledSymbol(m.clone()),
+            OptFunction(m)
+            | FunctionPassManager(m)
+            | SROAPass(m)
+            | PromotePass(m)
+            | InstCombinePass(m) => MangledSymbol(m.clone()),
         }
     }
 
@@ -337,7 +395,23 @@ impl Activity {
             "OptFunction" => fill_mangled_arg(OptFunction),
             "RunLoopPass" => fill_str_arg(RunLoopPass),
             "OptModule" => fill_path_arg(OptModule),
-            _ => Err(ActivityParseError::UnknownActivity(name.clone())),
+            "InferFunctionAttrsPass" => fill_path_arg(InferFunctionAttrsPass),
+            "PassManager<llvm::Function>" => fill_mangled_arg(FunctionPassManager),
+            "SROAPass" => fill_mangled_arg(SROAPass),
+            "ModuleToFunctionPassAdaptor" => fill_path_arg(ModuleToFunctionPassAdaptor),
+            "IPSCCPPass" => fill_path_arg(IPSCCPPass),
+            "CalledValuePropagationPass" => fill_path_arg(CalledValuePropagationPass),
+            "GlobalOptPass" => fill_path_arg(GlobalOptPass),
+            "PromotePass" => fill_mangled_arg(PromotePass),
+            "DeadArgumentEliminationPass" => fill_path_arg(DeadArgumentEliminationPass),
+            "InstCombinePass" => fill_mangled_arg(InstCombinePass),
+            "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => {
+                fill_path_arg(ModuleGlobalsAAPass)
+            }
+            _ => Err(ActivityParseError::UnknownActivity(
+                name.clone(),
+                args.borrow_mut().take(),
+            )),
         }
     }
 
@@ -439,8 +513,8 @@ pub enum MangledSymbol {
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityParseError {
     /// Encountered an unexpected activity name
-    #[error("encountered unknown activity \"{0}\"")]
-    UnknownActivity(Box<str>),
+    #[error("encountered unknown activity {0:?} with arguments {1:?}")]
+    UnknownActivity(Box<str>, Option<HashMap<Box<str>, json::Value>>),
 
     /// Failed to parse activity arguments
     #[error("failed to parse activity arguments ({0})")]
