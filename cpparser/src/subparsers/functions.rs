@@ -2,7 +2,7 @@
 
 use crate::{
     display::{CustomDisplay, DisplayState},
-    interning::{recursion::RecursiveSequenceInterner, slice::SliceView},
+    interning::slice::SliceView,
     subparsers::{
         names::atoms::{IdentifierKey, IdentifierView},
         types::{
@@ -14,7 +14,7 @@ use crate::{
     Entities, EntityParser, IResult,
 };
 use asylum::{
-    lasso::{Key, MiniSpur, Spur},
+    lasso::{MiniSpur, Spur},
     sequence::SequenceKey,
 };
 use nom::Parser;
@@ -119,16 +119,16 @@ impl EntityParser {
 
         let mut tuple = tuple((
             opt(abi),
-            (|s| function_parameters(s, &type_like, &self.function_parameters)).terminated(space0),
+            (|s| self.parse_function_parameter_set(s)).terminated(space0),
             Self::parse_cv.terminated(space0),
             Self::parse_reference.terminated(space0),
             opt((|s| self.parse_noexcept(s)).terminated(space0)),
             opt(trailing_return),
         ))
         .map(
-            |(abi, parameters, cv, reference, noexcept, trailing_return)| FunctionSignature {
+            |(abi, parameter_set, cv, reference, noexcept, trailing_return)| FunctionSignature {
                 abi,
-                parameters,
+                parameter_set,
                 cv,
                 reference,
                 noexcept,
@@ -137,6 +137,55 @@ impl EntityParser {
         );
 
         tuple.parse(s)
+    }
+
+    /// Parser recognizing a function parameter set
+    fn parse_function_parameter_set<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, FunctionParameterSet> {
+        use nom::{
+            character::complete::{char, space0},
+            sequence::preceded,
+        };
+        use nom_supreme::{multi::parse_separated_terminated, tag::complete::tag};
+
+        let arguments_header = char('(').and(space0);
+
+        let parameter_or_ellipsis = ((|s| self.parse_type_like(s))
+            .map(ParameterOrEllipsis::Parameter))
+        .or(tag("...").value(ParameterOrEllipsis::Ellipsis));
+
+        let non_empty_parameters = parse_separated_terminated(
+            parameter_or_ellipsis,
+            space0.and(char(',')).and(space0),
+            space0.and(char(')')),
+            || (self.function_parameters.entry(), false, false),
+            |(mut entry, mut variadic, bad), item| {
+                // An variadism ellipsis is only allowed in trailing position
+                if variadic || bad {
+                    (entry, variadic, true)
+                } else {
+                    match item {
+                        ParameterOrEllipsis::Parameter(p) => entry.push(p),
+                        ParameterOrEllipsis::Ellipsis => variadic = true,
+                    };
+                    (entry, variadic, false)
+                }
+            },
+        )
+        .verify(|(_entry, _ellipsis, bad)| !bad)
+        .map(|(entry, ellipsis, _bad)| (entry.intern(), ellipsis));
+
+        let empty_parameters =
+            char(')').map(|_| (self.function_parameters.entry().intern(), false));
+
+        preceded(arguments_header, non_empty_parameters.or(empty_parameters))
+            .map(|(parameters, variadic)| FunctionParameterSet {
+                parameters,
+                variadic,
+            })
+            .parse(s)
     }
 
     /// Retrieve a function parameter set previously parsed by parse_function_signature
@@ -210,7 +259,7 @@ pub struct FunctionSignature {
     abi: Option<IdentifierKey>,
 
     /// Parameter types
-    parameters: FunctionParametersKey,
+    parameter_set: FunctionParameterSet,
 
     /// CV qualifiers
     cv: ConstVolatile,
@@ -230,11 +279,11 @@ pub struct FunctionSignature {
     trailing_return: Option<TypeKey>,
 }
 //
-impl From<FunctionParametersKey> for FunctionSignature {
-    fn from(parameters: FunctionParametersKey) -> Self {
+impl From<FunctionParameterSet> for FunctionSignature {
+    fn from(parameter_set: FunctionParameterSet) -> Self {
         Self {
             abi: None,
-            parameters,
+            parameter_set,
             cv: ConstVolatile::default(),
             reference: Reference::None,
             noexcept: None,
@@ -265,7 +314,13 @@ impl<'entities> FunctionSignatureView<'entities> {
 
     /// Parameter types
     pub fn parameters(&self) -> FunctionParametersView {
-        self.entities.function_parameters(self.inner.parameters)
+        self.entities
+            .function_parameters(self.inner.parameter_set.parameters)
+    }
+
+    /// Is variadic (accepts extra parameters)
+    pub fn variadic(&self) -> bool {
+        self.inner.parameter_set.variadic
     }
 
     /// CV qualifiers
@@ -325,6 +380,10 @@ impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
         }
 
         self.parameters().display_impl(f, state)?;
+        if state.can_recurse() && self.variadic() {
+            write!(f, ", ...")?;
+        }
+        write!(f, ")")?;
 
         let cv = self.cv();
         if cv != ConstVolatile::default() {
@@ -364,44 +423,21 @@ pub type FunctionParametersView<'entities> = SliceView<
     FUNCTION_PARAMETERS_LEN_BITS,
 >;
 
-/// Parser recognizing a set of function parameters, given a parameter grammar
-///
-/// With a type grammar, this parses function signatures, and with a value
-/// grammar, this parses function calls.
-///
-fn function_parameters<
-    'source,
-    T: Clone + Eq + Hash + 'source,
-    KeyImpl: Key,
-    const LEN_BITS: u32,
->(
-    s: &'source str,
-    parse_parameter: impl FnMut(&'source str) -> IResult<'source, T>,
-    interner: &RecursiveSequenceInterner<T, KeyImpl, LEN_BITS>,
-) -> IResult<'source, SequenceKey<KeyImpl, LEN_BITS>> {
-    use nom::{
-        character::complete::{char, space0},
-        sequence::preceded,
-    };
-    use nom_supreme::multi::parse_separated_terminated;
+/// Function parameter of ... ellipsis sign
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ParameterOrEllipsis {
+    Parameter(TypeKey),
+    Ellipsis,
+}
+//
+/// Function parameter set
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FunctionParameterSet {
+    /// Sequence of parameters
+    parameters: FunctionParametersKey,
 
-    let arguments_header = char('(').and(space0);
-
-    let non_empty_parameters = parse_separated_terminated(
-        parse_parameter,
-        space0.and(char(',')).and(space0),
-        space0.and(char(')')),
-        || interner.entry(),
-        |mut entry, item| {
-            entry.push(item);
-            entry
-        },
-    )
-    .map(|entry| entry.intern());
-
-    let empty_parameters = char(')').map(|_| interner.entry().intern());
-
-    preceded(arguments_header, non_empty_parameters.or(empty_parameters)).parse(s)
+    /// Truth that the function is variadic (allows more parameters)
+    variadic: bool,
 }
 
 #[cfg(test)]

@@ -186,7 +186,7 @@ impl<'entities> SliceItemView<'entities> for TypeView<'entities> {
 
     const DISPLAY_SEPARATOR: &'static str = ", ";
 
-    const DISPLAY_TRAILER: &'static str = ")";
+    const DISPLAY_TRAILER: &'static str = "";
 }
 
 #[cfg(test)]
