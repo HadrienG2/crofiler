@@ -38,7 +38,7 @@ impl GlobalStat {
             TraceEvent::X {
                 duration_event:
                     DurationEvent {
-                        pid: 1,
+                        pid: _,
                         tid,
                         ts,
                         name: Some(name),

@@ -49,8 +49,8 @@ impl ActivityStat {
             TraceEvent::X {
                 duration_event:
                     DurationEvent {
-                        pid: 1,
-                        tid: 0,
+                        pid: _,
+                        tid: _,
                         ts,
                         name: Some(name),
                         cat: None,

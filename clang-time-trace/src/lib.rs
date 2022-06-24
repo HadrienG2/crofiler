@@ -9,7 +9,7 @@ mod stats;
 mod tree;
 
 use self::{
-    ctf::{events::duration::DurationEvent, TraceDataObject, TraceEvent},
+    ctf::{events::metadata::MetadataEvent, TraceDataObject, TraceEvent},
     stats::activity::ActivityStat,
     tree::{ActivityTree, ActivityTreeBuilder},
 };
@@ -27,7 +27,7 @@ use thiserror::Error;
 
 // Reexport types which appear in the public interface
 pub use self::{
-    ctf::{Duration, Timestamp},
+    ctf::{Duration, Pid, Timestamp},
     metadata::ProcessNameParseError,
     stats::{
         activity::{
@@ -59,6 +59,12 @@ pub struct ClangTrace {
 
     /// Name of the clang process
     process_name: Box<str>,
+
+    /// Pid of the clang process (if not obviously invalid)
+    pid: Option<Pid>,
+
+    /// Beginning of time (if specified)
+    beginning_of_time: Option<u64>,
 }
 //
 impl ClangTrace {
@@ -114,6 +120,23 @@ impl ClangTrace {
         &self.process_name
     }
 
+    /// Process identifier of the clang process that acquired this data
+    //
+    // TODO: Expose in crofiler UI
+    pub fn pid(&self) -> Option<Pid> {
+        self.pid
+    }
+
+    /// Beginning of time
+    ///
+    /// This metadata is emitted by newer versions of clang and can be used to
+    /// sync up timings from multiple clang processes.
+    ///
+    // TODO: Expose in crofiler UI
+    pub fn beginning_of_time(&self) -> Option<u64> {
+        self.beginning_of_time
+    }
+
     /// Access a file path using a PathKey
     pub fn file_path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
         self.entities.path(key)
@@ -133,16 +156,30 @@ impl FromStr for ClangTrace {
         let profile_ctf = json::from_str::<TraceDataObject>(s)?;
 
         // Clang's -ftime-trace uses the Trace Data Object format but does not
-        // leverage any of its extra fields
-        let profile_wo_events = TraceDataObject {
+        // leverage any of its standardized fields
+        let profile_wo_events_and_extra = TraceDataObject {
             traceEvents: Box::default(),
+            extra: HashMap::default(),
             ..profile_ctf
         };
-        if profile_wo_events != TraceDataObject::default() {
+        if profile_wo_events_and_extra != TraceDataObject::default() {
             return Err(ClangTraceParseError::UnexpectedTraceMetadata(
-                profile_wo_events,
+                profile_wo_events_and_extra,
             ));
         }
+
+        // However, newer versions of clang provide some beginningOfTime
+        // metadata that can be used to sync up time-traces originating from
+        // multiple clang processes
+        let beginning_of_time = if let Some(value) = profile_ctf.extra.get("beginningOfTime") {
+            if let Some(u64_value) = value.as_u64() {
+                Some(u64_value)
+            } else {
+                return Err(ClangTraceParseError::InvalidBeginningOfTime(value.clone()));
+            }
+        } else {
+            None
+        };
 
         // Process the trace events
         let mut activities = ActivityTreeBuilder::with_capacity(profile_ctf.traceEvents.len() - 1);
@@ -150,22 +187,36 @@ impl FromStr for ClangTrace {
         let mut demangling_buf = String::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
+        let mut clang_pid = None;
+        let merge_pid =
+            |curr_pid: &mut Option<Pid>, proposed_pid: Pid| match (*curr_pid, proposed_pid) {
+                (None, _) => Ok(*curr_pid = Some(proposed_pid)),
+                (Some(pid1), pid2) if pid1 == pid2 => Ok(()),
+                (Some(pid1), pid2) => Err(ClangTraceParseError::InconsistentPid(pid1, pid2)),
+            };
         //
         for event in profile_ctf.traceEvents.into_vec() {
             match event {
-                // Durations associated with a zero tid are activity profiles
-                t @ TraceEvent::X {
-                    duration_event: DurationEvent { tid: 0, .. },
-                    ..
-                } => {
+                // Durations associated with a timestamp greater than 1µs are activity profiles
+                TraceEvent::X {
+                    ref duration_event, ..
+                } if duration_event.ts > 1.0 => {
                     // Parse activity statistics and insert the new activity
                     // into the activity tree
-                    activities.insert(ActivityStat::parse(t, &entities, &mut demangling_buf)?)?;
+                    merge_pid(&mut clang_pid, duration_event.pid)?;
+                    activities.insert(ActivityStat::parse(
+                        event,
+                        &entities,
+                        &mut demangling_buf,
+                    )?)?;
                 }
 
-                // Durations associated with a nonzero tid are global stats
-                t @ TraceEvent::X { .. } => {
-                    let (name, stat) = GlobalStat::parse(t)?;
+                // Durations associated with a lower timestamp (typically 100ns) are global stats
+                TraceEvent::X {
+                    ref duration_event, ..
+                } => {
+                    merge_pid(&mut clang_pid, duration_event.pid)?;
+                    let (name, stat) = GlobalStat::parse(event)?;
                     if let Some(old) = global_stats.insert(name.clone(), stat) {
                         let new = global_stats[&name].clone();
                         return Err(ClangTraceParseError::DuplicateGlobalStat(name, old, new));
@@ -173,22 +224,29 @@ impl FromStr for ClangTrace {
                 }
 
                 // Process name metadata
-                TraceEvent::M(m) => {
-                    let name = metadata::parse_process_name(m)?;
-                    if let Some(process_name) = process_name {
-                        return Err(ClangTraceParseError::DuplicateProcessName(
-                            process_name,
-                            name,
-                        ));
-                    } else {
-                        process_name = Some(name);
+                TraceEvent::M(m) => match m {
+                    MetadataEvent::process_name { ref pid, .. } => {
+                        merge_pid(&mut clang_pid, *pid)?;
+                        let name = metadata::parse_process_name(m)?;
+                        if let Some(process_name) = process_name {
+                            return Err(ClangTraceParseError::DuplicateProcessName(
+                                process_name,
+                                name,
+                            ));
+                        } else {
+                            process_name = Some(name);
+                        }
                     }
-                }
+                    _ => return Err(ClangTraceParseError::UnexpectedMetadataEvent(m)),
+                },
 
                 // No other CTF record is expected from -ftime-trace
                 _ => return Err(ClangTraceParseError::UnexpectedEvent(event)),
             }
         }
+
+        // Ignore blatantly wrong PIDs reported by older clang
+        let pid = clang_pid.filter(|&pid| pid > 1);
 
         // Display entity parser usage statistics
         log_entity_parser_usage(&entities);
@@ -200,6 +258,8 @@ impl FromStr for ClangTrace {
                 entities: entities.finalize(),
                 global_stats,
                 process_name,
+                pid,
+                beginning_of_time,
             })
         } else {
             Err(ClangTraceParseError::NoProcessName)
@@ -275,6 +335,10 @@ pub enum ClangTraceParseError {
     #[error("encountered unexpected trace-wide metadata ({0:#?})")]
     UnexpectedTraceMetadata(TraceDataObject),
 
+    /// Encountered invalid beginningOfTimeMetadata
+    #[error("encountered invalid beginningOfTime metadata ({0:#?})")]
+    InvalidBeginningOfTime(json::Value),
+
     /// Failed to parse per-activity statistics
     #[error("failed to parse per-activity statistics ({0})")]
     ActivityStatParseError(#[from] ActivityStatParseError),
@@ -303,6 +367,14 @@ pub enum ClangTraceParseError {
     #[error("did not encounter process name")]
     NoProcessName,
 
+    /// The clang pid was reported twice with different valies
+    #[error("inconsistant clang pid values ({0} then {1})")]
+    InconsistentPid(Pid, Pid),
+
+    /// Encountered an unexpected CTF metadata event
+    #[error("encountered unexpected {0:#?}")]
+    UnexpectedMetadataEvent(MetadataEvent),
+
     /// Encountered an unexpected CTF event
     #[error("encountered unexpected {0:#?}")]
     UnexpectedEvent(TraceEvent),
@@ -310,7 +382,11 @@ pub enum ClangTraceParseError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ctf::DisplayTimeUnit, stats::activity::Activity, *};
+    use super::{
+        ctf::{events::duration::DurationEvent, DisplayTimeUnit},
+        stats::activity::Activity,
+        *,
+    };
     use assert_matches::assert_matches;
 
     #[test]

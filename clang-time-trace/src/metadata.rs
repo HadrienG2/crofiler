@@ -7,7 +7,7 @@ use thiserror::Error;
 pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, ProcessNameParseError> {
     match m {
         MetadataEvent::process_name {
-            pid: 1,
+            pid: _,
             args: NameArgs { name, extra },
             tid: Some(0),
             options:
