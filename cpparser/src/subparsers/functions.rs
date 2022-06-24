@@ -55,11 +55,29 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, FunctionArgumentsKey> {
-        function_parameters(
-            s,
+        use nom::{
+            character::complete::{char, space0},
+            sequence::preceded,
+        };
+        use nom_supreme::multi::parse_separated_terminated;
+
+        let arguments_header = char('(').and(space0);
+
+        let non_empty_parameters = parse_separated_terminated(
             |s| self.parse_value_like(s, false, true),
-            &self.function_arguments,
+            space0.and(char(',')).and(space0),
+            space0.and(char(')')),
+            || self.function_arguments.entry(),
+            |mut entry, item| {
+                entry.push(item);
+                entry
+            },
         )
+        .map(|entry| entry.intern());
+
+        let empty_parameters = char(')').map(|_| self.function_arguments.entry().intern());
+
+        preceded(arguments_header, non_empty_parameters.or(empty_parameters)).parse(s)
     }
 
     /// Retrieve a function call previously parsed by parse_function_call
