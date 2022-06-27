@@ -9,6 +9,7 @@ use crate::{
 use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
 use cpparser::{nom, EntityKey, EntityParser};
 use log::trace;
+use phf::phf_map;
 use serde_json as json;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
@@ -107,617 +108,112 @@ pub enum ActivityStatParseError {
 }
 
 /// Activity that Clang can engage in during the compilation process
-// FIXME: Replace this enum with a perfect hash map
 #[derive(Clone, Debug, PartialEq)]
-pub enum Activity {
-    /// Processing a source file
-    Source(PathKey),
-
-    /// Parsing a class
-    ParseClass(EntityKey),
-
-    /// Instantiating a class
-    InstantiateClass(EntityKey),
-
-    /// Parsing a template
-    ParseTemplate(EntityKey),
-
-    /// Instantiating a function
-    InstantiateFunction(EntityKey),
-
-    /// Generating debug info for a type
-    DebugType(EntityKey),
-
-    /// Generating debug info for a global variable
-    DebugGlobalVariable(EntityKey),
-
-    /// Generate a function's code
-    CodeGenFunction(EntityKey),
-
-    /// Generating debug info for a function
-    DebugFunction(EntityKey),
-
-    /// Perform pending instantiations (as the name suggests)
-    PerformPendingInstantiations,
-
-    /// Compiler front-end work
-    Frontend,
-
-    /// Running a named compiler pass
-    RunPass(Box<str>),
-
-    /// Optimizing code
-    OptFunction(MangledSymbol),
-
-    /// Per-function compiler passes
-    PerFunctionPasses,
-
-    /// Running a named loop compiler pass
-    RunLoopPass(Box<str>),
-
-    /// Optimizing a module
-    OptModule(PathKey),
-
-    /// Per-module compiler passes
-    PerModulePasses,
-
-    /// Code generation passes
-    CodeGenPasses,
-
-    /// Compiler back-end work
-    Backend,
-
-    /// Compiler execution
-    ExecuteCompiler,
-
-    // FIXME: Add new tests for these new passes
-    //
-    /// Infer function attributes
-    InferFunctionAttrsPass(PathKey),
-
-    /// Function pass manager (aka `PassManager<llvm::Function>`)
-    FunctionPassManager(Option<MangledSymbol>),
-
-    /// Scalar replacement of aggregates pass
-    SROAPass(MangledSymbol),
-
-    /// Module-to-function pass adaptor
-    ModuleToFunctionPassAdaptor(PathKey),
-
-    /// Interprocedural Sparse Conditional Constant Propagation pass
-    IPSCCPPass(PathKey),
-
-    /// Called value propagation pass
-    CalledValuePropagationPass(PathKey),
-
-    /// Global optimization pass
-    GlobalOptPass(PathKey),
-
-    /// Promotion pass
-    PromotePass(MangledSymbol),
-
-    /// Dead argument elimination pass
-    DeadArgumentEliminationPass(PathKey),
-
-    /// Instruction combination pass
-    InstCombinePass(MangledSymbol),
-
-    /// Alias analysis pass for globals (aka `RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>`)
-    ModuleGlobalsAAPass(PathKey),
-
-    /// Adaptor that maps from a SCC to its functions
-    CGSCCToFunctionPassAdaptor,
-
-    /// A helper that repeats an SCC pass each time an indirect call is refined to a direct call by that pass
-    DevirtSCCRepeatedPass,
-
-    /// Function to loop pass adaptor
-    FunctionToLoopPassAdaptor(MangledSymbol),
-
-    /// Inliner pass
-    InlinerPass,
-
-    /// Jump threading pass
-    JumpThreadingPass(MangledSymbol),
-
-    /// Loop full unrolling pass
-    LoopFullUnrollPass,
-
-    /// Loop analysis manager
-    ///
-    /// aka `PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>`
-    ///
-    LoopAnalysisManager,
-
-    /// Global Value Numbering pass
-    GVNPass(MangledSymbol),
-
-    /// Early Common Subexpression Elimination pass
-    EarlyCSEPass(MangledSymbol),
-
-    /// Memcpy optimization pass
-    MemCpyOptPass(MangledSymbol),
-
-    /// Correlated value propagation pass
-    CorrelatedValuePropagationPass(MangledSymbol),
-
-    /// Control flow graph simplification pass
-    SimplifyCFGPass(MangledSymbol),
-
-    /// Tail call elimination pass
-    TailCallElimPass(MangledSymbol),
-
-    /// Commutative expression reassociation pass
-    ReassociatePass(MangledSymbol),
-
-    /// Loop rotation pass
-    LoopRotatePass,
-
-    /// Loop invariant code motion pass
-    LICMPass,
-
-    /// Function-level constant propagation and merging pass
-    SCCPPass(MangledSymbol),
-
-    /// Bit-tracking dead code elimination pass
-    BDCEPass(MangledSymbol),
-
-    /// DCE pass that assumes instructions are dead until proven otherwise
-    ADCEPass(MangledSymbol),
-
-    /// Dead Store Elimination pass
-    DSEPass(MangledSymbol),
-
-    /// Induction variable simplification pass
-    IndVarSimplifyPass,
-
-    /// Pass that computes function attributes in post-order over the call graph
-    PostOrderFunctionAttrsPass,
-
-    /// Loop canonicalization pass
-    LoopSimplifyPass(MangledSymbol),
-
-    /// Loop instruction simplification pass
-    LoopInstSimplifyPass,
-
-    /// Pass that does a post-order walk of the SCCs and runs a CGSCC pass over each
-    ModuleToPostOrderCGSCCPassAdaptor(PathKey),
-
-    /// Module pass wrapping the inliner pass
-    ModuleInlinerWrapperPass(PathKey),
-
-    /// Global Dead Code Elimination pass
-    GlobalDCEPass(PathKey),
-
-    /// Eliminate available external globals
-    EliminateAvailableExternallyPass(PathKey),
-
-    /// Pass that walks SCCs of the call graph in RPO to deduce and propagate function attributes
-    ReversePostOrderFunctionAttrsPass(PathKey),
-
-    /// SLP vectorizer pass (tries to vectorize store sequences)
-    SLPVectorizerPass(MangledSymbol),
-
-    /// Pass that demotes FP operations to work on integers when losslessly possible
-    Float2IntPass(MangledSymbol),
-
-    /// Loop vectorization pass
-    LoopVectorizePass(MangledSymbol),
-
-    /// Constant instrinsics lowering pass
-    LowerConstantIntrinsicsPass(MangledSymbol),
-
-    /// Loop unrolling pass
-    LoopUnrollPass(MangledSymbol),
-
-    /// Pass that performes profile-guided sinking of instructions into loops
-    LoopSinkPass(MangledSymbol),
-
-    /// Pass that runs instruction simplification across each instruction in the function
-    InstSimplifyPass(MangledSymbol),
-
-    /// Loop load elimination pass
-    LoopLoadEliminationPass(MangledSymbol),
-
-    /// Pass that populates the VFABI attribute with scalar-to-vector mappings from TargetLibraryInfo
-    InjectTLIMappings(MangledSymbol),
-
-    /// Pass that optimizes scalar/vector interactions in IR using target cost models
-    VectorCombinePass(MangledSymbol),
-
-    /// Call Graph Profile pass
-    CGProfilePass(PathKey),
-
-    /// Constant deduplication pass
-    ConstantMergePass(PathKey),
-
-    /// Pass that converts lookup tables to relative lookup tables for PIC-friendliness
-    RelLookupTableConverterPass(PathKey),
-
-    /// Top-level optimizer activity?
-    Optimizer,
+pub struct Activity {
+    /// Machine identifier that can be translated back into a human identifier
+    id: ActivityId,
+
+    /// Supplementary data received as an argument, if any
+    arg: ActivityArgument,
 }
 //
 impl Activity {
+    /// Activity identifier that is cheap to compare or use as a hashmap key
+    pub fn id(&self) -> ActivityId {
+        self.id
+    }
+
     /// Textual name of the activity, as featured in the JSON data
     pub fn name(&self) -> &'static str {
-        use Activity::*;
-        match self {
-            Source(_) => "Source",
-            ParseClass(_) => "ParseClass",
-            InstantiateClass(_) => "InstantiateClass",
-            ParseTemplate(_) => "ParseTemplate",
-            InstantiateFunction(_) => "InstantiateFunction",
-            DebugType(_) => "DebugType",
-            DebugGlobalVariable(_) => "DebugGlobalVariable",
-            CodeGenFunction(_) => "CodeGen Function",
-            DebugFunction(_) => "DebugFunction",
-            PerformPendingInstantiations => "PerformPendingInstantiations",
-            Frontend => "Frontend",
-            RunPass(_) => "RunPass",
-            OptFunction(_) => "OptFunction",
-            PerFunctionPasses => "PerFunctionPasses",
-            RunLoopPass(_) => "RunLoopPass",
-            OptModule(_) => "OptModule",
-            PerModulePasses => "PerModulePasses",
-            CodeGenPasses => "CodeGenPasses",
-            Backend => "Backend",
-            ExecuteCompiler => "ExecuteCompiler",
-            InferFunctionAttrsPass(_) => "InferFunctionAttrsPass",
-            FunctionPassManager(_) => "PassManager<llvm::Function>",
-            SROAPass(_) => "SROAPass",
-            ModuleToFunctionPassAdaptor(_) => "ModuleToFunctionPassAdaptor",
-            IPSCCPPass(_) => "IPSCCPPass",
-            CalledValuePropagationPass(_) => "CalledValuePropagationPass",
-            GlobalOptPass(_) => "GlobalOptPass",
-            PromotePass(_) => "PromotePass",
-            DeadArgumentEliminationPass(_) => "DeadArgumentEliminationPass",
-            InstCombinePass(_) => "InstCombinePass",
-            ModuleGlobalsAAPass(_) => "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>",
-            CGSCCToFunctionPassAdaptor => "CGSCCToFunctionPassAdaptor",
-            DevirtSCCRepeatedPass => "DevirtSCCRepeatedPass",
-            FunctionToLoopPassAdaptor(_) => "FunctionToLoopPassAdaptor",
-            InlinerPass => "InlinerPass",
-            JumpThreadingPass(_) => "JumpThreadingPass",
-            LoopFullUnrollPass => "LoopFullUnrollPass(<unnamed loop>)",
-            LoopAnalysisManager => "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>",
-            GVNPass(_) => "GVNPass",
-            EarlyCSEPass(_) => "EarlyCSEPass",
-            MemCpyOptPass(_) => "MemCpyOptPass",
-            CorrelatedValuePropagationPass(_) => "CorrelatedValuePropagationPass",
-            SimplifyCFGPass(_) => "SimplifyCFGPass",
-            TailCallElimPass(_) => "TailCallElimPass",
-            ReassociatePass(_) => "ReassociatePass",
-            LoopRotatePass => "LoopRotatePass",
-            LICMPass => "LICMPass",
-            SCCPPass(_) => "SCCPPass",
-            BDCEPass(_) => "BDCEPass",
-            ADCEPass(_) => "ADCEPass",
-            DSEPass(_) => "DSEPass",
-            IndVarSimplifyPass => "IndVarSimplifyPass",
-            PostOrderFunctionAttrsPass => "PostOrderFunctionAttrsPass",
-            LoopSimplifyPass(_) => "LoopSimplifyPass",
-            LoopInstSimplifyPass => "LoopInstSimplifyPass",
-            ModuleToPostOrderCGSCCPassAdaptor(_) => "ModuleToPostOrderCGSCCPassAdaptor",
-            ModuleInlinerWrapperPass(_) => "ModuleInlinerWrapperPass",
-            GlobalDCEPass(_) => "GlobalDCEPass",
-            EliminateAvailableExternallyPass(_) => "EliminateAvailableExternallyPass",
-            ReversePostOrderFunctionAttrsPass(_) => "ReversePostOrderFunctionAttrsPass",
-            SLPVectorizerPass(_) => "SLPVectorizerPass",
-            Float2IntPass(_) => "Float2IntPass",
-            LoopVectorizePass(_) => "LoopVectorizePass",
-            LowerConstantIntrinsicsPass(_) => "LowerConstantIntrinsicsPass",
-            LoopUnrollPass(_) => "LoopUnrollPass",
-            LoopSinkPass(_) => "LoopSinkPass",
-            InstSimplifyPass(_) => "InstSimplifyPass",
-            LoopLoadEliminationPass(_) => "LoopLoadEliminationPass",
-            InjectTLIMappings(_) => "InjectTLIMappings",
-            VectorCombinePass(_) => "VectorCombinePass",
-            CGProfilePass(_) => "CGProfilePass",
-            ConstantMergePass(_) => "ConstantMergePass",
-            RelLookupTableConverterPass(_) => "RelLookupTableConverterPass",
-            Optimizer => "Optimizer",
-        }
+        self.id.into()
     }
 
     /// Parsed argument of the activity
-    pub fn argument(&self) -> ActivityArgument {
-        use Activity::*;
-        use ActivityArgument::*;
-        match self {
-            PerformPendingInstantiations
-            | Frontend
-            | PerFunctionPasses
-            | PerModulePasses
-            | CodeGenPasses
-            | Backend
-            | ExecuteCompiler
-            | CGSCCToFunctionPassAdaptor
-            | DevirtSCCRepeatedPass
-            | InlinerPass
-            | LoopFullUnrollPass
-            | LoopAnalysisManager
-            | LoopRotatePass
-            | LICMPass
-            | IndVarSimplifyPass
-            | PostOrderFunctionAttrsPass
-            | LoopInstSimplifyPass
-            | Optimizer => Nothing,
-            RunPass(s) | RunLoopPass(s) => String(s.clone()),
-            Source(p)
-            | OptModule(p)
-            | InferFunctionAttrsPass(p)
-            | ModuleToFunctionPassAdaptor(p)
-            | IPSCCPPass(p)
-            | CalledValuePropagationPass(p)
-            | GlobalOptPass(p)
-            | DeadArgumentEliminationPass(p)
-            | ModuleGlobalsAAPass(p)
-            | ModuleToPostOrderCGSCCPassAdaptor(p)
-            | ModuleInlinerWrapperPass(p)
-            | GlobalDCEPass(p)
-            | EliminateAvailableExternallyPass(p)
-            | ReversePostOrderFunctionAttrsPass(p)
-            | CGProfilePass(p)
-            | ConstantMergePass(p)
-            | RelLookupTableConverterPass(p) => FilePath(*p),
-            ParseClass(e)
-            | InstantiateClass(e)
-            | ParseTemplate(e)
-            | InstantiateFunction(e)
-            | DebugType(e)
-            | DebugGlobalVariable(e)
-            | CodeGenFunction(e)
-            | DebugFunction(e) => CppEntity(e.clone()),
-            OptFunction(m)
-            | SROAPass(m)
-            | PromotePass(m)
-            | InstCombinePass(m)
-            | FunctionToLoopPassAdaptor(m)
-            | JumpThreadingPass(m)
-            | GVNPass(m)
-            | EarlyCSEPass(m)
-            | MemCpyOptPass(m)
-            | CorrelatedValuePropagationPass(m)
-            | SimplifyCFGPass(m)
-            | TailCallElimPass(m)
-            | ReassociatePass(m)
-            | SCCPPass(m)
-            | BDCEPass(m)
-            | ADCEPass(m)
-            | DSEPass(m)
-            | LoopSimplifyPass(m)
-            | SLPVectorizerPass(m)
-            | Float2IntPass(m)
-            | LoopVectorizePass(m)
-            | LowerConstantIntrinsicsPass(m)
-            | LoopUnrollPass(m)
-            | LoopSinkPass(m)
-            | InstSimplifyPass(m)
-            | LoopLoadEliminationPass(m)
-            | InjectTLIMappings(m)
-            | VectorCombinePass(m) => MangledSymbol(m.clone()),
-            FunctionPassManager(o) => MangledSymbolOpt(o.clone()),
-        }
+    pub fn argument(&self) -> &ActivityArgument {
+        &self.arg
     }
 
     /// Parse from useful bits of Duration events
     fn parse(
         name: Box<str>,
-        args: Option<HashMap<Box<str>, json::Value>>,
+        mut args: Option<HashMap<Box<str>, json::Value>>,
         parser: &EntityParser,
         demangling_buf: &mut String,
     ) -> Result<Self, ActivityParseError> {
+        // Handling of activity name
+        let (id, arg_parser) = if let Some(activity) = ACTIVITIES.get(&name) {
+            activity
+        } else {
+            return Err(ActivityParseError::UnknownActivity(
+                name.clone(),
+                args.take(),
+            ));
+        };
+
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
-
-        // Handling of activities with no arguments
-        let no_args = |a: Activity| -> Result<Activity, ActivityParseError> {
-            Self::parse_empty_args(args.borrow_mut().take())?;
-            Ok(a)
-        };
 
         // Handling of activities with one "detail" argument
         let detail_arg = || -> Result<Box<str>, ArgParseError> {
             Self::parse_detail_arg(args.borrow_mut().take())
         };
         //
-        let fill_str_arg =
-            |constructor: fn(Box<str>) -> Activity| -> Result<Activity, ActivityParseError> {
-                Ok(constructor(detail_arg()?))
-            };
-        //
-        let fill_path_arg =
-            |constructor: fn(PathKey) -> Activity| -> Result<Activity, ActivityParseError> {
-                let path: &str = &detail_arg()?;
-                Ok(constructor(parser.path_to_key(path)))
-            };
-        //
-        let parse_entity = |s: &str| -> Result<EntityKey, ActivityParseError> {
-            parser.parse_entity(s).map_err(|e| {
-                ActivityParseError::from(nom::error::Error::new(Box::<str>::from(e.input), e.code))
-            })
-        };
-        //
-        let fill_entity_arg =
-            |constructor: fn(EntityKey) -> Activity| -> Result<Activity, ActivityParseError> {
-                let entity: &str = &detail_arg()?;
-                Ok(constructor(parse_entity(entity)?))
-            };
-        //
-        let demangling_buf = RefCell::new(demangling_buf);
-        let mangled_arg = || -> Result<MangledSymbol, ActivityParseError> {
+        let mut mangled_arg = || -> Result<MangledSymbol, ActivityParseError> {
             let symbol = detail_arg()?;
-            let mut demangling_buf = demangling_buf.borrow_mut();
-
-            let parse_demangled = |entity: Box<str>| -> MangledSymbol {
-                if let Ok(parsed) = parse_entity(&*entity) {
-                    MangledSymbol::Parsed(parsed)
-                } else {
-                    MangledSymbol::Demangled(entity)
-                }
-            };
-
-            let demangling_result = match Symbol::new_with_options(
-                &*symbol,
-                &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
-            )
-            .map(|s| {
-                demangling_buf.clear();
-                s.structured_demangle(
-                    &mut *demangling_buf,
-                    &DemangleOptions::default()
-                        .hide_expression_literal_types()
-                        .no_return_type()
-                        .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
-                )
-            }) {
-                // Mangled symbol was successfully demangled, intern it along with the rest
-                Ok(Ok(())) => parse_demangled(demangling_buf.clone().into_boxed_str()),
-
-                // Symbol failed to demangle, try some patterns that cpp_demangle
-                // should not reject but actually does reject before giving up
-                Ok(Err(_)) | Err(_) => match &*symbol {
-                    "main" | "__clang_call_terminate" => parse_demangled(symbol),
-                    _ => MangledSymbol::Mangled(symbol),
-                },
-            };
-
-            match &demangling_result {
-                MangledSymbol::Parsed(_) => {}
-                MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
-                MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
-            }
-
-            Ok(demangling_result)
+            Self::parse_mangled_symbol(symbol, parser, demangling_buf)
         };
         //
-        let fill_mangled_arg =
-            |constructor: fn(MangledSymbol) -> Activity| -> Result<Activity, ActivityParseError> {
-                Ok(constructor(mangled_arg()?))
-            };
-        //
-        let fill_mangled_arg_opt =
-            |constructor: fn(Option<MangledSymbol>) -> Activity| -> Result<Activity, ActivityParseError> {
-                match mangled_arg() {
-                    Ok(arg) => Ok(constructor(Some(arg))),
-                    Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => Ok(constructor(None)),
-                    Err(e) => Err(e)?
-                }
-            };
-        //
-        let unnamed_loop_arg = |constructor: Activity| -> Result<Activity, ActivityParseError> {
+        let parse_unnamed_loop_arg = || -> Result<(), ActivityParseError> {
             let loop_name = detail_arg()?;
-            if &*loop_name == "<unnamed loop>" {
-                Ok(constructor)
-            } else {
-                Err(ActivityParseError::UnexpectedLoopName(loop_name))
-            }
+            Self::parse_unnamed_loop(loop_name)
         };
         //
-        let unnamed_loop_arg_opt = |constructor: Activity| -> Result<Activity, ActivityParseError> {
-            match detail_arg() {
-                Ok(loop_name) => {
-                    if &*loop_name == "<unnamed loop>" {
-                        Ok(constructor)
-                    } else {
-                        Err(ActivityParseError::UnexpectedLoopName(loop_name))
-                    }
+        let arg = match *arg_parser {
+            ActivityArgumentParser::Nothing => {
+                Self::parse_empty_args(args.borrow_mut().take())?;
+                ActivityArgument::Nothing
+            }
+
+            ActivityArgumentParser::String => ActivityArgument::String(detail_arg()?),
+
+            ActivityArgumentParser::FilePath => {
+                ActivityArgument::FilePath(parser.path_to_key(&detail_arg()?))
+            }
+
+            ActivityArgumentParser::CppEntity => {
+                ActivityArgument::CppEntity(Self::parse_entity(&detail_arg()?, parser)?)
+            }
+
+            ActivityArgumentParser::MangledSymbol => {
+                ActivityArgument::MangledSymbol(mangled_arg()?)
+            }
+
+            ActivityArgumentParser::MangledSymbolOpt => match mangled_arg() {
+                Ok(sym) => ActivityArgument::MangledSymbol(sym),
+                Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => {
+                    ActivityArgument::Nothing
                 }
-                Err(ArgParseError::MissingKey("detail")) => Ok(constructor),
-                Err(e) => Err(e)?,
+                Err(e) => return Err(e)?,
+            },
+
+            ActivityArgumentParser::UnnamedLoop => {
+                parse_unnamed_loop_arg()?;
+                ActivityArgument::UnnamedLoop
             }
+
+            ActivityArgumentParser::UnnamedLoopOpt => match parse_unnamed_loop_arg() {
+                Ok(()) => ActivityArgument::UnnamedLoop,
+                Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => {
+                    ActivityArgument::Nothing
+                }
+                Err(e) => return Err(e)?,
+            },
         };
 
-        // Parse the activity name and parse arguments accordingly
-        use Activity::*;
-        let result = match &*name {
-            "PerformPendingInstantiations" => no_args(PerformPendingInstantiations),
-            "Frontend" => no_args(Frontend),
-            "PerFunctionPasses" => no_args(PerFunctionPasses),
-            "PerModulePasses" => no_args(PerModulePasses),
-            "CodeGenPasses" => no_args(CodeGenPasses),
-            "Backend" => no_args(Backend),
-            "ExecuteCompiler" => no_args(ExecuteCompiler),
-            "Source" => fill_path_arg(Source),
-            "ParseClass" => fill_entity_arg(ParseClass),
-            "InstantiateClass" => fill_entity_arg(InstantiateClass),
-            "ParseTemplate" => fill_entity_arg(ParseTemplate),
-            "InstantiateFunction" => fill_entity_arg(InstantiateFunction),
-            "DebugType" => fill_entity_arg(DebugType),
-            "DebugGlobalVariable" => fill_entity_arg(DebugGlobalVariable),
-            "CodeGen Function" => fill_entity_arg(CodeGenFunction),
-            "DebugFunction" => fill_entity_arg(DebugFunction),
-            "RunPass" => fill_str_arg(RunPass),
-            "OptFunction" => fill_mangled_arg(OptFunction),
-            "RunLoopPass" => fill_str_arg(RunLoopPass),
-            "OptModule" => fill_path_arg(OptModule),
-            "InferFunctionAttrsPass" => fill_path_arg(InferFunctionAttrsPass),
-            "PassManager<llvm::Function>" => fill_mangled_arg_opt(FunctionPassManager),
-            "SROAPass" => fill_mangled_arg(SROAPass),
-            "ModuleToFunctionPassAdaptor" => fill_path_arg(ModuleToFunctionPassAdaptor),
-            "IPSCCPPass" => fill_path_arg(IPSCCPPass),
-            "CalledValuePropagationPass" => fill_path_arg(CalledValuePropagationPass),
-            "GlobalOptPass" => fill_path_arg(GlobalOptPass),
-            "PromotePass" => fill_mangled_arg(PromotePass),
-            "DeadArgumentEliminationPass" => fill_path_arg(DeadArgumentEliminationPass),
-            "InstCombinePass" => fill_mangled_arg(InstCombinePass),
-            "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => {
-                fill_path_arg(ModuleGlobalsAAPass)
-            }
-            "CGSCCToFunctionPassAdaptor" => no_args(CGSCCToFunctionPassAdaptor),
-            "DevirtSCCRepeatedPass" => no_args(DevirtSCCRepeatedPass),
-            "FunctionToLoopPassAdaptor" => fill_mangled_arg(FunctionToLoopPassAdaptor),
-            "InlinerPass" => no_args(InlinerPass),
-            "JumpThreadingPass" => fill_mangled_arg(JumpThreadingPass),
-            "LoopFullUnrollPass" => unnamed_loop_arg(LoopFullUnrollPass),
-            "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>" => no_args(LoopAnalysisManager),
-            "GVNPass" => fill_mangled_arg(GVNPass),
-            "EarlyCSEPass" => fill_mangled_arg(EarlyCSEPass),
-            "MemCpyOptPass" => fill_mangled_arg(MemCpyOptPass),
-            "CorrelatedValuePropagationPass" => fill_mangled_arg(CorrelatedValuePropagationPass),
-            "SimplifyCFGPass" => fill_mangled_arg(SimplifyCFGPass),
-            "TailCallElimPass" => fill_mangled_arg(TailCallElimPass),
-            "ReassociatePass" => fill_mangled_arg(ReassociatePass),
-            "LoopRotatePass" => unnamed_loop_arg(LoopRotatePass),
-            "LICMPass" => unnamed_loop_arg_opt(LICMPass),
-            "SCCPPass" => fill_mangled_arg(SCCPPass),
-            "BDCEPass" => fill_mangled_arg(BDCEPass),
-            "ADCEPass" => fill_mangled_arg(ADCEPass),
-            "DSEPass" => fill_mangled_arg(DSEPass),
-            "IndVarSimplifyPass" => unnamed_loop_arg(IndVarSimplifyPass),
-            "PostOrderFunctionAttrsPass" => no_args(PostOrderFunctionAttrsPass),
-            "LoopSimplifyPass" => fill_mangled_arg(LoopSimplifyPass),
-            "LoopInstSimplifyPass" => unnamed_loop_arg(LoopInstSimplifyPass),
-            "ModuleToPostOrderCGSCCPassAdaptor" => fill_path_arg(ModuleToPostOrderCGSCCPassAdaptor),
-            "ModuleInlinerWrapperPass" => fill_path_arg(ModuleInlinerWrapperPass),
-            "GlobalDCEPass" => fill_path_arg(GlobalDCEPass),
-            "EliminateAvailableExternallyPass" => fill_path_arg(EliminateAvailableExternallyPass),
-            "ReversePostOrderFunctionAttrsPass" => fill_path_arg(ReversePostOrderFunctionAttrsPass),
-            "SLPVectorizerPass" => fill_mangled_arg(SLPVectorizerPass),
-            "Float2IntPass" => fill_mangled_arg(Float2IntPass),
-            "LoopVectorizePass" => fill_mangled_arg(LoopVectorizePass),
-            "LowerConstantIntrinsicsPass" => fill_mangled_arg(LowerConstantIntrinsicsPass),
-            "LoopUnrollPass" => fill_mangled_arg(LoopUnrollPass),
-            "LoopSinkPass" => fill_mangled_arg(LoopSinkPass),
-            "InstSimplifyPass" => fill_mangled_arg(InstSimplifyPass),
-            "LoopLoadEliminationPass" => fill_mangled_arg(LoopLoadEliminationPass),
-            "InjectTLIMappings" => fill_mangled_arg(InjectTLIMappings),
-            "VectorCombinePass" => fill_mangled_arg(VectorCombinePass),
-            "CGProfilePass" => fill_path_arg(CGProfilePass),
-            "ConstantMergePass" => fill_path_arg(ConstantMergePass),
-            "RelLookupTableConverterPass" => fill_path_arg(RelLookupTableConverterPass),
-            "Optimizer" => no_args(Optimizer),
-            _ => Err(ActivityParseError::UnknownActivity(
-                name.clone(),
-                args.borrow_mut().take(),
-            )),
-        };
-
-        if let Err(e) = result {
-            panic!("Failed to parse {name}: {e}");
-        }
-        result
+        Ok(Self {
+            id: id.clone(),
+            arg,
+        })
     }
 
     /// Check for absence of arguments
@@ -770,9 +266,202 @@ impl Activity {
             Err(ArgParseError::MissingKey("detail"))
         }
     }
+
+    /// Parse a "detail" argument payload that contains a C++ entity name
+    fn parse_entity(s: &str, parser: &EntityParser) -> Result<EntityKey, ActivityParseError> {
+        parser.parse_entity(s).map_err(|e| {
+            ActivityParseError::from(nom::error::Error::new(Box::<str>::from(e.input), e.code))
+        })
+    }
+
+    /// Parse a "detail" argument payload that contains a mangled C++ symbol
+    fn parse_mangled_symbol(
+        symbol: Box<str>,
+        parser: &EntityParser,
+        demangling_buf: &mut String,
+    ) -> Result<MangledSymbol, ActivityParseError> {
+        let parse_demangled = |entity: Box<str>| -> MangledSymbol {
+            if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
+                MangledSymbol::Parsed(parsed)
+            } else {
+                MangledSymbol::Demangled(entity)
+            }
+        };
+
+        let demangling_result = match Symbol::new_with_options(
+            &*symbol,
+            &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+        )
+        .map(|s| {
+            demangling_buf.clear();
+            s.structured_demangle(
+                &mut *demangling_buf,
+                &DemangleOptions::default()
+                    .hide_expression_literal_types()
+                    .no_return_type()
+                    .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
+            )
+        }) {
+            // Mangled symbol was successfully demangled, intern it along with the rest
+            Ok(Ok(())) => parse_demangled(demangling_buf.clone().into_boxed_str()),
+
+            // Symbol failed to demangle, try some patterns that cpp_demangle
+            // should not reject but actually does reject before giving up
+            Ok(Err(_)) | Err(_) => match &*symbol {
+                "main" | "__clang_call_terminate" => parse_demangled(symbol),
+                _ => MangledSymbol::Mangled(symbol),
+            },
+        };
+
+        match &demangling_result {
+            MangledSymbol::Parsed(_) => {}
+            MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
+            MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+        }
+
+        Ok(demangling_result)
+    }
+
+    /// Handling of the "<unnamed loop>" constant argument
+    fn parse_unnamed_loop(loop_name: Box<str>) -> Result<(), ActivityParseError> {
+        if &*loop_name == "<unnamed loop>" {
+            Ok(())
+        } else {
+            Err(ActivityParseError::UnexpectedLoopName(loop_name))
+        }
+    }
 }
 
-/// What an activity can take as an argument
+/// Generate a PHF that maps from clang activity names (as seen in time-trace
+/// files) to a unique identifier (ActivityId) and an ActivityArgumentParsing
+/// that tells how the activity argument should be interpreted.
+macro_rules! generate_activities {
+    ($($string:literal => ($enum:ident, $arg:ident)),* $(,)?) => {
+        /// Clang activity identifier
+        #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, strum::IntoStaticStr)]
+        pub enum ActivityId {
+            $(
+                #[doc = $string]
+                #[strum(to_string = $string)]
+                $enum
+            ),*
+        }
+
+        /// Map from a clang activity name to its identifier and argument type
+        static ACTIVITIES: phf::Map<&'static str, (ActivityId, ActivityArgumentParser)> = phf_map! {
+            $(
+                $string => (ActivityId::$enum, ActivityArgumentParser::$arg)
+            ),*
+        };
+    };
+}
+//
+generate_activities! {
+    "Source" => (Source, FilePath),
+    "ParseClass" => (ParseClass, CppEntity),
+    "InstantiateClass" => (InstantiateClass, CppEntity),
+    "ParseTemplate" => (ParseTemplate, CppEntity),
+    "InstantiateFunction" => (InstantiateFunction, CppEntity),
+    "DebugType" => (DebugType, CppEntity),
+    "DebugGlobalVariable" => (DebugGlobalVariable, CppEntity),
+    "CodeGen Function" => (CodeGenFunction, CppEntity),
+    "DebugFunction" => (DebugFunction, CppEntity),
+    "PerformPendingInstantiations" => (PerformPendingInstantiations, Nothing),
+    "Frontend" => (Frontend, Nothing),
+    "RunPass" => (RunPass, String),
+    "OptFunction" => (OptFunction, MangledSymbol),
+    "PerFunctionPasses" => (PerFunctionPasses, Nothing),
+    "RunLoopPass" => (RunLoopPass, String),
+    "OptModule" => (OptModule, FilePath),
+    "PerModulePasses" => (PerModulePasses, Nothing),
+    "CodeGenPasses" => (CodeGenPasses, Nothing),
+    "Backend" => (Backend, Nothing),
+    "ExecuteCompiler" => (ExecuteCompiler, Nothing),
+    "InferFunctionAttrsPass" => (InferFunctionAttrsPass, FilePath),
+    "PassManager<llvm::Function>" => (FunctionPassManager, MangledSymbolOpt),
+    "SROAPass" => (SROAPass, MangledSymbol),
+    "ModuleToFunctionPassAdaptor" => (ModuleToFunctionPassAdaptor, FilePath),
+    "IPSCCPPass" => (IPSCCPPass, FilePath),
+    "CalledValuePropagationPass" => (CalledValuePropagationPass, FilePath),
+    "GlobalOptPass" => (GlobalOptPass, FilePath),
+    "PromotePass" => (PromotePass, MangledSymbol),
+    "DeadArgumentEliminationPass" => (DeadArgumentEliminationPass, FilePath),
+    "InstCombinePass" => (InstCombinePass, MangledSymbol),
+    "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => (ModuleGlobalsAAPass, FilePath),
+    "CGSCCToFunctionPassAdaptor" => (CGSCCToFunctionPassAdaptor, Nothing),
+    "DevirtSCCRepeatedPass" => (DevirtSCCRepeatedPass, Nothing),
+    "FunctionToLoopPassAdaptor" => (FunctionToLoopPassAdaptor, MangledSymbol),
+    "InlinerPass" => (InlinerPass, Nothing),
+    "JumpThreadingPass" => (JumpThreadingPass, MangledSymbol),
+    "LoopFullUnrollPass" => (LoopFullUnrollPass, UnnamedLoop),
+    "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>" => (LoopAnalysisManager, Nothing),
+    "GVNPass" => (GVNPass, MangledSymbol),
+    "EarlyCSEPass" => (EarlyCSEPass, MangledSymbol),
+    "MemCpyOptPass" => (MemCpyOptPass, MangledSymbol),
+    "CorrelatedValuePropagationPass" => (CorrelatedValuePropagationPass, MangledSymbol),
+    "SimplifyCFGPass" => (SimplifyCFGPass, MangledSymbol),
+    "TailCallElimPass" => (TailCallElimPass, MangledSymbol),
+    "ReassociatePass" => (ReassociatePass, MangledSymbol),
+    "LoopRotatePass" => (LoopRotatePass, UnnamedLoop),
+    "LICMPass" => (LICMPass, UnnamedLoopOpt),
+    "SCCPPass" => (SCCPPass, MangledSymbol),
+    "BDCEPass" => (BDCEPass, MangledSymbol),
+    "ADCEPass" => (ADCEPass, MangledSymbol),
+    "DSEPass" => (DSEPass, MangledSymbol),
+    "IndVarSimplifyPass" => (IndVarSimplifyPass, UnnamedLoop),
+    "PostOrderFunctionAttrsPass" => (PostOrderFunctionAttrsPass, Nothing),
+    "LoopSimplifyPass" => (LoopSimplifyPass, MangledSymbol),
+    "LoopInstSimplifyPass" => (LoopInstSimplifyPass, UnnamedLoop),
+    "ModuleToPostOrderCGSCCPassAdaptor" => (ModuleToPostOrderCGSCCPassAdaptor, FilePath),
+    "ModuleInlinerWrapperPass" => (ModuleInlinerWrapperPass, FilePath),
+    "GlobalDCEPass" => (GlobalDCEPass, FilePath),
+    "EliminateAvailableExternallyPass" => (EliminateAvailableExternallyPass, FilePath),
+    "ReversePostOrderFunctionAttrsPass" => (ReversePostOrderFunctionAttrsPass, FilePath),
+    "SLPVectorizerPass" => (SLPVectorizerPass, MangledSymbol),
+    "Float2IntPass" => (Float2IntPass, MangledSymbol),
+    "LoopVectorizePass" => (LoopVectorizePass, MangledSymbol),
+    "LowerConstantIntrinsicsPass" => (LowerConstantIntrinsicsPass, MangledSymbol),
+    "LoopUnrollPass" => (LoopUnrollPass, MangledSymbol),
+    "LoopSinkPass" => (LoopSinkPass, MangledSymbol),
+    "InstSimplifyPass" => (InstSimplifyPass, MangledSymbol),
+    "LoopLoadEliminationPass" => (LoopLoadEliminationPass, MangledSymbol),
+    "InjectTLIMappings" => (InjectTLIMappings, MangledSymbol),
+    "VectorCombinePass" => (VectorCombinePass, MangledSymbol),
+    "CGProfilePass" => (CGProfilePass, FilePath),
+    "ConstantMergePass" => (ConstantMergePass, FilePath),
+    "RelLookupTableConverterPass" => (RelLookupTableConverterPass, FilePath),
+    "Optimizer" => (Optimizer, Nothing),
+}
+//
+/// Empirically observed activity argument parsing logics for time-trace entries
+#[derive(Clone, Debug, PartialEq)]
+pub enum ActivityArgumentParser {
+    /// No argument
+    Nothing,
+
+    /// An arbitrary string
+    String,
+
+    /// An interned file path
+    FilePath,
+
+    /// A C++ entity (class, function, ...)
+    CppEntity,
+
+    /// A C++ mangled symbol
+    MangledSymbol,
+
+    /// Either a C++ mangled symbol or nothing
+    MangledSymbolOpt,
+
+    /// The "<unnamed loop>" constant string (loops can't be named in C++)
+    UnnamedLoop,
+
+    /// Either the "<unnamed loop>" constant string or nothing
+    UnnamedLoopOpt,
+}
+//
+/// Concrete things that an activity can take as an argument
 #[derive(Clone, Debug, PartialEq)]
 pub enum ActivityArgument {
     /// No argument
@@ -790,8 +479,8 @@ pub enum ActivityArgument {
     /// A C++ mangled symbol
     MangledSymbol(MangledSymbol),
 
-    /// Either a C++ mangled symbol or nothing
-    MangledSymbolOpt(Option<MangledSymbol>),
+    /// The "<unnamed loop>" constant string (loops can't be named in C++)
+    UnnamedLoop,
 }
 //
 /// A mangled C++ symbol that we tried to demangle and parse
@@ -824,6 +513,8 @@ pub enum ActivityParseError {
     #[error("encountered unknown activity {0:?} with arguments {1:?}")]
     UnknownActivity(Box<str>, Option<HashMap<Box<str>, json::Value>>),
 
+    // FIXME: Specify the ActivityId in the errors below
+    //
     /// Failed to parse activity arguments
     #[error("failed to parse activity arguments ({0})")]
     BadArguments(#[from] ArgParseError),

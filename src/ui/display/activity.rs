@@ -33,29 +33,29 @@ pub fn display_activity_id(
 
     // Display the activity argument
     match activity_arg {
-        ActivityArgument::Nothing | ActivityArgument::MangledSymbolOpt(None) => {}
+        ActivityArgument::Nothing => {}
+        ActivityArgument::UnnamedLoop => {
+            write!(output, "(")?;
+            super::display_string(&mut output, "<unnamed loop>", max_cols)?;
+            write!(output, ")")?;
+        }
         ActivityArgument::String(s)
         | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s))
-        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Demangled(s)))
-        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Mangled(s))) => {
-            if s.width() <= max_cols.into() {
-                write!(output, "({s})")?;
-            } else {
-                write!(output, "({})", super::truncate_string(&s, max_cols))?;
-            }
+        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
+            write!(output, "(")?;
+            super::display_string(&mut output, s, max_cols)?;
+            write!(output, ")")?;
         }
         ActivityArgument::FilePath(p) => {
             write!(
                 output,
                 "({})",
-                super::path::truncate_path(&trace.file_path(p), max_cols)
+                super::path::truncate_path(&trace.file_path(*p), max_cols)
             )?;
         }
         ActivityArgument::CppEntity(e)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e))
-        | ActivityArgument::MangledSymbolOpt(Some(MangledSymbol::Parsed(e))) => {
-            write!(output, "({})", trace.entity(e).bounded_display(max_cols))?;
+        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
+            write!(output, "({})", trace.entity(*e).bounded_display(max_cols))?;
         }
     }
     Ok(())

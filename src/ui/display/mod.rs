@@ -1,5 +1,6 @@
 //! Generic utilities to display things
 
+use std::io;
 use unicode_width::UnicodeWidthStr;
 
 pub mod activity;
@@ -7,12 +8,15 @@ pub mod duration;
 pub mod path;
 
 /// Truncate a string so that it only eats up n columns, by eating up the middle
-pub fn truncate_string(input: &str, max_cols: u16) -> String {
+pub fn display_string(mut output: impl io::Write, input: &str, max_cols: u16) -> io::Result<()> {
+    // Handle trivial case
+    if input.width() <= max_cols.into() {
+        return write!(output, "{input}");
+    }
+
     // Make sure the request makes sense, set up common infrastructure
-    debug_assert!(input.width() > max_cols.into());
     debug_assert!(max_cols >= 1);
     let bytes = input.as_bytes();
-    let mut result = String::new();
     let mut last_good = "";
 
     // Split our column budget into a header and trailer
@@ -34,8 +38,7 @@ pub fn truncate_string(input: &str, max_cols: u16) -> String {
     }
 
     // Start printing out the result accordingly
-    result.push_str(last_good);
-    result.push('…');
+    write!(output, "{last_good}…")?;
 
     // Find a terminal trailer with the right amount of columns
     let mut trailer_start = bytes.len() - usize::from(trailer_cols);
@@ -52,6 +55,5 @@ pub fn truncate_string(input: &str, max_cols: u16) -> String {
     }
 
     // Emit the result
-    result.push_str(last_good);
-    result
+    write!(output, "{last_good}")
 }
