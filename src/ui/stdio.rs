@@ -175,7 +175,7 @@ fn hierarchical_profile_tree(
     } else {
         // If there are more children, warn about it
         let mut terminator = format!(
-            "…{} callee(s) below {}%…",
+            "…{} callee(s) below {:.2}%…",
             num_children - num_hottest,
             threshold * 100.0
         );
