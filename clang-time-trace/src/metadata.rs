@@ -16,7 +16,13 @@ pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> 
                     ts: Some(ts),
                     tts: None,
                 },
-        } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 && tid == Some(pid) => Ok(name),
+        } if extra.is_empty()
+            && cat.0.is_empty()
+            && ts == 0.0
+            && ((pid == 1 && tid == Some(0)) || tid == Some(pid)) =>
+        {
+            Ok(name)
+        }
         _ => Err(NameParseError::UnexpectedInput(m)),
     }
 }

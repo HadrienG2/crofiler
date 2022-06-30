@@ -431,6 +431,9 @@ generate_activities! {
     "ConstantMergePass" => (ConstantMergePass, FilePath),
     "RelLookupTableConverterPass" => (RelLookupTableConverterPass, FilePath),
     "Optimizer" => (Optimizer, Nothing),
+    "LibCallsShrinkWrapPass" => (LibCallsShrinkWrapPass, MangledSymbol),
+    "LCSSAPass" => (LCSSAPass, MangledSymbol),
+    "LoopDeletionPass" => (LoopDeletionPass, UnnamedLoop),
 }
 //
 /// Empirically observed activity argument parsing logics for time-trace entries
