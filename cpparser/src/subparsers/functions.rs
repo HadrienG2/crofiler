@@ -162,7 +162,8 @@ impl EntityParser {
             space0.and(char(')')),
             || (self.function_parameters.entry(), false, false),
             |(mut entry, mut variadic, bad), item| {
-                // An variadism ellipsis is only allowed in trailing position
+                // A variadism ellipsis is only allowed in trailing position, so
+                // there should be no call to this function after reaching it
                 if variadic || bad {
                     (entry, variadic, true)
                 } else {
@@ -461,38 +462,33 @@ mod tests {
     }
 
     #[test]
-    fn function_parameters() {
+    fn function_parameter_set() {
         let parser = EntityParser::new();
-        let test_case = |parameters: &str, expected_types: &[&str]| {
-            assert_matches!(super::function_parameters(
-                parameters,
-                &|s| parser.parse_type_like(s),
-                &parser.function_parameters,
-            ), Ok(("", key)) => {
-                let parameters = parser.function_parameters(key);
+        let test_case = |parameters: &str, expected_types: &[&str], expected_variadic: bool| {
+            assert_matches!(parser.parse_function_parameter_set(
+                parameters
+            ), Ok(("", parameter_set)) => {
+                let parameters = parser.function_parameters(parameter_set.parameters);
                 assert_eq!(parameters.len(), expected_types.len());
                 for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
                     let expected = unwrap_parse(parser.parse_type_like(*expected));
                     assert_eq!(expected, actual);
                 }
+                assert_eq!(parameter_set.variadic, expected_variadic)
             })
         };
-        test_case("()", &[]);
-        test_case("(signed char*)", &["signed char*"]);
-        test_case("(charamel<lol>&, T)", &["charamel<lol>&", "T"]);
+        test_case("()", &[], false);
+        test_case("(...)", &[], true);
+        test_case("(signed char*)", &["signed char*"], false);
+        test_case("(signed char*, ...)", &["signed char*"], true);
+        test_case("(charamel<lol>&, T)", &["charamel<lol>&", "T"], false);
+        test_case("(charamel<lol>&, T, ...)", &["charamel<lol>&", "T"], true);
     }
 
     #[test]
     fn function_signature() {
         let parser = EntityParser::new();
-        let empty_parameters = parser.function_parameters.entry().intern();
-        let type_parameters = |s| {
-            unwrap_parse(super::function_parameters(
-                s,
-                &|s| parser.parse_type_like(s),
-                &parser.function_parameters,
-            ))
-        };
+        let parameter_set = |s| unwrap_parse(parser.parse_function_parameter_set(s));
 
         assert_eq!(
             parser.parse_function_signature("()"),
@@ -500,7 +496,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -514,7 +510,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: Some(unwrap_parse(parser.parse_identifier("cxx11"))),
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -528,7 +524,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: type_parameters("(int)"),
+                    parameter_set: parameter_set("(int)"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -542,7 +538,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::CONST,
                     reference: Reference::None,
                     noexcept: None,
@@ -556,7 +552,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
                     noexcept: None,
@@ -570,7 +566,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: Some(None),
@@ -584,7 +580,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::VOLATILE,
                     reference: Reference::LValue,
                     noexcept: None,
@@ -598,7 +594,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
                     reference: Reference::None,
                     noexcept: Some(None),
@@ -612,7 +608,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
                     noexcept: Some(Some(unwrap_parse(
@@ -628,7 +624,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameters: empty_parameters,
+                    parameter_set: parameter_set("()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,

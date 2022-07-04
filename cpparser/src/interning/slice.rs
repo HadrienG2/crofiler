@@ -163,3 +163,5 @@ pub trait SliceItemView<'entities>: CustomDisplay + Display + PartialEq {
     /// String to be used at the end of the display
     const DISPLAY_TRAILER: &'static str;
 }
+
+// FIXME: Add tests for this
