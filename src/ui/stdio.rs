@@ -28,15 +28,11 @@ pub fn run(args: CliArgs) {
     let duration_norm = profile::duration_norm(trace.root_activities());
 
     // Activity types by self-duration
-    print_activity_type_profile(&trace, duration_norm);
+    let self_threshold = args.self_threshold as Duration / 100.0;
+    print_activity_type_profile(&trace, duration_norm, self_threshold);
 
     // Flat activity profile by self-duration
-    print_flat_profile(
-        &trace,
-        duration_norm,
-        args.self_threshold as Duration / 100.0,
-        max_cols,
-    );
+    print_flat_profile(&trace, duration_norm, self_threshold, max_cols);
 
     // Display hierarchical profile
     print_hierarchical_profile(
@@ -48,10 +44,18 @@ pub fn run(args: CliArgs) {
 }
 
 /// Display the amount of time spent on various activity types
-fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration) {
+fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration, threshold: Duration) {
     println!("\nSelf-duration breakdown by activity type:");
     let activity_type_breakdown = profile::activity_type_breakdown(&trace);
-    for (name, duration) in activity_type_breakdown.iter() {
+    for (idx, (name, duration)) in activity_type_breakdown.iter().enumerate() {
+        if duration * duration_norm < threshold {
+            println!(
+                "- ... and {} other activity types below {:.2}% ...",
+                activity_type_breakdown.len() - idx,
+                threshold * 100.0,
+            );
+            break;
+        }
         print!("- {name}");
         display_profile_info(std::io::stdout(), *duration, duration_norm).unwrap();
         println!();
