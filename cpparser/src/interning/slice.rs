@@ -146,8 +146,7 @@ impl<
 }
 
 /// Trait to be implemented by views of all items that appear in a slice
-// FIXME: Remove Display bound once CustomDisplay can replace it
-pub trait SliceItemView<'entities>: CustomDisplay + Display + PartialEq {
+pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
     /// Underlying storage type that this view wraps
     type Inner: 'entities;
 
