@@ -105,14 +105,10 @@ impl<
     > CustomDisplay for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn recursion_depth(&self) -> usize {
-        let mut depth = self
-            .iter()
-            .map(|item| item.recursion_depth())
-            .fold(0, |acc, item| acc.max(item));
-        if self.iter().count() > 0 {
-            depth += 1;
-        }
-        depth
+        self.iter()
+            .map(|item| item.recursion_depth() + 1)
+            .max()
+            .unwrap_or(0)
     }
 
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
@@ -141,7 +137,7 @@ impl<
     > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display_impl(f, &DisplayState::default())
+        self.display_impl(f, &DisplayState::new(usize::MAX))
     }
 }
 
@@ -163,4 +159,186 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
     const DISPLAY_TRAILER: &'static str;
 }
 
-// FIXME: Add tests for this
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EntityParser;
+    use asylum::{lasso::Spur, sequence::SequenceInterner};
+
+    // Fake slice item to test SliceView
+    type TestItem = usize;
+    //
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    struct TestItemView(usize);
+    //
+    impl CustomDisplay for TestItemView {
+        fn recursion_depth(&self) -> usize {
+            self.0
+        }
+
+        fn display_impl(
+            &self,
+            f: &mut Formatter<'_>,
+            state: &DisplayState,
+        ) -> Result<(), fmt::Error> {
+            if self.0 >= 1 {
+                if let Ok(_guard) = state.recurse() {
+                    write!(f, "(")?;
+                    TestItemView(self.0 - 1).display_impl(f, state)?;
+                    write!(f, ")")?;
+                } else {
+                    write!(f, "…")?;
+                }
+            } else {
+                write!(f, "@")?;
+            }
+            Ok(())
+        }
+    }
+    //
+    impl<'entities> SliceItemView<'entities> for TestItemView {
+        type Inner = TestItem;
+
+        fn new(inner: Self::Inner, _entities: &'entities Entities) -> Self {
+            Self(inner)
+        }
+
+        const DISPLAY_HEADER: &'static str = "^";
+
+        const DISPLAY_SEPARATOR: &'static str = "~";
+
+        const DISPLAY_TRAILER: &'static str = "$";
+    }
+
+    // Check that TestItemView displays as intended
+    #[test]
+    fn test_item_view_display() {
+        for actual_depth in 0..3 {
+            for depth_limit in 0..3 {
+                let mut expected = String::new();
+                let printed_depth = actual_depth.min(depth_limit);
+                for _ in 0..printed_depth {
+                    expected.push('(');
+                }
+                if actual_depth > depth_limit {
+                    expected.push('…');
+                } else {
+                    expected.push('@');
+                }
+                for _ in 0..printed_depth {
+                    expected.push(')');
+                }
+
+                let actual = format!(
+                    "{}",
+                    TestItemView(actual_depth).display(&DisplayState::new(depth_limit))
+                );
+                assert_eq!(expected, actual);
+            }
+        }
+    }
+
+    /// Sequence interning setup
+    type KeyImpl = Spur;
+    const LEN_BITS: u32 = 8;
+    type TestSequenceInterner = SequenceInterner<TestItem, KeyImpl, LEN_BITS>;
+    type TestSliceView<'entities> = SliceView<'entities, TestItem, TestItemView, KeyImpl, LEN_BITS>;
+
+    /// Sequences to be tested
+    static TEST_SEQUENCES: &[&[TestItem]] = &[&[], &[42], &[0, 7], &[2, 5, 1]];
+
+    /// Test harness for slices
+    fn setup_and_check(check: impl Fn(&[TestItem], TestSliceView)) {
+        let entities = EntityParser::new().finalize();
+        for sequence in TEST_SEQUENCES {
+            let mut interner = TestSequenceInterner::new();
+            let key = interner.intern(sequence);
+            let sequences = interner.finalize();
+            let view = TestSliceView::new(key, &sequences, &entities);
+            // FIXME: Add check for pairs of sequences and test equality
+            check(sequence, view)
+        }
+    }
+
+    /// Test basic initial state
+    #[test]
+    fn accessors() {
+        setup_and_check(|sequence, view| {
+            assert_eq!(view.is_empty(), sequence.is_empty());
+            assert_eq!(view.len(), sequence.len());
+
+            let expected_recursion_depth = sequence.iter().max().map(|x| x + 1).unwrap_or(0);
+            assert_eq!(view.recursion_depth(), expected_recursion_depth);
+        })
+    }
+
+    fn expected_custom_display(sequence: &[TestItem], recursion_depth: usize) -> String {
+        let mut expected = String::new();
+        expected.push('^');
+        if recursion_depth > 0 {
+            for (idx, item) in sequence.iter().cloned().enumerate() {
+                expected.push_str(&format!(
+                    "{}",
+                    TestItemView(item).display(&DisplayState::new(recursion_depth - 1))
+                ));
+                if idx != sequence.len() - 1 {
+                    expected.push('~');
+                }
+            }
+        } else if !sequence.is_empty() {
+            expected.push('…');
+        }
+        expected.push('$');
+        expected
+    }
+
+    /// Test full (non-customized) display
+    #[test]
+    fn display() {
+        setup_and_check(|sequence, view| {
+            assert_eq!(
+                expected_custom_display(sequence, usize::MAX),
+                format!("{}", view)
+            );
+        })
+    }
+
+    /// Test customized display
+    #[test]
+    fn custom_display() {
+        setup_and_check(|sequence, view| {
+            for recursion_depth in 0..sequence.iter().max().unwrap_or(&0) + 1 {
+                assert_eq!(
+                    expected_custom_display(sequence, recursion_depth),
+                    format!("{}", view.display(&DisplayState::new(recursion_depth)))
+                );
+            }
+        })
+    }
+
+    /// Test equality operator
+    #[test]
+    fn equality() {
+        let entities1 = EntityParser::new().finalize();
+        let entities2 = EntityParser::new();
+        entities2.parse_entity("<unknown>").unwrap();
+        let entities2 = entities2.finalize();
+
+        for sequence1 in TEST_SEQUENCES {
+            for sequence2 in TEST_SEQUENCES {
+                let mut interner = TestSequenceInterner::new();
+                let key1 = interner.intern(sequence1);
+                let key2 = interner.intern(sequence2);
+                let sequences = interner.finalize();
+
+                let view11 = TestSliceView::new(key1, &sequences, &entities1);
+                let view21 = TestSliceView::new(key2, &sequences, &entities1);
+                let view12 = TestSliceView::new(key1, &sequences, &entities2);
+
+                assert_eq!(view11 == view21, sequence1 == sequence2);
+                assert!(view11 != view12);
+                assert!(view21 != view12);
+            }
+        }
+    }
+}
