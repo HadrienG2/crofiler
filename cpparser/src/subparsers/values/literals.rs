@@ -245,7 +245,8 @@ mod tests {
         fn test_character_str(c: char) {
             for prefix in ["", "u8", "u", "U", "L"] {
                 let mut char_str = prefix.to_string();
-                write!(&mut char_str, "'{}'", c.escape_default()).unwrap();
+                write!(&mut char_str, "'{}'", c.escape_default())
+                    .expect("Writing to a string cannot fail");
                 println!("{char_str}");
                 assert_eq!(super::character(&char_str), Ok(("", c)));
             }

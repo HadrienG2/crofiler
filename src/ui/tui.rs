@@ -103,7 +103,7 @@ impl Tui {
 
             // Start processing the input data
             scope.execute(|| {
-                let mut lock = trace_output.lock().unwrap();
+                let mut lock = trace_output.lock().expect("Mutex was poisened");
                 *lock = Some(Arc::new(ClangTrace::from_file(path).unwrap()));
             });
 
@@ -165,7 +165,8 @@ fn show_hierarchical_profile<'a>(
     activities: impl Iterator<Item = ActivityTrace<'a>>,
 ) {
     // Set up the children activity table
-    let (terminal_width, terminal_height) = termion::terminal_size().unwrap();
+    let (terminal_width, terminal_height) =
+        termion::terminal_size().expect("Could not read terminal configuration");
     let activity_width = terminal_width - 2 * (12 + 3) - 3;
     type HierarchicalView = TableView<HierarchicalData, HierarchicalColumn>;
     let mut table = HierarchicalView::new()
@@ -191,14 +192,20 @@ fn show_hierarchical_profile<'a>(
             }
             match display_activity_id(&mut buf, trace, &activity_trace, activity_width as u16) {
                 Ok(()) => {}
-                Err(ActivityIdError::NotEnoughCols(_)) => write!(&mut buf, "…").unwrap(),
-                e @ Err(_) => e.unwrap(),
+                Err(ActivityIdError::NotEnoughCols(_)) => {
+                    write!(&mut buf, "…").expect("Writing to a buffer should succeed")
+                }
+                e @ Err(ActivityIdError::IoError(_)) => {
+                    e.expect("Writing to a buffer should succeed")
+                }
             }
             HierarchicalData {
                 id: activity_trace.id(),
                 duration: activity_trace.duration(),
                 self_duration: activity_trace.self_duration(),
-                activity_id: String::from_utf8(buf).unwrap().into(),
+                activity_id: String::from_utf8(buf)
+                    .expect("Display routines should produce UTF-8 data")
+                    .into(),
             }
         })
         .collect();
@@ -213,9 +220,11 @@ fn show_hierarchical_profile<'a>(
     table.set_on_submit(move |cursive, _row, index| {
         let activity_trace_id = cursive
             .call_on_name(&profile_name2, |view: &mut HierarchicalView| {
-                view.borrow_item(index).unwrap().id
+                view.borrow_item(index)
+                    .expect("Callback shouldn't be called with an invalid index")
+                    .id
             })
-            .unwrap();
+            .expect("Failed to retrieve cursive layer");
         let activity_trace = trace2.activity(activity_trace_id);
         if activity_trace.direct_children().count() > 0 {
             show_hierarchical_profile(cursive, &trace2, activity_trace.direct_children())
@@ -236,7 +245,10 @@ fn show_hierarchical_profile<'a>(
     // Set up a footer with metadata and help instructions
     let mut footer = metadata(&trace, terminal_width);
     {
-        let last_line = footer.lines().last().unwrap();
+        let last_line = footer
+            .lines()
+            .last()
+            .expect("There should be text in there");
         const HELP_TEXT: &str = "Press H for help.";
         if last_line.width() + 1 + HELP_TEXT.width() <= terminal_width as usize {
             footer.push(' ');
@@ -288,8 +300,8 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
     fn to_column(&self, column: HierarchicalColumn) -> String {
         let format_duration = |duration| {
             let mut buffer = Vec::<u8>::new();
-            display_duration(&mut buffer, duration).unwrap();
-            String::from_utf8(buffer).unwrap()
+            display_duration(&mut buffer, duration).expect("Writing to a buffer shouldn't fail");
+            String::from_utf8(buffer).expect("display_duration should produce UTF-8 data")
         };
         match column {
             // FIXME: Add a way to switch to percentage display, which will
@@ -304,7 +316,9 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
     where
         Self: Sized,
     {
-        let cmp_duration = |d1: Duration, d2: Duration| d1.partial_cmp(&d2).unwrap();
+        let cmp_duration = |d1: Duration, d2: Duration| {
+            d1.partial_cmp(&d2).expect("time-trace shouldn't emit NaNs")
+        };
         match column {
             HierarchicalColumn::Duration => cmp_duration(self.duration, other.duration),
             HierarchicalColumn::SelfDuration => {

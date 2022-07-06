@@ -301,39 +301,39 @@ fn log_entity_parser_usage(parser: &EntityParser) {
         "- Paths: {} interned components, {} total components, max {} components/path",
         parser.num_unique_path_components(),
         parser.num_path_components(),
-        parser.max_path_len().unwrap()
+        parser.max_path_len().unwrap_or(0)
     );
     debug!("- Types: {}", parser.num_types());
     debug!("- Values: {}", parser.num_values());
     debug!(
         "- Template parameters: {} total parameters, max {} parameters/set",
         parser.num_template_parameters(),
-        parser.max_template_parameter_set_len().unwrap()
+        parser.max_template_parameter_set_len().unwrap_or(0)
     );
     debug!(
         "- Value trailers: {} total AfterValue, max {} AfterValue/set",
         parser.num_after_value(),
-        parser.max_value_trailer_len().unwrap()
+        parser.max_value_trailer_len().unwrap_or(0)
     );
     debug!(
         "- Function calls: {} total arguments, max {} arguments/set",
         parser.num_function_arguments(),
-        parser.max_function_arguments_len().unwrap()
+        parser.max_function_arguments_len().unwrap_or(0)
     );
     debug!(
         "- Function parameters: {} total parameters, max {} parameters/set",
         parser.num_function_parameters(),
-        parser.max_function_parameters_len().unwrap()
+        parser.max_function_parameters_len().unwrap_or(0)
     );
     debug!(
         "- Scopes: {} total Scopes, max {} Scopes/set",
         parser.num_scopes(),
-        parser.max_scope_sequence_len().unwrap()
+        parser.max_scope_sequence_len().unwrap_or(0)
     );
     debug!(
         "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
         parser.num_decl_operators(),
-        parser.max_declarator_len().unwrap()
+        parser.max_declarator_len().unwrap_or(0)
     );
 }
 
@@ -507,7 +507,7 @@ mod tests {
     ]
 }"#,
         )
-        .unwrap();
+        .expect("This is a known-good parse which should not fail");
 
         // Check global metadata
         assert_eq!(trace.process_name(), "clang-14.0.0");
@@ -538,7 +538,9 @@ mod tests {
 
         // Check root node list
         let mut root_iter = trace.root_activities();
-        let (root_activity, root_start, root_duration) = expected_activities.last().unwrap();
+        let (root_activity, root_start, root_duration) = expected_activities
+            .last()
+            .expect("Already checked there is >1 activity");
         assert_matches!(root_iter.next(), Some(root) => {
             assert_eq!(root.activity(), root_activity);
             assert_eq!(root.start(), *root_start);

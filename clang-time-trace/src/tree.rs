@@ -455,7 +455,9 @@ mod tests {
         // Build the tree
         let mut builder = ActivityTreeBuilder::with_capacity(1);
         let activity_stat = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
-        builder.insert(activity_stat.clone()).unwrap();
+        builder
+            .insert(activity_stat.clone())
+            .expect("Inserting a single node shouldn't fail");
         let tree = builder.build();
 
         // Check expected content and accessors
@@ -487,11 +489,12 @@ mod tests {
         let subchild1 = ActivityStat::new(Activity::PerformPendingInstantiations, 0.3, 3.0e6); // End time 3.0e6
         let child2 = ActivityStat::new(Activity::Backend, 3.5e6, 0.6e6); // End time 4.1e6
         let subchild2 = ActivityStat::new(Activity::CodeGenPasses, 3.6e6, 0.4e6); // End time 4.0e6
-        builder.insert(subchild1.clone()).unwrap();
-        builder.insert(child1.clone()).unwrap();
-        builder.insert(subchild2.clone()).unwrap();
-        builder.insert(child2.clone()).unwrap();
-        builder.insert(root.clone()).unwrap();
+        static EXPECT_MSG: &str = "Test is designed so this doesn't fail";
+        builder.insert(subchild1.clone()).expect(EXPECT_MSG);
+        builder.insert(child1.clone()).expect(EXPECT_MSG);
+        builder.insert(subchild2.clone()).expect(EXPECT_MSG);
+        builder.insert(child2.clone()).expect(EXPECT_MSG);
+        builder.insert(root.clone()).expect(EXPECT_MSG);
         let tree = builder.build();
 
         // Check expected content
@@ -550,7 +553,9 @@ mod tests {
     fn build_error_unordered_timestamps() {
         let mut builder = ActivityTreeBuilder::with_capacity(2);
         let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 4.6, 6.4);
-        builder.insert(activity1.clone()).unwrap();
+        builder
+            .insert(activity1.clone())
+            .expect("Test is designed so this doesn't fail");
         let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
         assert_eq!(
             builder.insert(activity2.clone()),
@@ -565,7 +570,9 @@ mod tests {
     fn build_error_partial_overlap_before() {
         let mut builder = ActivityTreeBuilder::with_capacity(2);
         let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 1.2, 3.4);
-        builder.insert(activity1.clone()).unwrap();
+        builder
+            .insert(activity1.clone())
+            .expect("Test is designed so this doesn't fail");
         let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 2.3, 5.6);
         assert_eq!(
             builder.insert(activity2.clone()),

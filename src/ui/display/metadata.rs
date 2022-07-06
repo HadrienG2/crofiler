@@ -22,8 +22,8 @@ pub fn metadata(trace: &ClangTrace, max_cols: u16) -> String {
             trace.process_name(),
             (effective_max_cols - buf_width) as u16,
         )
-        .unwrap();
-        buf = String::from_utf8(buf_bytes).unwrap();
+        .expect("Writing to a buffer shouldn't fail");
+        buf = String::from_utf8(buf_bytes).expect("display_string should produce UTF-8 data");
     } else {
         buf.push('…');
         return buf;

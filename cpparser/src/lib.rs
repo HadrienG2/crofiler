@@ -311,8 +311,8 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
 
     pub fn unwrap_parse<Output>(res: IResult<Output>) -> Output {
-        let (rest, output) = res.unwrap();
-        assert_eq!(rest, "");
+        let (rest, output) = res.expect("This was a known-good parse which should not fail");
+        assert_eq!(rest, "", "All output should have been consumed");
         output
     }
 

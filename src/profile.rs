@@ -18,7 +18,9 @@ pub fn activity_type_breakdown(trace: &ClangTrace) -> Box<[(&str, Duration)]> {
             activity_trace.self_duration();
     }
     let mut profile = profile.into_iter().collect::<Box<[_]>>();
-    profile.sort_unstable_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
+    profile.sort_unstable_by(|(_, d1), (_, d2)| {
+        d2.partial_cmp(d1).expect("No NaNs expected in time-trace")
+    });
     profile
 }
 
@@ -36,6 +38,10 @@ pub fn hottest_activities<'activities>(
     let mut children = activities
         .filter(|a| duration(a) >= threshold)
         .collect::<Box<[_]>>();
-    children.sort_unstable_by(|a1, a2| duration(a2).partial_cmp(&duration(a1)).unwrap());
+    children.sort_unstable_by(|a1, a2| {
+        duration(a2)
+            .partial_cmp(&duration(a1))
+            .expect("No NaNs expected in time-trace")
+    });
     children
 }

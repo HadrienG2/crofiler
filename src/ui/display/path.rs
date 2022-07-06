@@ -148,7 +148,9 @@ fn display_components<'a>(
 
     // Add front components and associated separators
     for _ in 0..accepted_front {
-        let component = components.next().unwrap();
+        let component = components
+            .next()
+            .expect("There should be more components than accepted components");
         buffer.push_str(component);
         if component != ROOT_COMPONENT.as_ref() {
             buffer.push(PATH_SEPARATOR);
@@ -172,7 +174,11 @@ fn display_components<'a>(
     // Add back components and associated separators
     for _ in 0..accepted_back {
         buffer.push(PATH_SEPARATOR);
-        buffer.push_str(components.next().unwrap());
+        buffer.push_str(
+            components
+                .next()
+                .expect("There should be more components than accepted components"),
+        );
     }
 
     // Render path
@@ -237,9 +243,11 @@ mod tests {
     use std::path::Path;
 
     fn path_components(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator + Clone {
-        Path::new(path)
-            .components()
-            .map(|c| c.as_os_str().to_str().unwrap())
+        Path::new(path).components().map(|c| {
+            c.as_os_str()
+                .to_str()
+                .expect("Tested path components should be UTF-8")
+        })
     }
 
     fn test_truncate_path(path: &str, cols: usize, expected: &str) {

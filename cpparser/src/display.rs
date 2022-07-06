@@ -150,7 +150,10 @@ pub(crate) mod tests {
         view: impl CustomDisplay,
         displays: [&str; NUM_RECURSION_DEPTHS],
     ) {
-        assert!(NUM_RECURSION_DEPTHS > 0);
+        assert!(
+            NUM_RECURSION_DEPTHS > 0,
+            "There is always recursion depth 0..."
+        );
 
         assert_eq!(view.recursion_depth(), NUM_RECURSION_DEPTHS - 1);
 
@@ -160,7 +163,9 @@ pub(crate) mod tests {
             assert_eq!(*expected_display, actual_display(max_recursion));
         }
 
-        let full_display = *displays.last().unwrap();
+        let full_display = *displays
+            .last()
+            .expect("Per initial assert this cannot happen");
         assert_eq!(actual_display(view.recursion_depth() + 1), full_display);
         assert_eq!(actual_display(usize::MAX), full_display);
     }

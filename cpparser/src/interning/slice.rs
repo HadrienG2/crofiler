@@ -267,7 +267,9 @@ mod tests {
     fn equality() {
         let entities1 = EntityParser::new().finalize();
         let entities2 = EntityParser::new();
-        entities2.parse_entity("<unknown>").unwrap();
+        entities2
+            .parse_entity("<unknown>")
+            .expect("This is a known-good parse which should not fail");
         let entities2 = entities2.finalize();
 
         for sequence1 in TEST_SEQUENCES {

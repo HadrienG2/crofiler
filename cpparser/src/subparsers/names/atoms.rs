@@ -56,7 +56,7 @@ impl EntityParser {
                     Err(error) => last_error = Some(error),
                 }
             }
-            Err(last_error.unwrap())
+            Err(last_error.expect("By above assert_ne check, this option will be filled"))
         }
     }
 
@@ -272,7 +272,9 @@ mod tests {
     fn identifier() {
         let parser = EntityParser::new();
         const ID: &str = "_abczd_123904";
-        let (rest, key) = parser.parse_identifier(ID).unwrap();
+        let (rest, key) = parser
+            .parse_identifier(ID)
+            .expect("We know this is a valid identifier");
         assert_eq!(rest, "");
         assert_eq!(parser.num_identifiers(), 1);
         assert_eq!(&*parser.identifier(key), ID);

@@ -20,7 +20,7 @@ pub fn run(args: CliArgs) {
 
     // Load the clang trace
     eprintln!("Processing input data...");
-    let trace = ClangTrace::from_file(args.input).unwrap();
+    let trace = ClangTrace::from_file(args.input).expect("Failed to process input data");
 
     // Display basic metadata
     println!("\n{}", metadata(&trace, max_cols));
@@ -58,7 +58,8 @@ fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration, thre
             break;
         }
         print!("- {name}");
-        display_profile_info(std::io::stdout(), *duration, duration_norm).unwrap();
+        display_profile_info(std::io::stdout(), *duration, duration_norm)
+            .expect("Writing to stdout shouldn't fail");
         println!();
     }
 }
@@ -88,7 +89,7 @@ fn print_flat_profile(
             duration,
             duration_norm,
         )
-        .unwrap();
+        .expect("Writing to stdout shouldn't fail");
         println!();
     }
     let num_activities = trace.all_activities().count();
@@ -123,7 +124,10 @@ fn print_hierarchical_profile(
         hierarchical_profile_tree(
             &trace,
             palette,
-            trace.root_activities().next().unwrap(),
+            trace
+                .root_activities()
+                .next()
+                .expect("There should be one ExecuteCompiler root activity"),
             duration_norm,
             threshold,
             max_cols
@@ -150,8 +154,10 @@ fn hierarchical_profile_tree(
         root.duration(),
         duration_norm,
     )
-    .unwrap();
-    let root_display = String::from_utf8(root_display).unwrap().into_boxed_str();
+    .expect("Writing to a collection shouldn't fail");
+    let root_display = String::from_utf8(root_display)
+        .expect("display_activity shouldn't produce non-UTF8 bytes")
+        .into_boxed_str();
     let mut tree = Tree::new(root_display).with_glyphs(palette);
 
     // Stop recursion when there is no space to render children
@@ -216,7 +222,8 @@ fn display_activity(
     // display width and how many columns that leaves for the activity id.
     let mut trailer = Vec::<u8>::new();
     display_profile_info(&mut trailer, duration, duration_norm)?;
-    let trailer = std::str::from_utf8(&trailer[..]).unwrap();
+    let trailer = std::str::from_utf8(&trailer[..])
+        .expect("display_profile_info shouldn't produce non-UTF8 bytes");
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
     // Try to display both the activity id and the profiling numbers
