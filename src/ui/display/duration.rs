@@ -18,13 +18,18 @@ fn display_duration_impl(
     const SECOND: Duration = 1000.0 * MILLISECOND;
     const MINUTE: Duration = 60.0 * SECOND;
     const HOUR: Duration = 60.0 * MINUTE;
-    if duration >= HOUR {
+    const DAY: Duration = 24.0 * HOUR;
+    if duration >= DAY {
+        let days = (duration / DAY).floor();
+        write!(output, "{days}d ")?;
+        display_duration_impl(output, duration - days * DAY, Some(HMS::ForceHour))
+    } else if duration >= HOUR || hms == Some(HMS::ForceHour) {
         let hours = (duration / HOUR).floor();
-        write!(output, "{}:", hours)?;
+        write!(output, "{hours}:")?;
         display_duration_impl(output, duration - hours * HOUR, Some(HMS::ForceMinute))
     } else if duration >= MINUTE || hms == Some(HMS::ForceMinute) {
         let minutes = (duration / MINUTE).floor();
-        write!(output, "{}:", minutes)?;
+        write!(output, "{minutes}:")?;
         display_duration_impl(output, duration - minutes * MINUTE, Some(HMS::ForceSecond))
     } else if duration >= SECOND || hms == Some(HMS::ForceSecond) {
         write!(output, "{:.2}", duration / SECOND)?;
@@ -41,6 +46,7 @@ fn display_duration_impl(
 //
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum HMS {
+    ForceHour,
     ForceMinute,
     ForceSecond,
 }

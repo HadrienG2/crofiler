@@ -67,7 +67,7 @@ pub struct ClangTrace {
     thread_name: Option<Box<str>>,
 
     /// Beginning of time, if specified
-    beginning_of_time: Option<u64>,
+    beginning_of_time: Option<Duration>,
 }
 //
 impl ClangTrace {
@@ -124,8 +124,6 @@ impl ClangTrace {
     }
 
     /// Process identifier of the clang process that acquired this data
-    //
-    // TODO: Expose in crofiler UI
     pub fn pid(&self) -> Option<Pid> {
         self.pid
     }
@@ -140,8 +138,7 @@ impl ClangTrace {
     /// This metadata is emitted by newer versions of clang and can be used to
     /// sync up timings from multiple clang processes.
     ///
-    // TODO: Expose in crofiler UI
-    pub fn beginning_of_time(&self) -> Option<u64> {
+    pub fn beginning_of_time(&self) -> Option<Duration> {
         self.beginning_of_time
     }
 
@@ -180,8 +177,8 @@ impl FromStr for ClangTrace {
         // metadata that can be used to sync up time-traces originating from
         // multiple clang processes
         let beginning_of_time = if let Some(value) = profile_ctf.extra.get("beginningOfTime") {
-            if let Some(u64_value) = value.as_u64() {
-                Some(u64_value)
+            if let Some(f64_value) = value.as_f64() {
+                Some(f64_value)
             } else {
                 return Err(ClangTraceParseError::InvalidBeginningOfTime(value.clone()));
             }

@@ -1,6 +1,10 @@
 //! Interactive textual user interface
 
-use super::display::{activity::display_activity_id, duration::display_duration};
+use super::display::{
+    activity::{display_activity_id, ActivityIdError},
+    duration::display_duration,
+    metadata::metadata,
+};
 use crate::CliArgs;
 use clang_time_trace::{ActivityId, ActivityTrace, ClangTrace, Duration};
 use cursive::{
@@ -13,6 +17,7 @@ use cursive_table_view::{TableView, TableViewItem};
 use scoped_threadpool::Pool;
 use std::{
     cmp::Ordering,
+    io::Write,
     ops::{Deref, DerefMut},
     path::Path,
     sync::{
@@ -20,6 +25,7 @@ use std::{
         Arc, Mutex, TryLockError,
     },
 };
+use unicode_width::UnicodeWidthStr;
 
 /// Run the analysis using the textual user interface
 pub fn run(args: CliArgs) {
@@ -183,7 +189,11 @@ fn show_hierarchical_profile<'a>(
             } else {
                 buf.push(b' ');
             }
-            display_activity_id(&mut buf, trace, &activity_trace, activity_width as u16).unwrap();
+            match display_activity_id(&mut buf, trace, &activity_trace, activity_width as u16) {
+                Ok(()) => {}
+                Err(ActivityIdError::NotEnoughCols(_)) => write!(&mut buf, "…").unwrap(),
+                e @ Err(_) => e.unwrap(),
+            }
             HierarchicalData {
                 id: activity_trace.id(),
                 duration: activity_trace.duration(),
@@ -223,14 +233,25 @@ fn show_hierarchical_profile<'a>(
     });
     // TODO: Add F shortcut for flat profile
 
+    // Set up a footer with metadata and help instructions
+    let mut footer = metadata(&trace, terminal_width);
+    {
+        let last_line = footer.lines().last().unwrap();
+        const HELP_TEXT: &str = "Press H for help.";
+        if last_line.width() + 1 + HELP_TEXT.width() <= terminal_width as usize {
+            footer.push(' ');
+        } else {
+            footer.push('\n');
+        }
+        footer.push_str(HELP_TEXT);
+    }
+    let footer_lines = footer.lines().count() as u16;
+
     // Show the table
     cursive.add_fullscreen_layer(
         LinearLayout::vertical()
-            .child(table.min_size((terminal_width, terminal_height - 1)))
-            .child(TextView::new(format!(
-                "Data from {}, press H for help",
-                trace.process_name()
-            ))),
+            .child(table.min_size((terminal_width, terminal_height - footer_lines)))
+            .child(TextView::new(footer)),
     );
 }
 

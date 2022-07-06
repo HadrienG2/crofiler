@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthStr;
 
 pub mod activity;
 pub mod duration;
+pub mod metadata;
 pub mod path;
 
 /// Truncate a string so that it only eats up n columns, by eating up the middle

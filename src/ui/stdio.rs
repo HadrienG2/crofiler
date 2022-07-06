@@ -3,6 +3,7 @@
 use super::display::{
     activity::{self, ActivityIdError},
     duration::display_duration,
+    metadata::metadata,
 };
 use crate::{profile, CliArgs};
 use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
@@ -22,7 +23,7 @@ pub fn run(args: CliArgs) {
     let trace = ClangTrace::from_file(args.input).unwrap();
 
     // Display basic metadata
-    println!("Data from {}", trace.process_name());
+    println!("\n{}", metadata(&trace, max_cols));
 
     // Use total clang execution time as a duration norm
     let duration_norm = profile::duration_norm(trace.root_activities());
