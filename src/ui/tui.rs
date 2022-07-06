@@ -104,6 +104,7 @@ impl Tui {
             // Start processing the input data
             scope.execute(|| {
                 let mut lock = trace_output.lock().expect("Mutex was poisened");
+                // FIXME: Don't unwrap here, bubble up and display error message
                 *lock = Some(Arc::new(ClangTrace::from_file(path).unwrap()));
             });
 
