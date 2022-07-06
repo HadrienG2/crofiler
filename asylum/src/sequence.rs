@@ -155,7 +155,7 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
             let key = SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(
                 start..start + sequence.len(),
             )
-            .unwrap();
+            .expect("Key space exhausted, must use a larger KeyImpl or more LEN_BITS");
             self.concatenated.extend_from_slice(sequence);
             self.insert_sequence_key(hash, key);
             key
@@ -371,7 +371,7 @@ pub(crate) mod tests {
             assert_eq!(
                 sequences.get(
                     TestedKey::try_from_range_usize(seen_so_far..seen_so_far + input.len())
-                        .unwrap()
+                        .expect("If input could be interned, its key should fit in TestedKey")
                 ),
                 *input
             );
@@ -475,7 +475,8 @@ pub(crate) mod tests {
         ) {
             let mut interner = TestedInterner::new();
 
-            let expected_key = TestedKey::try_from_range_usize(0..input.len()).unwrap();
+            let expected_key = TestedKey::try_from_range_usize(0..input.len())
+                .expect("The test dataset is chosen so that keys fit in TestedKey");
             assert_eq!(intern(&mut interner, input), expected_key);
             assert_eq!(interner.concatenated, input);
             assert_eq!(interner.len(), 1);
@@ -515,7 +516,7 @@ pub(crate) mod tests {
             let key2 = TestedKey::try_from_range_usize(
                 interner.num_items()..interner.num_items() + input2.len(),
             )
-            .unwrap();
+            .expect("The test dataset is chosen so that keys fit in TestedKey");
             assert_eq!(intern(&mut interner, input2), key2);
             assert_eq!(interner.len(), 2);
             assert!(!interner.is_empty());

@@ -346,7 +346,7 @@ mod tests {
         finalize_and_check(interner, &[]);
     }
 
-    fn test_single_path(path: &str, normalized: &str) {
+    fn test_single_abs_path(path: &str, normalized: &str) {
         // Determine expected normalized components
         let components = Path::new(normalized)
             .components()
@@ -355,7 +355,9 @@ mod tests {
 
         // Intern the path
         let mut interner = TestedInterner::new();
-        let key = interner.intern(path).unwrap();
+        let key = interner
+            .intern(path)
+            .expect("This function should only be used to test interning of absolute paths");
 
         // Check basic interner state
         if path == normalized {
@@ -379,14 +381,23 @@ mod tests {
 
     #[test]
     fn single() {
-        test_single_path("/a/b.c", "/a/b.c");
-        test_single_path("/./a/b.c", "/a/b.c");
-        test_single_path("/../a/b.c", "/a/b.c");
-        test_single_path("/a/./b.c", "/a/b.c");
-        test_single_path("/a/../b.c", "/b.c");
+        // Check that relative paths error out
+        let mut interner = TestedInterner::new();
+        let rel_path = "./relative";
+        assert_eq!(
+            interner.intern(rel_path),
+            Err(PathError::RelativePath(Path::new(rel_path).into()))
+        );
+
+        // Check that absolute paths work well
+        test_single_abs_path("/a/b.c", "/a/b.c");
+        test_single_abs_path("/./a/b.c", "/a/b.c");
+        test_single_abs_path("/../a/b.c", "/a/b.c");
+        test_single_abs_path("/a/./b.c", "/a/b.c");
+        test_single_abs_path("/a/../b.c", "/b.c");
     }
 
-    fn test_dual_path(path1: &str, path2: &str) {
+    fn test_dual_abs_path(path1: &str, path2: &str) {
         // Determine expected components
         let components = |path| {
             Path::new(path)
@@ -399,14 +410,18 @@ mod tests {
 
         // Intern the first path
         let mut interner = TestedInterner::new();
-        let key1 = interner.intern(path1).unwrap();
+        let key1 = interner
+            .intern(path1)
+            .expect("This function should only be used to test interning of absolute paths");
 
         // Back up the interner state
         let old_components = extract_components(&interner);
         let old_sequences = interner.sequences.clone();
 
         // Intern the second path
-        let key2 = interner.intern(path2).unwrap();
+        let key2 = interner
+            .intern(path2)
+            .expect("This function should only be used to test interning of absolute paths");
 
         // Were they identical ?
         if path1 == path2 {
@@ -434,7 +449,11 @@ mod tests {
 
             // New path components are available with new keys
             for component in &set2 - &set1 {
-                assert!(interner.components.contains(component.to_str().unwrap()));
+                assert!(interner.components.contains(
+                    component
+                        .to_str()
+                        .expect("Paths come from strings, so they should be UTF-8")
+                ));
             }
 
             // Old path is unchanged, new path is added using new components
@@ -461,9 +480,9 @@ mod tests {
 
     #[test]
     fn dual() {
-        test_dual_path("/a/b.c", "/a/b.c");
-        test_dual_path("/a/b.c", "/a/d.e");
-        test_dual_path("/a/b.c", "/d/b.c");
-        test_dual_path("/a/b.c", "/d/e.f");
+        test_dual_abs_path("/a/b.c", "/a/b.c");
+        test_dual_abs_path("/a/b.c", "/a/d.e");
+        test_dual_abs_path("/a/b.c", "/d/b.c");
+        test_dual_abs_path("/a/b.c", "/d/e.f");
     }
 }

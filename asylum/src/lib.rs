@@ -106,7 +106,13 @@ pub(crate) mod tests {
         let sequences = interner.finalize();
         assert_eq!(sequences.0, inputs.into());
         for (idx, item) in inputs.iter().enumerate() {
-            assert_eq!(sequences.get(Spur::try_from_usize(idx).unwrap()), item);
+            assert_eq!(
+                sequences.get(
+                    Spur::try_from_usize(idx)
+                        .expect("If interning succeeded, item index should fit in a Spur")
+                ),
+                item
+            );
         }
     }
 
