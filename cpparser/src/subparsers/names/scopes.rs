@@ -447,6 +447,7 @@ pub mod tests {
 
     #[test]
     fn scope_or_unqualified_id() {
+        // FIXME: Rework test harness to test Scope::CustomDisplay
         let parser = EntityParser::new();
         let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
 
@@ -640,6 +641,7 @@ pub mod tests {
 
     #[test]
     fn nested_name_specifier() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let scopes = |ss: &[&str]| -> ScopesKey {
             let mut entry = parser.scope_sequences.entry();
@@ -676,6 +678,7 @@ pub mod tests {
 
     #[test]
     fn id_expression() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
 

@@ -224,6 +224,7 @@ mod tests {
 
     #[test]
     fn type_specifier() {
+        // FIXME: Rework test harness to test SimpleType::CustomDisplay and TypeSpecifier::CustomDisplay
         let parser = EntityParser::new();
         let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
 

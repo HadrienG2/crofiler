@@ -614,6 +614,7 @@ mod tests {
 
     #[test]
     fn value_header() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let parse_value_header = |s| parser.parse_value_header(s, true, true);
         let literal = |s| unwrap_parse(parser.parse_literal(s));
@@ -684,6 +685,7 @@ mod tests {
 
     #[test]
     fn after_value() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let parse_after_value = |s| parser.parse_after_value(s, true, true);
         let literal = |s| unwrap_parse(parser.parse_literal(s));
@@ -760,6 +762,7 @@ mod tests {
 
     #[test]
     fn value_like() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let parse_value_like = |s| parser.parse_value_like(s, true, true);
         let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));

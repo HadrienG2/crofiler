@@ -320,6 +320,8 @@ pub(crate) mod tests {
     fn entity() {
         let parser = EntityParser::new();
 
+        // FIXME: Rework test harness to test CustomDisplay
+
         // Something that looks like a type name
         assert_eq!(
             parser.parse_entity("type_name"),

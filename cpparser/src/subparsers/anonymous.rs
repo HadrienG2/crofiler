@@ -318,6 +318,7 @@ mod tests {
 
     #[test]
     fn clang_lambda() {
+        // FIXME: Rework test harness to test LambdaView::CustomDisplay
         let parser = EntityParser::new();
         if cfg!(target_os = "windows") {
             assert_eq!(
@@ -346,6 +347,7 @@ mod tests {
 
     #[test]
     fn libiberty_lambda() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         assert_eq!(
             parser.parse_libiberty_lambda("{lambda(auto:1)#1}"),

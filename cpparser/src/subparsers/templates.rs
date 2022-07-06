@@ -251,6 +251,7 @@ mod tests {
 
     #[test]
     fn template_parameter() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let test_template_parameter_sep =
             |text_wo_sep: &str, sep: &str, expected: TemplateParameter| {
@@ -280,6 +281,7 @@ mod tests {
 
     #[test]
     fn template_parameters() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let test_case = |input: &str, expected_types: Option<&[&str]>| {
             if let Some(expected_types) = expected_types {

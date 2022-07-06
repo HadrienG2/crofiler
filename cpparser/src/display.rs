@@ -137,8 +137,6 @@ impl Drop for RecursionGuard<'_> {
     }
 }
 
-// FIXME: Add tests of every CustomDisplay impl
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

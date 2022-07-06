@@ -421,6 +421,7 @@ mod tests {
 
     #[test]
     fn new_expression() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
         let type_like = |s| unwrap_parse(parser.parse_type_like(s));
 

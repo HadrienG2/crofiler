@@ -295,6 +295,7 @@ pub mod tests {
 
     #[test]
     fn unqualified_id() {
+        // FIXME: Rework test harness to test CustomDisplay
         let parser = EntityParser::new();
 
         // Just an identifier
