@@ -141,6 +141,31 @@ impl Drop for RecursionGuard<'_> {
 pub(crate) mod tests {
     use super::*;
 
+    /// Check that a CustomDisplay implementation works as intended
+    ///
+    /// - Advertised recursion depth is correct
+    /// - Display is correct at all recursion depths
+    ///
+    pub fn check_custom_display<const NUM_RECURSION_DEPTHS: usize>(
+        view: impl CustomDisplay,
+        displays: [&str; NUM_RECURSION_DEPTHS],
+    ) {
+        assert!(NUM_RECURSION_DEPTHS > 0);
+
+        assert_eq!(view.recursion_depth(), NUM_RECURSION_DEPTHS - 1);
+
+        let actual_display =
+            |max_recursion| format!("{}", view.display(&DisplayState::new(max_recursion)));
+        for (max_recursion, expected_display) in displays.iter().enumerate() {
+            assert_eq!(*expected_display, actual_display(max_recursion));
+        }
+
+        let full_display = *displays.last().unwrap();
+        assert_eq!(actual_display(view.recursion_depth() + 1), full_display);
+        assert_eq!(actual_display(usize::MAX), full_display);
+    }
+
+    /// Simple mock CustomDisplay implementation for tests that need one
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub struct CustomDisplayMock(pub usize);
     //
@@ -172,28 +197,10 @@ pub(crate) mod tests {
     // Check that CustomDisplayMock's basic functionality works as intended
     #[test]
     fn custom_display_mock() {
-        for actual_depth in 0..3 {
-            for depth_limit in 0..3 {
-                let mut expected = String::new();
-                let printed_depth = actual_depth.min(depth_limit);
-                for _ in 0..printed_depth {
-                    expected.push('(');
-                }
-                if actual_depth > depth_limit {
-                    expected.push('…');
-                } else {
-                    expected.push('@');
-                }
-                for _ in 0..printed_depth {
-                    expected.push(')');
-                }
-
-                let mock = CustomDisplayMock(actual_depth);
-                assert_eq!(mock.recursion_depth(), mock.0);
-                let actual = format!("{}", mock.display(&DisplayState::new(depth_limit)));
-                assert_eq!(expected, actual);
-            }
-        }
+        check_custom_display(CustomDisplayMock(0), ["@"]);
+        check_custom_display(CustomDisplayMock(1), ["…", "(@)"]);
+        check_custom_display(CustomDisplayMock(2), ["…", "(…)", "((@))"]);
+        check_custom_display(CustomDisplayMock(3), ["…", "(…)", "((…))", "(((@)))"]);
     }
 
     // Check that bounded_display works as intended
