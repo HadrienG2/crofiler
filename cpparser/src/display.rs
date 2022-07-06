@@ -32,9 +32,10 @@ pub trait CustomDisplay {
     //        display_impl in the final tree-based display implementation.
     //
     fn bounded_display(&self, max_cols: u16) -> String {
+        assert!(max_cols >= 1, "Cannot display anything with 0 columns...");
         let mut prev_display = "…".to_string();
         let mut curr_display = String::new();
-        for recursion_depth in 0..self.recursion_depth() {
+        for recursion_depth in 0..=self.recursion_depth() {
             write!(
                 &mut curr_display,
                 "{}",
@@ -102,8 +103,7 @@ impl DisplayState {
 
     /// Test if a certain recursion is possible under the current limit
     pub fn can_recurse(&self) -> bool {
-        let state = self.0.borrow();
-        state.max_recursion > 0
+        self.max_recursion() > 0
     }
 
     /// Enter a new level of recursion or return Err if recursion limit reached
@@ -116,6 +116,11 @@ impl DisplayState {
             state.max_recursion -= 1;
         }
         Ok(RecursionGuard { state: self })
+    }
+
+    /// Query current reachable recursion depth
+    fn max_recursion(&self) -> usize {
+        self.0.borrow().max_recursion
     }
 }
 //
@@ -132,4 +137,133 @@ impl Drop for RecursionGuard<'_> {
     }
 }
 
-// FIXME: Add tests of this + every CustomDisplay impl
+// FIXME: Add tests of every CustomDisplay impl
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    pub struct CustomDisplayMock(pub usize);
+    //
+    impl CustomDisplay for CustomDisplayMock {
+        fn recursion_depth(&self) -> usize {
+            self.0
+        }
+
+        fn display_impl(
+            &self,
+            f: &mut Formatter<'_>,
+            state: &DisplayState,
+        ) -> Result<(), fmt::Error> {
+            if self.0 >= 1 {
+                if let Ok(_guard) = state.recurse() {
+                    write!(f, "(")?;
+                    Self(self.0 - 1).display_impl(f, state)?;
+                    write!(f, ")")?;
+                } else {
+                    write!(f, "…")?;
+                }
+            } else {
+                write!(f, "@")?;
+            }
+            Ok(())
+        }
+    }
+
+    // Check that CustomDisplayMock's basic functionality works as intended
+    #[test]
+    fn custom_display_mock() {
+        for actual_depth in 0..3 {
+            for depth_limit in 0..3 {
+                let mut expected = String::new();
+                let printed_depth = actual_depth.min(depth_limit);
+                for _ in 0..printed_depth {
+                    expected.push('(');
+                }
+                if actual_depth > depth_limit {
+                    expected.push('…');
+                } else {
+                    expected.push('@');
+                }
+                for _ in 0..printed_depth {
+                    expected.push(')');
+                }
+
+                let mock = CustomDisplayMock(actual_depth);
+                assert_eq!(mock.recursion_depth(), mock.0);
+                let actual = format!("{}", mock.display(&DisplayState::new(depth_limit)));
+                assert_eq!(expected, actual);
+            }
+        }
+    }
+
+    // Check that bounded_display works as intended
+    #[test]
+    fn bounded_display() {
+        assert_eq!(CustomDisplayMock(0).bounded_display(1), "@");
+        assert_eq!(CustomDisplayMock(0).bounded_display(2), "@");
+
+        assert_eq!(CustomDisplayMock(1).bounded_display(1), "…");
+        assert_eq!(CustomDisplayMock(1).bounded_display(2), "…");
+        assert_eq!(CustomDisplayMock(1).bounded_display(3), "(@)");
+        assert_eq!(CustomDisplayMock(1).bounded_display(4), "(@)");
+
+        assert_eq!(CustomDisplayMock(2).bounded_display(1), "…");
+        assert_eq!(CustomDisplayMock(2).bounded_display(2), "…");
+        assert_eq!(CustomDisplayMock(2).bounded_display(3), "(…)");
+        assert_eq!(CustomDisplayMock(2).bounded_display(4), "(…)");
+        assert_eq!(CustomDisplayMock(2).bounded_display(5), "((@))");
+        assert_eq!(CustomDisplayMock(2).bounded_display(6), "((@))");
+    }
+
+    // Test option display
+    #[test]
+    fn name() {
+        let state = DisplayState::default();
+
+        let none: Option<CustomDisplayMock> = None;
+        assert_eq!(none.recursion_depth(), 0);
+        assert_eq!(format!("{}", none.display(&state)), "");
+
+        let mock = CustomDisplayMock(2);
+        let some = Some(mock);
+        assert_eq!(some.recursion_depth(), mock.recursion_depth());
+        assert_eq!(
+            format!("{}", some.display(&state)),
+            format!("{}", mock.display(&state))
+        );
+    }
+
+    // Check that DisplayState works as intended
+    fn test_display_state_impl(state: &DisplayState) {
+        let init_max_recursion = state.max_recursion();
+        assert_eq!(state.can_recurse(), (init_max_recursion > 0));
+        if state.can_recurse() {
+            if let Ok(guard) = state.recurse() {
+                assert_eq!(state.max_recursion(), init_max_recursion - 1);
+                test_display_state_impl(state);
+                std::mem::drop(guard);
+            } else {
+                unreachable!();
+            }
+        } else {
+            assert!(state.recurse().is_err());
+        }
+        assert_eq!(state.max_recursion(), init_max_recursion);
+    }
+    //
+    fn test_display_state(max_recursion: usize) {
+        let state = DisplayState::new(max_recursion);
+        assert_eq!(state.max_recursion(), max_recursion);
+        test_display_state_impl(&state);
+    }
+    //
+    #[test]
+    fn display_state() {
+        test_display_state(0);
+        test_display_state(1);
+        test_display_state(2);
+        test_display_state(42);
+    }
+}

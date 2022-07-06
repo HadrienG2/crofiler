@@ -162,39 +162,13 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EntityParser;
+    use crate::{display::tests::CustomDisplayMock, EntityParser};
     use asylum::{lasso::Spur, sequence::SequenceInterner};
 
     // Fake slice item to test SliceView
     type TestItem = usize;
     //
-    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-    struct TestItemView(usize);
-    //
-    impl CustomDisplay for TestItemView {
-        fn recursion_depth(&self) -> usize {
-            self.0
-        }
-
-        fn display_impl(
-            &self,
-            f: &mut Formatter<'_>,
-            state: &DisplayState,
-        ) -> Result<(), fmt::Error> {
-            if self.0 >= 1 {
-                if let Ok(_guard) = state.recurse() {
-                    write!(f, "(")?;
-                    TestItemView(self.0 - 1).display_impl(f, state)?;
-                    write!(f, ")")?;
-                } else {
-                    write!(f, "…")?;
-                }
-            } else {
-                write!(f, "@")?;
-            }
-            Ok(())
-        }
-    }
+    type TestItemView = CustomDisplayMock;
     //
     impl<'entities> SliceItemView<'entities> for TestItemView {
         type Inner = TestItem;
@@ -208,34 +182,6 @@ mod tests {
         const DISPLAY_SEPARATOR: &'static str = "~";
 
         const DISPLAY_TRAILER: &'static str = "$";
-    }
-
-    // Check that TestItemView displays as intended
-    #[test]
-    fn test_item_view_display() {
-        for actual_depth in 0..3 {
-            for depth_limit in 0..3 {
-                let mut expected = String::new();
-                let printed_depth = actual_depth.min(depth_limit);
-                for _ in 0..printed_depth {
-                    expected.push('(');
-                }
-                if actual_depth > depth_limit {
-                    expected.push('…');
-                } else {
-                    expected.push('@');
-                }
-                for _ in 0..printed_depth {
-                    expected.push(')');
-                }
-
-                let actual = format!(
-                    "{}",
-                    TestItemView(actual_depth).display(&DisplayState::new(depth_limit))
-                );
-                assert_eq!(expected, actual);
-            }
-        }
     }
 
     /// Sequence interning setup
@@ -279,7 +225,7 @@ mod tests {
             for (idx, item) in sequence.iter().cloned().enumerate() {
                 expected.push_str(&format!(
                     "{}",
-                    TestItemView(item).display(&DisplayState::new(recursion_depth - 1))
+                    CustomDisplayMock(item).display(&DisplayState::new(recursion_depth - 1))
                 ));
                 if idx != sequence.len() - 1 {
                     expected.push('~');
