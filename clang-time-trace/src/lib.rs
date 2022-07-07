@@ -398,15 +398,15 @@ pub enum ClangTraceParseError {
     DuplicateThreadName(Box<str>, Box<str>),
 
     /// The clang pid was reported twice with different valies
-    #[error("inconsistant clang pid values ({0} then {1})")]
+    #[error("inconsistent clang pid values ({0} then {1})")]
     InconsistentPid(Pid, Pid),
 
     /// Encountered an unexpected CTF metadata event
-    #[error("encountered unexpected {0:#?}")]
+    #[error("encountered unexpected metadata event {0:#?}")]
     UnexpectedMetadataEvent(MetadataEvent),
 
     /// Encountered an unexpected CTF event
-    #[error("encountered unexpected {0:#?}")]
+    #[error("encountered unexpected event {0:#?}")]
     UnexpectedEvent(TraceEvent),
 }
 

@@ -6,7 +6,7 @@ use super::display::{
     metadata::metadata,
 };
 use crate::CliArgs;
-use clang_time_trace::{ActivityId, ActivityTrace, ClangTrace, Duration};
+use clang_time_trace::{ActivityId, ActivityTrace, ClangTrace, ClangTraceLoadError, Duration};
 use cursive::{
     event::{Event, Key},
     view::{Nameable, Resizable},
@@ -33,7 +33,17 @@ pub fn run(args: CliArgs) {
     let mut tui = Tui::new();
 
     // Load the clang time trace
-    let trace = tui.load_input(&args.input);
+    let trace = match tui.load_input(&args.input) {
+        Ok(trace) => Arc::new(trace),
+        Err(error) => {
+            tui.cursive.add_layer(
+                Dialog::text(format!("Failed to process input: {error}"))
+                    .button("Quit", |cursive| cursive.quit()),
+            );
+            tui.run();
+            return;
+        }
+    };
 
     // TODO: Add activity summary on S
 
@@ -94,18 +104,17 @@ impl Tui {
     }
 
     /// Perform some expensive work while displaying a loading screen
-    fn load_input(&mut self, path: &Path) -> Arc<ClangTrace> {
+    fn load_input(&mut self, path: &Path) -> Result<ClangTrace, ClangTraceLoadError> {
         let trace_output = Mutex::new(None);
-        let result = self.processing_thread.scoped(|scope| {
+        self.processing_thread.scoped(|scope| {
             // Set up the loading screen
             self.cursive
-                .add_layer(Dialog::text("Loading input data...").button("Abort", |s| s.quit()));
+                .add_layer(Dialog::text("Processing input data...").button("Abort", |s| s.quit()));
 
             // Start processing the input data
             scope.execute(|| {
                 let mut lock = trace_output.lock().expect("Mutex was poisened");
-                // FIXME: Don't unwrap here, bubble up and display error message
-                *lock = Some(Arc::new(ClangTrace::from_file(path).unwrap()));
+                *lock = Some(ClangTrace::from_file(path));
             });
 
             // Initiate the cursive event loop
@@ -137,9 +146,7 @@ impl Tui {
                     }
                 }
             }
-        });
-        self.cursive.pop_layer();
-        result
+        })
     }
 }
 //

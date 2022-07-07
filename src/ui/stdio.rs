@@ -20,7 +20,12 @@ pub fn run(args: CliArgs) {
 
     // Load the clang trace
     eprintln!("Processing input data...");
-    let trace = ClangTrace::from_file(args.input).expect("Failed to process input data");
+    let trace = match ClangTrace::from_file(args.input) {
+        Ok(trace) => trace,
+        Err(e) => {
+            return eprintln!("Failed to process input: {e}");
+        }
+    };
 
     // Display basic metadata
     println!("\n{}", metadata(&trace, max_cols));
