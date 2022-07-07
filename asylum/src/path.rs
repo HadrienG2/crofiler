@@ -201,10 +201,7 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
         Ok(sequence.intern())
     }
 
-    /// Retrieve a previously interned thing
-    ///
-    /// May not be optimal, meant for validation use only
-    ///
+    /// Retrieve a previously interned path
     pub fn get(
         &self,
         key: PathKey<PathKeyImpl, LEN_BITS>,

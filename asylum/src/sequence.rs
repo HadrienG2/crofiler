@@ -162,10 +162,7 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
         })
     }
 
-    /// Retrieve a previously interned thing
-    ///
-    /// May not be optimal, meant for validation use only
-    ///
+    /// Retrieve a previously interned sequence
     pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> &[Item] {
         &self.concatenated[key.into_range_usize()]
     }
