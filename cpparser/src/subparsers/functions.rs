@@ -24,6 +24,9 @@ use std::{
     hash::Hash,
 };
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned function arguments (= list of parameter values) key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -81,12 +84,9 @@ impl EntityParser {
     }
 
     /// Retrieve a function call previously parsed by parse_function_call
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn function_arguments(&self, key: FunctionArgumentsKey) -> Box<[ValueKey]> {
-        self.function_arguments.borrow().get(key).into()
+    pub(crate) fn raw_function_arguments(&self, key: FunctionArgumentsKey) -> ARef<[ValueKey]> {
+        self.function_arguments.get(key)
     }
 
     /// Total number of function arguments across all interned function calls so far
@@ -190,12 +190,9 @@ impl EntityParser {
     }
 
     /// Retrieve a function parameter set previously parsed by parse_function_signature
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn function_parameters(&self, key: FunctionParametersKey) -> Box<[TypeKey]> {
-        self.function_parameters.borrow().get(key).into()
+    pub(crate) fn raw_function_parameters(&self, key: FunctionParametersKey) -> ARef<[TypeKey]> {
+        self.function_parameters.get(key)
     }
 
     /// Total number of function parameters across all interned function signatures so far
@@ -468,7 +465,7 @@ mod tests {
             assert_matches!(parser.parse_function_parameter_set(
                 parameters
             ), Ok(("", parameter_set)) => {
-                let parameters = parser.function_parameters(parameter_set.parameters);
+                let parameters = parser.raw_function_parameters(parameter_set.parameters);
                 assert_eq!(parameters.len(), expected_types.len());
                 for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
                     let expected = unwrap_parse(parser.parse_type_like(*expected));
@@ -640,7 +637,7 @@ mod tests {
         let parser = EntityParser::new();
         let test_case = |arguments: &str, expected_values: &[&str]| {
             assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
-                let arguments = parser.function_arguments(key);
+                let arguments = parser.raw_function_arguments(key);
                 assert_eq!(arguments.len(), expected_values.len());
                 for (expected, actual) in expected_values.iter().zip(arguments.to_vec()) {
                     let expected = unwrap_parse(parser.parse_value_like(*expected, true, true));

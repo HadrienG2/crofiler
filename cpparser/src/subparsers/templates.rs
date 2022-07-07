@@ -14,6 +14,9 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned template parameter set key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -66,15 +69,12 @@ impl EntityParser {
     }
 
     /// Retrieve a previously interned template parameter set
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn template_parameters(
+    pub(crate) fn raw_template_parameters(
         &self,
         key: TemplateParameterListKey,
-    ) -> Box<[TemplateParameter]> {
-        self.template_parameter_lists.borrow().get(key).into()
+    ) -> ARef<[TemplateParameter]> {
+        self.template_parameter_lists.get(key)
     }
 
     /// Total number of template parameters across all interned template parameter sets so far
@@ -286,7 +286,7 @@ mod tests {
         let test_case = |input: &str, expected_types: Option<&[&str]>| {
             if let Some(expected_types) = expected_types {
                 assert_matches!(parser.parse_template_parameters(input), Ok(("", Some(key))) => {
-                    let parameters = parser.template_parameters(key);
+                    let parameters = parser.raw_template_parameters(key);
                     assert_eq!(parameters.len(), expected_types.len());
                     for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
                         let expected = TemplateParameter::TypeLike(unwrap_parse(parser.parse_type_like(*expected)));

@@ -25,6 +25,9 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned C++ value key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -102,12 +105,9 @@ impl EntityParser {
     }
 
     /// Retrieve a value trailer previously parsed by parse_value_like
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn value_trailer(&self, key: ValueTrailerKey) -> Box<[AfterValue]> {
-        self.value_trailers.borrow().get(key).into()
+    pub(crate) fn raw_value_trailer(&self, key: ValueTrailerKey) -> ARef<[AfterValue]> {
+        self.value_trailers.get(key)
     }
 
     /// Total number of AfterValues across all interned ValueTrailers
@@ -787,7 +787,7 @@ mod tests {
             )) => {
                 let value = parser.value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression("array")));
-                assert_eq!(parser.value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value("666"))].into());
+                assert_eq!(parser.raw_value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value("666"))].into());
             }
         );
         assert_matches!(
@@ -798,7 +798,7 @@ mod tests {
             )) => {
                 let value = parser.value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression("func")));
-                assert_eq!(parser.value_trailer(value.trailer), vec![
+                assert_eq!(parser.raw_value_trailer(value.trailer), vec![
                         unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
                         AfterValue::ArrayIndex(literal_value("666"))
                     ]

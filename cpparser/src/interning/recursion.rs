@@ -5,11 +5,8 @@ use asylum::{
     lasso::{Key, Spur},
     sequence::{SequenceInterner, SequenceKey},
 };
-use std::{
-    cell::{Ref, RefCell},
-    hash::Hash,
-    ops::Deref,
-};
+use reffers::ARef;
+use std::{cell::RefCell, hash::Hash};
 
 /// Extension of SequenceInterner which provides an entry() API that can be
 /// called recursively using shared references
@@ -29,13 +26,18 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     // Access the inner SequenceInterner
-    pub fn borrow(&self) -> SequenceInternerRef<Item, KeyImpl, LEN_BITS> {
-        SequenceInternerRef(self.0.borrow())
+    pub fn borrow(&self) -> ARef<SequenceInterner<Item, KeyImpl, LEN_BITS>> {
+        ARef::new(self.0.borrow()).map(|(interner, _vecs)| interner)
     }
 
     // Extract the inner SequenceInterner
     pub fn into_inner(self) -> SequenceInterner<Item, KeyImpl, LEN_BITS> {
         self.0.into_inner().0
+    }
+
+    // Access an interned sequence
+    pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> ARef<[Item]> {
+        self.borrow().map(|interner| interner.get(key))
     }
 
     // Prepare to intern a sequence in an iterative fashion, item by item
@@ -61,23 +63,6 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Shared reference to a sequence interner
-pub struct SequenceInternerRef<
-    'interner,
-    Item: Clone + Eq + Hash,
-    KeyImpl: Key = Spur,
-    const LEN_BITS: u32 = 8,
->(Ref<'interner, (SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>);
-//
-impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Deref
-    for SequenceInternerRef<'interner, Item, KeyImpl, LEN_BITS>
-{
-    type Target = SequenceInterner<Item, KeyImpl, LEN_BITS>;
-    fn deref(&self) -> &Self::Target {
-        &(*self.0).0
     }
 }
 

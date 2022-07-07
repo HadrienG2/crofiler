@@ -222,6 +222,7 @@ dependencies = [
  "nom",
  "nom-supreme",
  "pretty_assertions",
+ "reffers",
  "unicode-width",
  "unicode-xid",
 ]
@@ -1043,6 +1044,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8440d8acb4fd3d277125b4bd01a6f38aee8d814b3b5fc09b3f2b825d37d3fe8f"
 dependencies = [
  "redox_syscall",
+]
+
+[[package]]
+name = "reffers"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "162d659c5126f0981e174637accc2e8dfb5bec1908c3fd688d8cce663afed248"
+dependencies = [
+ "stable_deref_trait",
 ]
 
 [[package]]

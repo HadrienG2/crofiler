@@ -18,6 +18,9 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned declarator key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -47,12 +50,9 @@ impl EntityParser {
     }
 
     /// Retrieve a previously interned declarator
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn declarator(&self, key: DeclaratorKey) -> Box<[DeclOperator]> {
-        self.declarators.borrow().get(key).into()
+    pub(crate) fn raw_declarator(&self, key: DeclaratorKey) -> ARef<[DeclOperator]> {
+        self.declarators.get(key)
     }
 
     /// Total number of DeclOperators across all interned declarators so far
@@ -438,7 +438,7 @@ mod tests {
 
         let test_case = |declarator: &str, expected_operators: &[&str]| {
             assert_matches!(parser.parse_declarator(declarator), Ok(("", key)) => {
-                let declarator = parser.declarator(key);
+                let declarator = parser.raw_declarator(key);
                 assert_eq!(declarator.len(), expected_operators.len());
                 for (expected, actual) in expected_operators.iter().zip(declarator.to_vec()) {
                     let expected = unwrap_parse(parser.parse_decl_operator(*expected));

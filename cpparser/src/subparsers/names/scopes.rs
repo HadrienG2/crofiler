@@ -18,6 +18,9 @@ use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned Scope sequence key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -110,12 +113,9 @@ impl EntityParser {
     }
 
     /// Retrieve a scope sequence previously parsed by parse_proto_id_expression
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn scope_sequence(&self, key: ScopesKey) -> Box<[Scope]> {
-        self.scope_sequences.borrow().get(key).into()
+    pub(crate) fn raw_scope_sequence(&self, key: ScopesKey) -> ARef<[Scope]> {
+        self.scope_sequences.get(key)
     }
 
     /// Total number of Scopes across all interned nested name specifiers so far
@@ -501,7 +501,10 @@ pub mod tests {
             let key = entry.intern();
 
             // Make sure it can be correctly retrieved before returning it
-            for (input, result) in scopes.into_iter().zip(parser.scope_sequence(key).to_vec()) {
+            for (input, result) in scopes
+                .into_iter()
+                .zip(parser.raw_scope_sequence(key).to_vec())
+            {
                 assert_eq!(input, result);
             }
             key
