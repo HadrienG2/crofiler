@@ -64,7 +64,7 @@ impl EntityParser {
 
         // Anonymous entities to which clang gives a name
         let mut lambda = (|s| self.parse_lambda_imut(s)).map(UnqualifiedId::Lambda);
-        let anonymous = (|s| self.parse_anonymous(s)).map(UnqualifiedId::Anonymous);
+        let anonymous = (|s| self.parse_anonymous_imut(s)).map(UnqualifiedId::Anonymous);
 
         // Operator and decltype must go before named because named matches keywords
         //

@@ -76,7 +76,18 @@ impl EntityParser {
     }
 
     /// Parser for other anonymous clang entities called `(anonymous <stuff>)`
-    pub fn parse_anonymous<'source>(&self, s: &'source str) -> IResult<'source, AnonymousEntity> {
+    pub fn parse_anonymous<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, AnonymousEntity> {
+        self.parse_anonymous_imut(s)
+    }
+
+    /// Implementation of parse_anonymous using internal mutability
+    pub(crate) fn parse_anonymous_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, AnonymousEntity> {
         use nom::{
             character::complete::char,
             combinator::opt,
