@@ -149,8 +149,12 @@ impl EntityParser {
         .map(ValueHeader::Parenthesized);
 
         let curr_value_like = |s| self.parse_value_like(s, allow_comma, allow_greater);
-        let unary_op = separated_pair(|s| self.parse_unary_expr_prefix(s), space0, curr_value_like)
-            .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
+        let unary_op = separated_pair(
+            |s| self.parse_unary_expr_prefix_imut(s),
+            space0,
+            curr_value_like,
+        )
+        .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
         let new_expression =
             (|s| self.parse_new_expression_imut(s)).map(ValueHeader::NewExpression);

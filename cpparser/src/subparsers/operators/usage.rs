@@ -31,7 +31,18 @@ impl EntityParser {
     }
 
     /// Parse an unary operator that can be applied to an expression in prefix position
-    pub fn parse_unary_expr_prefix<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
+    pub fn parse_unary_expr_prefix<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, Operator> {
+        self.parse_unary_expr_prefix_imut(s)
+    }
+
+    /// Implementation of parse_unary_expr_prefix using internal mutability
+    pub(crate) fn parse_unary_expr_prefix_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, Operator> {
         use nom::{
             character::complete::{char, space0, space1},
             sequence::delimited,
