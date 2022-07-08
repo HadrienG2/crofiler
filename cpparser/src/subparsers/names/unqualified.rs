@@ -65,7 +65,7 @@ impl EntityParser {
         // A decltype expression
         let decltype = delimited(
             tag("decltype(").and(space0),
-            |s| self.parse_value_like(s, false, true),
+            |s| self.parse_value_like_imut(s, false, true),
             space0.and(char(')')),
         )
         .map(UnqualifiedId::Decltype);

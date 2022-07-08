@@ -75,7 +75,7 @@ impl EntityParser {
         let arguments_header = char('(').and(space0);
 
         let non_empty_parameters = parse_separated_terminated(
-            |s| self.parse_value_like(s, false, true),
+            |s| self.parse_value_like_imut(s, false, true),
             space0.and(char(',')).and(space0),
             space0.and(char(')')),
             || self.function_arguments.entry(),
@@ -232,7 +232,7 @@ impl EntityParser {
             Self::keyword_parser("noexcept"),
             opt(delimited(
                 char('(').and(space0),
-                |s| self.parse_value_like(s, false, true),
+                |s| self.parse_value_like_imut(s, false, true),
                 space0.and(char(')')),
             )),
         )
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn noexcept() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         assert_eq!(parser.parse_noexcept_imut("noexcept"), Ok(("", None)));
         assert_eq!(
             parser.parse_noexcept_imut("noexcept(123)"),
@@ -655,7 +655,7 @@ mod tests {
         let mut parser = EntityParser::new();
         let mut test_case = |arguments: &str, expected_values: &[&str]| {
             assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
-                let arguments = parser.raw_function_arguments(key);
+                let arguments = parser.raw_function_arguments(key).to_owned();
                 assert_eq!(arguments.len(), expected_values.len());
                 for (expected, actual) in expected_values.iter().zip(arguments.to_vec()) {
                     let expected = unwrap_parse(parser.parse_value_like(*expected, true, true));

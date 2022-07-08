@@ -61,6 +61,16 @@ impl EntityParser {
     /// terminator should take priority.
     ///
     pub fn parse_value_like<'source>(
+        &mut self,
+        s: &'source str,
+        allow_comma: bool,
+        allow_greater: bool,
+    ) -> IResult<'source, ValueKey> {
+        self.parse_value_like_imut(s, allow_comma, allow_greater)
+    }
+
+    /// Implementation of parse_value_like using internal mutability
+    pub(crate) fn parse_value_like_imut<'source>(
         &self,
         s: &'source str,
         allow_comma: bool,
@@ -140,7 +150,7 @@ impl EntityParser {
 
         let literal = (|s| self.parse_literal_imut(s)).map(ValueHeader::Literal);
 
-        let parenthesized_value_like = |s| self.parse_value_like(s, true, true);
+        let parenthesized_value_like = |s| self.parse_value_like_imut(s, true, true);
         let parenthesized = delimited(
             char('(').and(space0),
             parenthesized_value_like,
@@ -148,7 +158,7 @@ impl EntityParser {
         )
         .map(ValueHeader::Parenthesized);
 
-        let curr_value_like = |s| self.parse_value_like(s, allow_comma, allow_greater);
+        let curr_value_like = |s| self.parse_value_like_imut(s, allow_comma, allow_greater);
         let unary_op = separated_pair(
             |s| self.parse_unary_expr_prefix_imut(s),
             space0,
@@ -190,7 +200,7 @@ impl EntityParser {
         };
         use nom_supreme::tag::complete::tag;
 
-        let curr_value_like = |s| self.parse_value_like(s, allow_comma, allow_greater);
+        let curr_value_like = |s| self.parse_value_like_imut(s, allow_comma, allow_greater);
 
         let binary_op = separated_pair(
             |s| Self::parse_binary_expr_middle(s, allow_comma, allow_greater),
@@ -209,7 +219,7 @@ impl EntityParser {
         )
         .map(|(value1, value2)| AfterValue::TernaryOp(value1, value2));
 
-        let value_like_index = |s| self.parse_value_like(s, false, true);
+        let value_like_index = |s| self.parse_value_like_imut(s, false, true);
         let mut array_index = delimited(
             char('[').and(space0),
             value_like_index,

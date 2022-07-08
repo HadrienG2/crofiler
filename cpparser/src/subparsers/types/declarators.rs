@@ -110,7 +110,7 @@ impl EntityParser {
         // Array declarator
         let array = delimited(
             char('[').and(space0),
-            opt(|s| self.parse_value_like(s, false, true)),
+            opt(|s| self.parse_value_like_imut(s, false, true)),
             space0.and(char(']')),
         )
         .map(DeclOperator::Array);
@@ -129,7 +129,7 @@ impl EntityParser {
         // Vector size
         let vector_size = delimited(
             tag("__vector("),
-            |s| self.parse_value_like(s, false, true),
+            |s| self.parse_value_like_imut(s, false, true),
             char(')'),
         )
         .map(DeclOperator::VectorSize);

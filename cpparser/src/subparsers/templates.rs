@@ -111,7 +111,7 @@ impl EntityParser {
         let type_like = (|s| self.parse_type_like_imut(s))
             .map(TemplateParameter::TypeLike)
             .terminated(space0.and(peek(char(',').or(char('>')))));
-        let value_like = (|s| self.parse_value_like(s, false, false))
+        let value_like = (|s| self.parse_value_like_imut(s, false, false))
             .map(TemplateParameter::ValueLike)
             .terminated(space0.and(peek(char(',').or(char('>')))));
         type_like.or(value_like).parse(s)
