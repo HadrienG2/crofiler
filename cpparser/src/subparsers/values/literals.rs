@@ -10,7 +10,12 @@ use std::fmt::{self, Display, Formatter};
 
 impl EntityParser {
     /// Parser for literals
-    pub fn parse_literal<'source>(&self, s: &'source str) -> IResult<'source, Literal> {
+    pub fn parse_literal<'source>(&mut self, s: &'source str) -> IResult<'source, Literal> {
+        self.parse_literal_imut(s)
+    }
+
+    /// Implementation of parse_literal using internal mutability
+    pub(crate) fn parse_literal_imut<'source>(&self, s: &'source str) -> IResult<'source, Literal> {
         use nom::combinator::opt;
         (literal_value.and(opt(|s| self.parse_identifier_imut(s))))
             .map(|(value, custom_suffix)| Literal {

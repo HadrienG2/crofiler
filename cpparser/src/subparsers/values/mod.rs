@@ -138,7 +138,7 @@ impl EntityParser {
         };
         use nom_supreme::tag::complete::tag;
 
-        let literal = (|s| self.parse_literal(s)).map(ValueHeader::Literal);
+        let literal = (|s| self.parse_literal_imut(s)).map(ValueHeader::Literal);
 
         let parenthesized_value_like = |s| self.parse_value_like(s, true, true);
         let parenthesized = delimited(

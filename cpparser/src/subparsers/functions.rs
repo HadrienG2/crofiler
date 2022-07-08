@@ -115,7 +115,7 @@ impl EntityParser {
         self.parse_function_signature_imut(s)
     }
 
-    /// Parser recognizing a function signature (parameters + qualifiers)
+    /// Implementation of parse_function_signature using internal mutability
     pub(crate) fn parse_function_signature_imut<'source>(
         &self,
         s: &'source str,
