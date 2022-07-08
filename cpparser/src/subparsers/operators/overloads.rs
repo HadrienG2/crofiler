@@ -12,6 +12,14 @@ impl EntityParser {
     /// to handle the syntaxically ambiguous nature of the `<` and `>` signs.
     ///
     pub fn parse_operator_overload<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
+        self.parse_operator_overload_imut(s)
+    }
+
+    /// Implementation of parse_operator_overload using internal mutability
+    pub(crate) fn parse_operator_overload_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
@@ -215,23 +223,36 @@ mod tests {
         );
 
         // Type conversion operator works
-        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
+        let type_like = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_type_like(s));
         assert_eq!(
             parser.parse_operator_overload("operator unsigned long long"),
-            Ok(("", (type_like("unsigned long long").into(), None)))
+            Ok((
+                "",
+                (type_like(&mut parser, "unsigned long long").into(), None)
+            ))
         );
 
         // Ambiguities between template and operator syntax are handled well
-        let template_parameters = |s| unwrap_parse(parser.parse_template_parameters(s));
+        let template_parameters =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_template_parameters(s));
         assert_eq!(
             parser.parse_operator_overload("operator<<>"),
-            Ok(("", (Symbol::Less.into(), Some(template_parameters("<>")))))
+            Ok((
+                "",
+                (
+                    Symbol::Less.into(),
+                    Some(template_parameters(&mut parser, "<>"))
+                )
+            ))
         );
         assert_eq!(
             parser.parse_operator_overload("operator<<void>"),
             Ok((
                 "",
-                (Symbol::Less.into(), Some(template_parameters("<void>")))
+                (
+                    Symbol::Less.into(),
+                    Some(template_parameters(&mut parser, "<void>"))
+                )
             ))
         );
     }

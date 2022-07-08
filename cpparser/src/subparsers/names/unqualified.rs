@@ -47,7 +47,7 @@ impl EntityParser {
 
         // An operator overload
         let operator =
-            (|s| self.parse_operator_overload(s)).map(|(operator, template_parameters)| {
+            (|s| self.parse_operator_overload_imut(s)).map(|(operator, template_parameters)| {
                 UnqualifiedId::Operator {
                     operator,
                     template_parameters,
