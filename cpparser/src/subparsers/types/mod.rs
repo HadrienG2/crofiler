@@ -43,7 +43,7 @@ impl EntityParser {
         // GNU-style type attributes come first
         let attributes = opt(delimited(
             tag("__attribute__("),
-            |s| self.parse_function_call(s),
+            |s| self.parse_function_call_imut(s),
             char(')'),
         ))
         .map(|opt| opt.unwrap_or_else(|| self.function_arguments.entry().intern()));

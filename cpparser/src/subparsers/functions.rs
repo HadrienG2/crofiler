@@ -55,6 +55,14 @@ pub(crate) const FUNCTION_PARAMETERS_LEN_BITS: u32 = 8;
 impl EntityParser {
     /// Parser recognizing a function call
     pub fn parse_function_call<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, FunctionArgumentsKey> {
+        self.parse_function_call_imut(s)
+    }
+
+    /// Implementation of parse_function_call using internal mutability
+    pub(crate) fn parse_function_call_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, FunctionArgumentsKey> {
@@ -635,8 +643,8 @@ mod tests {
 
     #[test]
     fn function_call() {
-        let parser = EntityParser::new();
-        let test_case = |arguments: &str, expected_values: &[&str]| {
+        let mut parser = EntityParser::new();
+        let mut test_case = |arguments: &str, expected_values: &[&str]| {
             assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
                 let arguments = parser.raw_function_arguments(key);
                 assert_eq!(arguments.len(), expected_values.len());

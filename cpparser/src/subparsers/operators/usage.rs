@@ -130,9 +130,9 @@ impl EntityParser {
             rooted,
             tag("new").and(space0),
             tuple((
-                opt(|s| self.parse_function_call(s)).terminated(space0),
+                opt(|s| self.parse_function_call_imut(s)).terminated(space0),
                 (|s| self.parse_type_like(s)).terminated(space0),
-                opt(|s| self.parse_function_call(s)),
+                opt(|s| self.parse_function_call_imut(s)),
             )),
         )
         .map(|(rooted, (placement, ty, constructor))| NewExpression {
@@ -422,13 +422,13 @@ mod tests {
     #[test]
     fn new_expression() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let type_like = |s| unwrap_parse(parser.parse_type_like(s));
+        let mut parser = EntityParser::new();
+        let type_like = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_type_like(s));
 
         // Basic form
         assert_eq!(
             parser.parse_new_expression("new int"),
-            Ok(("", NewExpression::from(type_like("int"))))
+            Ok(("", NewExpression::from(type_like(&mut parser, "int"))))
         );
 
         // Rooted form
@@ -439,22 +439,23 @@ mod tests {
                 NewExpression {
                     rooted: true,
                     placement: None,
-                    ty: type_like("double"),
+                    ty: type_like(&mut parser, "double"),
                     constructor: None,
                 }
             ))
         );
 
         // Placement parameters
-        let function_call = |s| unwrap_parse(parser.parse_function_call(s));
+        let function_call =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
         assert_eq!(
             parser.parse_new_expression("new (42) MyClass"),
             Ok((
                 "",
                 NewExpression {
                     rooted: false,
-                    placement: Some(function_call("(42)")),
-                    ty: type_like("MyClass"),
+                    placement: Some(function_call(&mut parser, "(42)")),
+                    ty: type_like(&mut parser, "MyClass"),
                     constructor: None,
                 }
             ))
@@ -468,8 +469,8 @@ mod tests {
                 NewExpression {
                     rooted: false,
                     placement: None,
-                    ty: type_like("MyClass"),
-                    constructor: Some(function_call("('x')")),
+                    ty: type_like(&mut parser, "MyClass"),
+                    constructor: Some(function_call(&mut parser, "('x')")),
                 }
             ))
         );

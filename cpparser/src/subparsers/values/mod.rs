@@ -212,7 +212,8 @@ impl EntityParser {
         )
         .map(AfterValue::ArrayIndex);
 
-        let mut function_call = (|s| self.parse_function_call(s)).map(AfterValue::FunctionCall);
+        let mut function_call =
+            (|s| self.parse_function_call_imut(s)).map(AfterValue::FunctionCall);
 
         let member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id(s))
             .map(AfterValue::MemberAccess);
@@ -699,15 +700,16 @@ mod tests {
     #[test]
     fn after_value() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let parse_after_value = |s| parser.parse_after_value(s, true, true);
-        let literal = |s| unwrap_parse(parser.parse_literal(s));
-        let literal_value = |s| {
+        let mut parser = EntityParser::new();
+        let parse_after_value =
+            |parser: &mut EntityParser, s| parser.parse_after_value(s, true, true);
+        let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
                 parser.value_like(key),
                 ValueLike {
-                    header: literal(s).into(),
+                    header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
                 }
             );
@@ -716,13 +718,16 @@ mod tests {
 
         // Array indexing
         assert_eq!(
-            parse_after_value("[666]"),
-            Ok(("", AfterValue::ArrayIndex(literal_value("666"))))
+            parse_after_value(&mut parser, "[666]"),
+            Ok((
+                "",
+                AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
+            ))
         );
 
         // Function call
         assert_eq!(
-            parse_after_value("('c', -5)"),
+            parse_after_value(&mut parser, "('c', -5)"),
             Ok((
                 "",
                 AfterValue::FunctionCall(unwrap_parse(parser.parse_function_call("('c', -5)"))),
@@ -731,25 +736,28 @@ mod tests {
 
         // Binary operator
         assert_eq!(
-            parse_after_value("+42"),
+            parse_after_value(&mut parser, "+42"),
             Ok((
                 "",
-                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal_value("42"))
+                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal_value(&mut parser, "42"))
             ))
         );
 
         // Ternary operator
         assert_eq!(
-            parse_after_value("? 123 : 456"),
+            parse_after_value(&mut parser, "? 123 : 456"),
             Ok((
                 "",
-                AfterValue::TernaryOp(literal_value("123"), literal_value("456"))
+                AfterValue::TernaryOp(
+                    literal_value(&mut parser, "123"),
+                    literal_value(&mut parser, "456")
+                )
             ))
         );
 
         // Member access
         assert_eq!(
-            parse_after_value(".lol"),
+            parse_after_value(&mut parser, ".lol"),
             Ok((
                 "",
                 AfterValue::MemberAccess(unwrap_parse(parser.parse_unqualified_id("lol")))
@@ -758,7 +766,7 @@ mod tests {
 
         // Postfix operator
         assert_eq!(
-            parse_after_value("++"),
+            parse_after_value(&mut parser, "++"),
             Ok((
                 "",
                 AfterValue::PostfixOp(Operator::Basic {
@@ -770,7 +778,10 @@ mod tests {
         );
 
         // Trailing ellipsis
-        assert_eq!(parse_after_value("..."), Ok(("", AfterValue::Ellipsis)));
+        assert_eq!(
+            parse_after_value(&mut parser, "..."),
+            Ok(("", AfterValue::Ellipsis))
+        );
     }
 
     #[test]
