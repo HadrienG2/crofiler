@@ -52,7 +52,7 @@ impl EntityParser {
         tuple((
             attributes.terminated(space0),
             (|s| self.parse_type_specifier(s)).terminated(space0),
-            |s| self.parse_declarator(s),
+            |s| self.parse_declarator_imut(s),
         ))
         .map(|(attributes, type_specifier, declarator)| {
             self.types.borrow_mut().intern(TypeLike {
@@ -198,64 +198,65 @@ mod tests {
     #[test]
     fn type_like() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let parse_type_like = |s| {
+        let mut parser = EntityParser::new();
+        let parse_type_like = |parser: &mut EntityParser, s| {
             parser
                 .parse_type_like(s)
                 .map(|(rest, key)| (rest, parser.type_like(key)))
         };
-        let attributes = |s| unwrap_parse(parser.parse_function_call(s));
-        let type_specifier = |s| unwrap_parse(parser.parse_type_specifier(s));
-        let declarator = |s| unwrap_parse(parser.parse_declarator(s));
+        let attributes = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
+        let type_specifier =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_type_specifier(s));
+        let declarator = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_declarator(s));
 
         // Basic type specifier
         assert_eq!(
-            parse_type_like("signed char"),
+            parse_type_like(&mut parser, "signed char"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: attributes("()"),
-                    type_specifier: type_specifier("signed char"),
-                    declarator: declarator("")
+                    attributes: attributes(&mut parser, "()"),
+                    type_specifier: type_specifier(&mut parser, "signed char"),
+                    declarator: declarator(&mut parser, "")
                 }
             ))
         );
 
         // GNU-style attributes before
         assert_eq!(
-            parse_type_like("__attribute__((unused)) long long"),
+            parse_type_like(&mut parser, "__attribute__((unused)) long long"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: attributes("(unused)"),
-                    type_specifier: type_specifier("long long"),
-                    declarator: declarator("")
+                    attributes: attributes(&mut parser, "(unused)"),
+                    type_specifier: type_specifier(&mut parser, "long long"),
+                    declarator: declarator(&mut parser, "")
                 }
             ))
         );
 
         // Basic function pointer
         assert_eq!(
-            parse_type_like("something()"),
+            parse_type_like(&mut parser, "something()"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: attributes("()"),
-                    type_specifier: type_specifier("something"),
-                    declarator: declarator("()"),
+                    attributes: attributes(&mut parser, "()"),
+                    type_specifier: type_specifier(&mut parser, "something"),
+                    declarator: declarator(&mut parser, "()"),
                 }
             ))
         );
 
         // Fun template/expression ambiguity found during testing
         assert_eq!(
-            parse_type_like("T<1>(U)"),
+            parse_type_like(&mut parser, "T<1>(U)"),
             Ok((
                 "",
                 TypeLike {
-                    attributes: attributes("()"),
-                    type_specifier: type_specifier("T<1>"),
-                    declarator: declarator("(U)"),
+                    attributes: attributes(&mut parser, "()"),
+                    type_specifier: type_specifier(&mut parser, "T<1>"),
+                    declarator: declarator(&mut parser, "(U)"),
                 }
             ))
         );

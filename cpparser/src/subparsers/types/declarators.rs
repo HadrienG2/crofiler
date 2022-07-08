@@ -35,7 +35,18 @@ pub(crate) const DECLARATOR_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser for declarators
-    pub fn parse_declarator<'source>(&self, s: &'source str) -> IResult<'source, DeclaratorKey> {
+    pub fn parse_declarator<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, DeclaratorKey> {
+        self.parse_declarator_imut(s)
+    }
+
+    /// Implementation of parse_declarator using internal mutability
+    pub(crate) fn parse_declarator_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, DeclaratorKey> {
         use nom::{character::complete::space0, multi::fold_many0};
         fold_many0(
             (|s| self.parse_decl_operator(s)).terminated(space0),
@@ -110,7 +121,7 @@ impl EntityParser {
         // Parenthesized declarator (to override operator priorities)
         let parenthesized = delimited(
             char('(').and(space0),
-            (|s| self.parse_declarator(s)).verify(|d| d != &self.declarators.entry().intern()),
+            (|s| self.parse_declarator_imut(s)).verify(|d| d != &self.declarators.entry().intern()),
             space0.and(char(')')),
         )
         .map(DeclOperator::Parenthesized);
@@ -336,7 +347,7 @@ mod tests {
     #[test]
     fn decl_operator() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         // CV qualifier
         assert_eq!(
@@ -434,9 +445,9 @@ mod tests {
 
     #[test]
     fn declarator() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
-        let test_case = |declarator: &str, expected_operators: &[&str]| {
+        let mut test_case = |declarator: &str, expected_operators: &[&str]| {
             assert_matches!(parser.parse_declarator(declarator), Ok(("", key)) => {
                 let declarator = parser.raw_declarator(key);
                 assert_eq!(declarator.len(), expected_operators.len());
