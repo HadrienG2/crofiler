@@ -67,7 +67,7 @@ impl EntityParser {
             sequence::{delimited, preceded},
         };
         use nom_supreme::tag::complete::tag;
-        let signature = preceded(tag("{lambda"), |s| self.parse_function_signature(s));
+        let signature = preceded(tag("{lambda"), |s| self.parse_function_signature_imut(s));
         let id = delimited(char('#'), u32, char('}'));
         signature
             .and(id)
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn libiberty_lambda() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         assert_eq!(
             parser.parse_libiberty_lambda("{lambda(auto:1)#1}"),
             Ok((

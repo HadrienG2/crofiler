@@ -109,6 +109,14 @@ impl EntityParser {
 
     /// Parser recognizing a function signature (parameters + qualifiers)
     pub fn parse_function_signature<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, FunctionSignature> {
+        self.parse_function_signature_imut(s)
+    }
+
+    /// Parser recognizing a function signature (parameters + qualifiers)
+    pub(crate) fn parse_function_signature_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, FunctionSignature> {

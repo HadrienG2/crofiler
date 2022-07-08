@@ -116,7 +116,7 @@ impl EntityParser {
         .map(DeclOperator::Array);
 
         // Function declarator
-        let function = (|s| self.parse_function_signature(s)).map(DeclOperator::Function);
+        let function = (|s| self.parse_function_signature_imut(s)).map(DeclOperator::Function);
 
         // Parenthesized declarator (to override operator priorities)
         let parenthesized = delimited(

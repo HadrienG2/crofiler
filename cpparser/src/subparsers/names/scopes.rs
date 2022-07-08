@@ -152,7 +152,7 @@ impl EntityParser {
         match self.parse_unqualified_id(s) {
             // An UnqualifiedId was found, but is this actually a Scope?
             Ok((after_id, id)) => {
-                match opt(|s| self.parse_function_signature(s))
+                match opt(|s| self.parse_function_signature_imut(s))
                     // Ignore any declarator other than a function signature:
                     // - T* does not have members so it is meaningless as a scope
                     // - T& has the same members as T, ditto for const T
@@ -459,15 +459,16 @@ pub mod tests {
     #[test]
     fn scope_or_unqualified_id() {
         // FIXME: Rework test harness to test Scope::CustomDisplay
-        let parser = EntityParser::new();
-        let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
+        let mut parser = EntityParser::new();
+        let unqualified_id =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_unqualified_id(s));
 
         // Without function signature
         assert_eq!(
             parser.parse_scope_or_unqualified_id("std::"),
             Ok((
                 "",
-                ScopeOrUnqualifiedId::Scope(unqualified_id("std").into())
+                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "std").into())
             ))
         );
 
@@ -477,7 +478,7 @@ pub mod tests {
             Ok((
                 "",
                 ScopeOrUnqualifiedId::Scope(Scope {
-                    id: unqualified_id("my_function"),
+                    id: unqualified_id(&mut parser, "my_function"),
                     function_signature: Some(unwrap_parse(parser.parse_function_signature("()"))),
                 })
             ))
@@ -488,7 +489,7 @@ pub mod tests {
             parser.parse_scope_or_unqualified_id("std"),
             Ok((
                 "",
-                ScopeOrUnqualifiedId::UnqualifiedId(unqualified_id("std"))
+                ScopeOrUnqualifiedId::UnqualifiedId(unqualified_id(&mut parser, "std"))
             ))
         );
     }
