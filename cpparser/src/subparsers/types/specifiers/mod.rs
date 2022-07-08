@@ -20,6 +20,15 @@ impl EntityParser {
     /// <https://en.cppreference.com/w/cpp/language/declarations>
     #[inline]
     pub fn parse_type_specifier<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, TypeSpecifier> {
+        self.parse_type_specifier_imut(s)
+    }
+
+    /// Implementation of parse_type_specifier using internal mutability
+    #[inline]
+    pub(crate) fn parse_type_specifier_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier> {

@@ -59,7 +59,7 @@ impl EntityParser {
         // Then come the type specifier and declarator
         tuple((
             attributes.terminated(space0),
-            (|s| self.parse_type_specifier(s)).terminated(space0),
+            (|s| self.parse_type_specifier_imut(s)).terminated(space0),
             |s| self.parse_declarator_imut(s),
         ))
         .map(|(attributes, type_specifier, declarator)| {
