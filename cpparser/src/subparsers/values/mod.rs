@@ -220,7 +220,7 @@ impl EntityParser {
         let mut function_call =
             (|s| self.parse_function_call_imut(s)).map(AfterValue::FunctionCall);
 
-        let member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id(s))
+        let member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id_imut(s))
             .map(AfterValue::MemberAccess);
 
         let postfix_op = Self::parse_increment_decrement.map(AfterValue::PostfixOp);

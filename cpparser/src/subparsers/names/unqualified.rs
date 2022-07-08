@@ -17,6 +17,14 @@ use std::fmt::{self, Display, Formatter};
 impl EntityParser {
     /// Parser for unqualified id-expressions
     pub fn parse_unqualified_id<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, UnqualifiedId> {
+        self.parse_unqualified_id_imut(s)
+    }
+
+    /// Implementation of parse_unqualified_id using internal mutability
+    pub(crate) fn parse_unqualified_id_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, UnqualifiedId> {

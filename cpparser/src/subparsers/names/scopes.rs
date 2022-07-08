@@ -157,7 +157,7 @@ impl EntityParser {
         use nom::{character::complete::space0, combinator::opt, multi::many0_count};
         use nom_supreme::tag::complete::tag;
         // Parse the initial UnqualifiedId
-        match self.parse_unqualified_id(s) {
+        match self.parse_unqualified_id_imut(s) {
             // An UnqualifiedId was found, but is this actually a Scope?
             Ok((after_id, id)) => {
                 match opt(|s| self.parse_function_signature_imut(s))
@@ -504,14 +504,15 @@ pub mod tests {
 
     #[test]
     fn proto_id_expression() {
-        let parser = EntityParser::new();
-        let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
-        let scopes = |ss: &[&str]| -> ScopesKey {
+        let mut parser = EntityParser::new();
+        let unqualified_id =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_unqualified_id(s));
+        let scopes = |parser: &mut EntityParser, ss: &[&str]| -> ScopesKey {
             // Generate scope sequence
             let mut entry = parser.scope_sequences.entry();
             let scopes: Vec<Scope> = ss
                 .iter()
-                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(*s))))
                 .collect();
 
             // Intern it
@@ -537,7 +538,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&[]),
+                        scopes: scopes(&mut parser, &[]),
                     },
                     None
                 )
@@ -550,9 +551,9 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&[]),
+                        scopes: scopes(&mut parser, &[]),
                     },
-                    Some(("something", unqualified_id("something")))
+                    Some(("something", unqualified_id(&mut parser, "something")))
                 )
             ))
         );
@@ -563,7 +564,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(&[]),
+                        scopes: scopes(&mut parser, &[]),
                     },
                     None
                 )
@@ -576,9 +577,9 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(&[]),
+                        scopes: scopes(&mut parser, &[]),
                     },
-                    Some(("x", unqualified_id("x")))
+                    Some(("x", unqualified_id(&mut parser, "x")))
                 )
             ))
         );
@@ -589,7 +590,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&["boost"]),
+                        scopes: scopes(&mut parser, &["boost"]),
                     },
                     None
                 )
@@ -602,9 +603,9 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&["boost"]),
+                        scopes: scopes(&mut parser, &["boost"]),
                     },
-                    Some(("y", unqualified_id("y")))
+                    Some(("y", unqualified_id(&mut parser, "y")))
                 )
             ))
         );
@@ -615,7 +616,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(&["std"])
+                        scopes: scopes(&mut parser, &["std"])
                     },
                     None
                 )
@@ -628,9 +629,9 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: true,
-                        scopes: scopes(&["std"])
+                        scopes: scopes(&mut parser, &["std"])
                     },
-                    Some(("z 1", unqualified_id("z")))
+                    Some(("z 1", unqualified_id(&mut parser, "z")))
                 )
             ))
         );
@@ -641,7 +642,7 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&["boost", "hana"]),
+                        scopes: scopes(&mut parser, &["boost", "hana"]),
                     },
                     None
                 )
@@ -654,9 +655,9 @@ pub mod tests {
                 (
                     NestedNameSpecifier {
                         rooted: false,
-                        scopes: scopes(&["boost", "hana"]),
+                        scopes: scopes(&mut parser, &["boost", "hana"]),
                     },
-                    Some(("stuff", unqualified_id("stuff")))
+                    Some(("stuff", unqualified_id(&mut parser, "stuff")))
                 )
             ))
         );
@@ -670,7 +671,7 @@ pub mod tests {
             let mut entry = parser.scope_sequences.entry();
             for scope in ss
                 .iter()
-                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id(*s))))
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(*s))))
             {
                 entry.push(scope);
             }
