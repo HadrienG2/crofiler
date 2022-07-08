@@ -44,7 +44,10 @@ impl EntityParser {
                     // Must come last as it matches keywords
                     .or((|s| self.parse_type_like(s)).map(Operator::Conversion)),
             ))
-            .and(preceded(space0, opt(|s| self.parse_template_parameters(s))));
+            .and(preceded(
+                space0,
+                opt(|s| self.parse_template_parameters_imut(s)),
+            ));
 
         // And for an operator overload, we need the operator keyword...
         preceded(
@@ -81,7 +84,7 @@ impl EntityParser {
         map_opt(
             tuple((
                 arithmetic_or_comparison,
-                preceded(space0, opt(|s| self.parse_template_parameters(s))),
+                preceded(space0, opt(|s| self.parse_template_parameters_imut(s))),
                 peek(opt(super::symbol)),
             )),
             |(operator, parameters_opt, symbol)| {

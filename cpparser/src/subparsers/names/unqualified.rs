@@ -31,7 +31,7 @@ impl EntityParser {
         // "T const<...>". This is meaningless. const T cannot have different
         // templating behavior than T. So we ignore this syntax.
         let named_template_parameters = preceded(opt(space0.and(Self::parse_cv)), |s| {
-            self.parse_template_parameters(s)
+            self.parse_template_parameters_imut(s)
         });
 
         // An entity named by a user-specified identifier

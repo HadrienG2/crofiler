@@ -34,6 +34,14 @@ pub(crate) const TEMPLATE_PARAMETER_LIST_LEN_BITS: u32 = 10;
 impl EntityParser {
     /// Parser for unqualified id-expressions
     pub fn parse_template_parameters<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, TemplateParameters> {
+        self.parse_template_parameters_imut(s)
+    }
+
+    /// Implementation of parse_template_parameters using internal mutability
+    pub(crate) fn parse_template_parameters_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, TemplateParameters> {
@@ -282,8 +290,8 @@ mod tests {
     #[test]
     fn template_parameters() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let test_case = |input: &str, expected_types: Option<&[&str]>| {
+        let mut parser = EntityParser::new();
+        let mut test_case = |input: &str, expected_types: Option<&[&str]>| {
             if let Some(expected_types) = expected_types {
                 assert_matches!(parser.parse_template_parameters(input), Ok(("", Some(key))) => {
                     let parameters = parser.raw_template_parameters(key);
