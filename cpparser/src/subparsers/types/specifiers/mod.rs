@@ -38,7 +38,7 @@ impl EntityParser {
             );
         let id_expression = preceded(
             id_header,
-            (|s| self.parse_id_expression(s)).map(SimpleType::IdExpression),
+            (|s| self.parse_id_expression_imut(s)).map(SimpleType::IdExpression),
         );
 
         // ...or a legacy C-style primitive type with inner spaces...
@@ -225,13 +225,14 @@ mod tests {
     #[test]
     fn type_specifier() {
         // FIXME: Rework test harness to test SimpleType::CustomDisplay and TypeSpecifier::CustomDisplay
-        let parser = EntityParser::new();
-        let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
+        let mut parser = EntityParser::new();
+        let id_expression =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_id_expression(s));
 
         // Normal branch
         assert_eq!(
             parser.parse_type_specifier("whatever"),
-            Ok(("", id_expression("whatever").into()))
+            Ok(("", id_expression(&mut parser, "whatever").into()))
         );
 
         // Libiberty auto type branch
@@ -252,7 +253,7 @@ mod tests {
             Ok((
                 "",
                 TypeSpecifier {
-                    simple_type: id_expression("MyClass").into(),
+                    simple_type: id_expression(&mut parser, "MyClass").into(),
                     cv: ConstVolatile::CONST,
                 }
             ))

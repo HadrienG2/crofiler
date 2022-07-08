@@ -12,7 +12,7 @@ impl EntityParser {
     /// Parser for literals
     pub fn parse_literal<'source>(&self, s: &'source str) -> IResult<'source, Literal> {
         use nom::combinator::opt;
-        (literal_value.and(opt(|s| self.parse_identifier(s))))
+        (literal_value.and(opt(|s| self.parse_identifier_imut(s))))
             .map(|(value, custom_suffix)| Literal {
                 value,
                 custom_suffix,
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn literal() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         assert_eq!(parser.parse_literal("'x'"), Ok(("", 'x'.into())));
         assert_eq!(
             parser.parse_literal("42_m"),

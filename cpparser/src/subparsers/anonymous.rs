@@ -21,7 +21,12 @@ impl EntityParser {
     }
 
     /// Parser for arbitrary lambda representations
-    pub fn parse_lambda<'source>(&self, s: &'source str) -> IResult<'source, Lambda> {
+    pub fn parse_lambda<'source>(&mut self, s: &'source str) -> IResult<'source, Lambda> {
+        self.parse_lambda_imut(s)
+    }
+
+    /// Implementation of parse_lambda with internal mutability
+    pub(crate) fn parse_lambda_imut<'source>(&self, s: &'source str) -> IResult<'source, Lambda> {
         ((|s| self.parse_clang_lambda(s)).map(Lambda::Clang))
             .or((|s| self.parse_libiberty_lambda(s)).map(Lambda::Libiberty))
             .parse(s)
@@ -45,7 +50,7 @@ impl EntityParser {
 
         let disk_designator = anychar.and(char(':'));
         let path_str = recognize(opt(disk_designator).and(take_till1(|c| c == ':')));
-        let path = path_str.map(|path| self.path_to_key(path));
+        let path = path_str.map(|path| self.path_to_key_imut(path));
 
         let file_location = separated_pair(path, char(':'), location);
         let lambda = file_location.map(|(file, location)| ClangLambda { file, location });
@@ -80,7 +85,7 @@ impl EntityParser {
         use nom_supreme::tag::complete::tag;
         delimited(
             tag("(anonymous"),
-            opt(preceded(char(' '), |s| self.parse_identifier(s))),
+            opt(preceded(char(' '), |s| self.parse_identifier_imut(s))),
             char(')'),
         )(s)
     }
@@ -319,7 +324,7 @@ mod tests {
     #[test]
     fn clang_lambda() {
         // FIXME: Rework test harness to test LambdaView::CustomDisplay
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         if cfg!(target_os = "windows") {
             assert_eq!(
                 parser.parse_clang_lambda("(lambda at c:/source.cpp:123:45)"),
@@ -363,16 +368,16 @@ mod tests {
 
     #[test]
     fn anonymous() {
-        let parser = EntityParser::new();
-        let identifier = |s| unwrap_parse(parser.parse_identifier(s));
+        let mut parser = EntityParser::new();
+        let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
         assert_eq!(parser.parse_anonymous("(anonymous)"), Ok(("", None)));
         assert_eq!(
             parser.parse_anonymous("(anonymous class)"),
-            Ok(("", Some(identifier("class"))))
+            Ok(("", Some(identifier(&mut parser, "class"))))
         );
         assert_eq!(
             parser.parse_anonymous("(anonymous namespace)"),
-            Ok(("", Some(identifier("namespace"))))
+            Ok(("", Some(identifier(&mut parser, "namespace"))))
         );
     }
 }

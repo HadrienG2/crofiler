@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn names_unqualified(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     // Various flavors of named entity
     c.bench_function("parse_unqualified_id/a", |b| {

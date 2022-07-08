@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn types_specifiers(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     // Legacy primitive branch (most common parse)
     c.bench_function("parse_type_specifier/double", |b| {

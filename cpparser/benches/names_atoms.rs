@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn names_atoms(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     // Identifier parsing
     c.bench_function("parse_identifier/small", |b| {

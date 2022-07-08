@@ -112,7 +112,7 @@ impl EntityParser {
         use nom_supreme::tag::complete::tag;
 
         // ABI indicator (appears in demangled names)
-        let abi = delimited(tag("[abi:"), |s| self.parse_identifier(s), char(']'));
+        let abi = delimited(tag("[abi:"), |s| self.parse_identifier_imut(s), char(']'));
 
         let type_like = |s| self.parse_type_like(s);
         let trailing_return = preceded(tag("->").and(space0), &type_like);
@@ -485,8 +485,9 @@ mod tests {
     #[test]
     fn function_signature() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let parameter_set = |s| unwrap_parse(parser.parse_function_parameter_set(s));
+        let mut parser = EntityParser::new();
+        let parameter_set =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_parameter_set(s));
 
         assert_eq!(
             parser.parse_function_signature("()"),
@@ -494,7 +495,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -508,7 +509,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: Some(unwrap_parse(parser.parse_identifier("cxx11"))),
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -522,7 +523,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("(int)"),
+                    parameter_set: parameter_set(&mut parser, "(int)"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,
@@ -536,7 +537,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::CONST,
                     reference: Reference::None,
                     noexcept: None,
@@ -550,7 +551,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
                     noexcept: None,
@@ -564,7 +565,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: Some(None),
@@ -578,7 +579,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::VOLATILE,
                     reference: Reference::LValue,
                     noexcept: None,
@@ -592,7 +593,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
                     reference: Reference::None,
                     noexcept: Some(None),
@@ -606,7 +607,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::RValue,
                     noexcept: Some(Some(unwrap_parse(
@@ -622,7 +623,7 @@ mod tests {
                 "",
                 FunctionSignature {
                     abi: None,
-                    parameter_set: parameter_set("()"),
+                    parameter_set: parameter_set(&mut parser, "()"),
                     cv: ConstVolatile::default(),
                     reference: Reference::None,
                     noexcept: None,

@@ -36,7 +36,7 @@ impl EntityParser {
 
         // An entity named by a user-specified identifier
         let named = |is_destructor| {
-            ((|s| self.parse_identifier(s)).and(opt(named_template_parameters))).map(
+            ((|s| self.parse_identifier_imut(s)).and(opt(named_template_parameters))).map(
                 move |(id, template_parameters)| UnqualifiedId::Named {
                     is_destructor,
                     id,
@@ -63,7 +63,7 @@ impl EntityParser {
         .map(UnqualifiedId::Decltype);
 
         // Anonymous entities to which clang gives a name
-        let mut lambda = (|s| self.parse_lambda(s)).map(UnqualifiedId::Lambda);
+        let mut lambda = (|s| self.parse_lambda_imut(s)).map(UnqualifiedId::Lambda);
         let anonymous = (|s| self.parse_anonymous(s)).map(UnqualifiedId::Anonymous);
 
         // Operator and decltype must go before named because named matches keywords
@@ -296,13 +296,13 @@ pub mod tests {
     #[test]
     fn unqualified_id() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         // Just an identifier
-        let identifier = |s| unwrap_parse(parser.parse_identifier(s));
+        let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
         assert_eq!(
             parser.parse_unqualified_id("basic"),
-            Ok(("", identifier("basic").into()))
+            Ok(("", identifier(&mut parser, "basic").into()))
         );
 
         // Destructor
@@ -312,7 +312,7 @@ pub mod tests {
                 "",
                 UnqualifiedId::Named {
                     is_destructor: true,
-                    id: identifier("stuff"),
+                    id: identifier(&mut parser, "stuff"),
                     template_parameters: None,
                 }
             ))
@@ -326,7 +326,7 @@ pub mod tests {
                 "",
                 UnqualifiedId::Named {
                     is_destructor: false,
-                    id: identifier("no_parameters"),
+                    id: identifier(&mut parser, "no_parameters"),
                     template_parameters: Some(template_parameters("<>")),
                 }
             ))
@@ -340,7 +340,7 @@ pub mod tests {
                 "",
                 UnqualifiedId::Named {
                     is_destructor: false,
-                    id: identifier("A"),
+                    id: identifier(&mut parser, "A"),
                     template_parameters: Some(template_parameters("<B, C>"))
                 }
             ))

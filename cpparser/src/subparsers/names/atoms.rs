@@ -61,7 +61,18 @@ impl EntityParser {
     }
 
     /// Parser recognizing any valid C++ identifier
-    pub fn parse_identifier<'input>(&self, input: &'input str) -> IResult<'input, IdentifierKey> {
+    pub fn parse_identifier<'input>(
+        &mut self,
+        input: &'input str,
+    ) -> IResult<'input, IdentifierKey> {
+        self.parse_identifier_imut(input)
+    }
+
+    /// Implementation of parse_identifier with internal mutability
+    pub(crate) fn parse_identifier_imut<'input>(
+        &self,
+        input: &'input str,
+    ) -> IResult<'input, IdentifierKey> {
         let (rest, id) = identifier(input)?;
         let id_key = self.identifiers.borrow_mut().get_or_intern(id);
         Ok((rest, id_key))
@@ -270,7 +281,7 @@ mod tests {
 
     #[test]
     fn identifier() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         const ID: &str = "_abczd_123904";
         let (rest, key) = parser
             .parse_identifier(ID)

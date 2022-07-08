@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn names_scopes(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     c.bench_function("parse_nested_name_specifier/empty", |b| {
         b.iter(|| parser.parse_nested_name_specifier(black_box("")))

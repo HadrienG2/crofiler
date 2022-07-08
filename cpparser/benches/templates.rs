@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn templates(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     // Empty parameter set
     c.bench_function("parse_template_parameters/<>", |b| {

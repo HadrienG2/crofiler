@@ -2,7 +2,7 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn types_specifiers_legacy(c: &mut Criterion) {
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
 
     // Most common legacy type name (4.3M occurences in test dataset)
     c.bench_function("parse_legacy_name/Double", |b| {

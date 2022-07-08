@@ -154,7 +154,7 @@ impl EntityParser {
 
         let new_expression = (|s| self.parse_new_expression(s)).map(ValueHeader::NewExpression);
 
-        let id_expression = (|s| self.parse_id_expression(s)).map(ValueHeader::IdExpression);
+        let id_expression = (|s| self.parse_id_expression_imut(s)).map(ValueHeader::IdExpression);
 
         let ellipsis = tag("...").value(ValueHeader::Ellipsis);
 
@@ -615,15 +615,16 @@ mod tests {
     #[test]
     fn value_header() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let parse_value_header = |s| parser.parse_value_header(s, true, true);
-        let literal = |s| unwrap_parse(parser.parse_literal(s));
-        let literal_value = |s| {
+        let mut parser = EntityParser::new();
+        let parse_value_header =
+            |parser: &mut EntityParser, s| parser.parse_value_header(s, true, true);
+        let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
                 parser.value_like(key),
                 ValueLike {
-                    header: literal(s).into(),
+                    header: literal(&mut parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
                 }
             );
@@ -631,39 +632,48 @@ mod tests {
         };
 
         // Literal
-        assert_eq!(parse_value_header("69"), Ok(("", literal("69").into())));
-        assert_eq!(parse_value_header("'@'"), Ok(("", literal("'@'").into())));
+        assert_eq!(
+            parse_value_header(&mut parser, "69"),
+            Ok(("", literal(&mut parser, "69").into()))
+        );
+        assert_eq!(
+            parse_value_header(&mut parser, "'@'"),
+            Ok(("", literal(&mut parser, "'@'").into()))
+        );
 
         // Unary operators are supported...
         assert_eq!(
-            parse_value_header("&123"),
+            parse_value_header(&mut parser, "&123"),
             Ok((
                 "",
-                ValueHeader::UnaryOp(Symbol::AndRef.into(), literal_value("123"))
+                ValueHeader::UnaryOp(Symbol::AndRef.into(), literal_value(&mut parser, "123"))
             ))
         );
 
         // ...including c-style casts, not to be confused with parenthesized values
         assert_eq!(
-            parse_value_header("(T)666"),
+            parse_value_header(&mut parser, "(T)666"),
             Ok((
                 "",
                 ValueHeader::UnaryOp(
                     unwrap_parse(parser.parse_type_like("T")).into(),
-                    literal_value("666")
+                    literal_value(&mut parser, "666")
                 )
             ))
         );
 
         // Parenthesized values are supported too
         assert_eq!(
-            parse_value_header("(42)"),
-            Ok(("", ValueHeader::Parenthesized(literal_value("42"))))
+            parse_value_header(&mut parser, "(42)"),
+            Ok((
+                "",
+                ValueHeader::Parenthesized(literal_value(&mut parser, "42"))
+            ))
         );
 
         // New expressions too
         assert_eq!(
-            parse_value_header("new TROOT"),
+            parse_value_header(&mut parser, "new TROOT"),
             Ok((
                 "",
                 ValueHeader::NewExpression(unwrap_parse(parser.parse_new_expression("new TROOT"))),
@@ -672,7 +682,7 @@ mod tests {
 
         // Named values as well
         assert_eq!(
-            parse_value_header("MyValue"),
+            parse_value_header(&mut parser, "MyValue"),
             Ok((
                 "",
                 ValueHeader::IdExpression(unwrap_parse(parser.parse_id_expression("MyValue")))
@@ -680,7 +690,10 @@ mod tests {
         );
 
         // Ellipsis (as in fold expressions)
-        assert_eq!(parse_value_header("..."), Ok(("", ValueHeader::Ellipsis)));
+        assert_eq!(
+            parse_value_header(&mut parser, "..."),
+            Ok(("", ValueHeader::Ellipsis))
+        );
     }
 
     #[test]
@@ -763,16 +776,18 @@ mod tests {
     #[test]
     fn value_like() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let parse_value_like = |s| parser.parse_value_like(s, true, true);
-        let id_expression = |s| unwrap_parse(parser.parse_id_expression(s));
-        let literal = |s| unwrap_parse(parser.parse_literal(s));
-        let literal_value = |s| {
+        let mut parser = EntityParser::new();
+        let parse_value_like =
+            |parser: &mut EntityParser, s| parser.parse_value_like(s, true, true);
+        let id_expression =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_id_expression(s));
+        let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
+        let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
                 parser.value_like(key),
                 ValueLike {
-                    header: literal(s).into(),
+                    header: literal(&mut parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
                 }
             );
@@ -780,27 +795,27 @@ mod tests {
         };
 
         assert_matches!(
-            parse_value_like("array[666]"),
+            parse_value_like(&mut parser, "array[666]"),
             Ok((
                 "",
                 value_key
             )) => {
                 let value = parser.value_like(value_key);
-                assert_eq!(value.header, ValueHeader::IdExpression(id_expression("array")));
-                assert_eq!(parser.raw_value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value("666"))].into());
+                assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
+                assert_eq!(parser.raw_value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))].into());
             }
         );
         assert_matches!(
-            parse_value_like("func( 3,'x' )[666]"),
+            parse_value_like(&mut parser, "func( 3,'x' )[666]"),
             Ok((
                 "",
                 value_key
             )) => {
                 let value = parser.value_like(value_key);
-                assert_eq!(value.header, ValueHeader::IdExpression(id_expression("func")));
+                assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "func")));
                 assert_eq!(parser.raw_value_trailer(value.trailer), vec![
                         unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
-                        AfterValue::ArrayIndex(literal_value("666"))
+                        AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
                     ]
                     .into());
             }

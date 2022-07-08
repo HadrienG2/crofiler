@@ -24,7 +24,10 @@ impl<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32>
     InternedPaths<ComponentKey, PathKeyImpl, LEN_BITS>
 {
     /// Retrieve a path, panics if the key is invalid
-    pub fn get(&self, key: PathKey<PathKeyImpl, LEN_BITS>) -> InternedPath<ComponentKey> {
+    pub fn get(
+        &self,
+        key: PathKey<PathKeyImpl, LEN_BITS>,
+    ) -> InternedPath<ComponentKey, RodeoResolver<ComponentKey>> {
         InternedPath {
             components: &self.components,
             sequence: self.sequences.get(key),
@@ -47,7 +50,7 @@ pub type PathKey<KeyImpl = Spur, const LEN_BITS: u32 = 8> = SequenceKey<KeyImpl,
 pub struct InternedPath<
     'parent,
     ComponentKey: Key = Spur,
-    Resolver: lasso::Resolver<ComponentKey> = RodeoResolver<ComponentKey>,
+    Resolver: lasso::Resolver<ComponentKey> = Rodeo<ComponentKey>,
 > {
     /// Access to interned path components
     components: &'parent Resolver,

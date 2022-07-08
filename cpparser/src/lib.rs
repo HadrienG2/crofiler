@@ -150,7 +150,12 @@ impl EntityParser {
     /// appearing in C++ entity names, but appear in other context, can be
     /// interned using the same infrastructure for key comparability.
     ///
-    pub fn path_to_key(&self, path: &str) -> PathKey {
+    pub fn path_to_key(&mut self, path: &str) -> PathKey {
+        self.path_to_key_imut(path)
+    }
+
+    /// Implementation of path_to_key with internal mutability
+    pub(crate) fn path_to_key_imut(&self, path: &str) -> PathKey {
         self.paths
             .borrow_mut()
             .intern(path)
@@ -178,7 +183,7 @@ impl EntityParser {
     /// that clang occasionally feels like referring to.
     ///
     pub fn parse_entity<'source>(
-        &self,
+        &mut self,
         s: &'source str,
     ) -> Result<EntityKey, nom::error::Error<&'source str>> {
         use nom::combinator::eof;

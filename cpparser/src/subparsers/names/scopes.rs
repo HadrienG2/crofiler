@@ -35,7 +35,18 @@ pub(crate) const SCOPES_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser for id-expressions (= nested name-specifier + UnqualifiedId)
-    pub fn parse_id_expression<'source>(&self, s: &'source str) -> IResult<'source, IdExpression> {
+    pub fn parse_id_expression<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, IdExpression> {
+        self.parse_id_expression_imut(s)
+    }
+
+    /// Implementation of parse_id_expression with internal mutability
+    pub(crate) fn parse_id_expression_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, IdExpression> {
         use nom::combinator::map_opt;
         map_opt(
             |s| self.parse_proto_id_expression(s),
@@ -144,7 +155,7 @@ impl EntityParser {
                 match opt(|s| self.parse_function_signature(s))
                     // Ignore any declarator other than a function signature:
                     // - T* does not have members so it is meaningless as a scope
-                    // - T& has the same members as T
+                    // - T& has the same members as T, ditto for const T
                     // - T[] does not have members so its is meaningless as a scope
                     // - T() was accounted for above
                     // - Since no declarator makes sense (other than a signature)
@@ -682,8 +693,9 @@ pub mod tests {
     #[test]
     fn id_expression() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let unqualified_id = |s| unwrap_parse(parser.parse_unqualified_id(s));
+        let mut parser = EntityParser::new();
+        let unqualified_id =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_unqualified_id(s));
 
         // Without any path
         assert_eq!(
@@ -695,7 +707,7 @@ pub mod tests {
                         rooted: false,
                         scopes: parser.scope_sequences.entry().intern()
                     },
-                    id: unqualified_id("something")
+                    id: unqualified_id(&mut parser, "something")
                 }
             ))
         );
@@ -707,7 +719,7 @@ pub mod tests {
                 "",
                 IdExpression {
                     path: unwrap_parse(parser.parse_nested_name_specifier("boost::hana::")),
-                    id: unqualified_id("to_t<unsigned long long>"),
+                    id: unqualified_id(&mut parser, "to_t<unsigned long long>"),
                 }
             ))
         );

@@ -9,7 +9,7 @@ fn anonymous(c: &mut Criterion) {
     });
 
     // Lambda parsing
-    let parser = EntityParser::new();
+    let mut parser = EntityParser::new();
     c.bench_function("parse_lambda/pass", |b| {
         b.iter(|| parser.parse_lambda(black_box("(lambda at /x.cpp:1:2)")))
     });

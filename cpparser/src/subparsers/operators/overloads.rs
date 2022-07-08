@@ -90,7 +90,7 @@ impl EntityParser {
     fn parse_custom_literal<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
         use nom::{character::complete::space0, sequence::preceded};
         use nom_supreme::tag::complete::tag;
-        preceded(tag("\"\"").and(space0), |s| self.parse_identifier(s))
+        preceded(tag("\"\"").and(space0), |s| self.parse_identifier_imut(s))
             .map(Operator::CustomLiteral)
             .parse(s)
     }
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn custom_literal() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         assert_eq!(
             parser.parse_custom_literal("\"\" _whatever"),
             Ok((
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn operator_overload() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         // Symbol-based operators don't need spaces
         assert_eq!(

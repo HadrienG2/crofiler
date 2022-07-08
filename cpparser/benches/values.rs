@@ -2,8 +2,8 @@ use cpparser::EntityParser;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn values(c: &mut Criterion) {
-    let parser = EntityParser::new();
-    let parse_value_like = |s| parser.parse_value_like(s, true, true);
+    let mut parser = EntityParser::new();
+    let mut parse_value_like = |s| parser.parse_value_like(s, true, true);
 
     // Literal
     c.bench_function("parse_value_like/1", |b| {
