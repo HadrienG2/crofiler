@@ -42,7 +42,7 @@ impl EntityParser {
                 new.or(super::delete)
                     .or(super::co_await)
                     // Must come last as it matches keywords
-                    .or((|s| self.parse_type_like(s)).map(Operator::Conversion)),
+                    .or((|s| self.parse_type_like_imut(s)).map(Operator::Conversion)),
             ))
             .and(preceded(
                 space0,

@@ -130,7 +130,7 @@ impl EntityParser {
         // ABI indicator (appears in demangled names)
         let abi = delimited(tag("[abi:"), |s| self.parse_identifier_imut(s), char(']'));
 
-        let type_like = |s| self.parse_type_like(s);
+        let type_like = |s| self.parse_type_like_imut(s);
         let trailing_return = preceded(tag("->").and(space0), &type_like);
 
         let mut tuple = tuple((
@@ -168,7 +168,7 @@ impl EntityParser {
 
         let arguments_header = char('(').and(space0);
 
-        let parameter_or_ellipsis = ((|s| self.parse_type_like(s))
+        let parameter_or_ellipsis = ((|s| self.parse_type_like_imut(s))
             .map(ParameterOrEllipsis::Parameter))
         .or(tag("...").value(ParameterOrEllipsis::Ellipsis));
 
@@ -476,12 +476,12 @@ mod tests {
 
     #[test]
     fn function_parameter_set() {
-        let parser = EntityParser::new();
-        let test_case = |parameters: &str, expected_types: &[&str], expected_variadic: bool| {
+        let mut parser = EntityParser::new();
+        let mut test_case = |parameters: &str, expected_types: &[&str], expected_variadic: bool| {
             assert_matches!(parser.parse_function_parameter_set(
                 parameters
             ), Ok(("", parameter_set)) => {
-                let parameters = parser.raw_function_parameters(parameter_set.parameters);
+                let parameters = parser.raw_function_parameters(parameter_set.parameters).to_owned();
                 assert_eq!(parameters.len(), expected_types.len());
                 for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
                     let expected = unwrap_parse(parser.parse_type_like(*expected));

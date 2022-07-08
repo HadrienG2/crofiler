@@ -32,7 +32,15 @@ pub type TypeKey = Spur;
 impl EntityParser {
     /// Parser recognizing types (and some values that are indistinguishable from
     /// types without extra context).
-    pub fn parse_type_like<'source>(&self, s: &'source str) -> IResult<'source, TypeKey> {
+    pub fn parse_type_like<'source>(&mut self, s: &'source str) -> IResult<'source, TypeKey> {
+        self.parse_type_like_imut(s)
+    }
+
+    /// Implementation of parse_type_like using internal mutability
+    pub(crate) fn parse_type_like_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, TypeKey> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,

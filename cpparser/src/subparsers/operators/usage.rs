@@ -44,7 +44,7 @@ impl EntityParser {
 
         let cast = delimited(
             char('(').and(space0),
-            |s| self.parse_type_like(s),
+            |s| self.parse_type_like_imut(s),
             space0.and(char(')')),
         )
         .map(Operator::Conversion);
@@ -139,7 +139,7 @@ impl EntityParser {
             tag("new").and(space0),
             tuple((
                 opt(|s| self.parse_function_call_imut(s)).terminated(space0),
-                (|s| self.parse_type_like(s)).terminated(space0),
+                (|s| self.parse_type_like_imut(s)).terminated(space0),
                 opt(|s| self.parse_function_call_imut(s)),
             )),
         )
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn unary_expr_prefix() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         // Lone symbol
         assert_eq!(

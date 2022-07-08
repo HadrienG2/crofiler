@@ -207,7 +207,7 @@ impl EntityParser {
     ) -> Result<EntityKey, nom::error::Error<&'source str>> {
         use nom::combinator::eof;
         use nom_supreme::final_parser::final_parser;
-        let type_like = (|s| self.parse_type_like(s)).map(Some);
+        let type_like = (|s| self.parse_type_like_imut(s)).map(Some);
         let unknown = Self::parse_unknown_entity.value(None);
         final_parser(type_like.or(unknown).terminated(eof))(s)
     }
