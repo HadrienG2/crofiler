@@ -70,7 +70,7 @@ impl EntityParser {
 
         let value_trailer = fold_many0(
             preceded(space0, |s| {
-                self.parse_after_value(s, allow_comma, allow_greater)
+                self.parse_after_value_imut(s, allow_comma, allow_greater)
             }),
             || self.value_trailers.entry(),
             |mut entry, item| {
@@ -80,7 +80,7 @@ impl EntityParser {
         )
         .map(|entry| entry.intern());
 
-        (|s| self.parse_value_header(s, allow_comma, allow_greater))
+        (|s| self.parse_value_header_imut(s, allow_comma, allow_greater))
             .and(value_trailer)
             .map(|(header, trailer)| {
                 self.values
@@ -126,7 +126,7 @@ impl EntityParser {
     ///
     /// See parse_value_like for an explanation on the boolean parameters
     ///
-    fn parse_value_header<'source>(
+    fn parse_value_header_imut<'source>(
         &self,
         s: &'source str,
         allow_comma: bool,
@@ -174,7 +174,7 @@ impl EntityParser {
     ///
     /// See parse_value_like for an explanation on the boolean parameters
     ///
-    fn parse_after_value<'source>(
+    fn parse_after_value_imut<'source>(
         &self,
         s: &'source str,
         allow_comma: bool,
@@ -619,7 +619,7 @@ mod tests {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parse_value_header =
-            |parser: &mut EntityParser, s| parser.parse_value_header(s, true, true);
+            |parser: &mut EntityParser, s| parser.parse_value_header_imut(s, true, true);
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
@@ -703,7 +703,7 @@ mod tests {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parse_after_value =
-            |parser: &mut EntityParser, s| parser.parse_after_value(s, true, true);
+            |parser: &mut EntityParser, s| parser.parse_after_value_imut(s, true, true);
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));

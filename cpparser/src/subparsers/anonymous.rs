@@ -27,8 +27,8 @@ impl EntityParser {
 
     /// Implementation of parse_lambda with internal mutability
     pub(crate) fn parse_lambda_imut<'source>(&self, s: &'source str) -> IResult<'source, Lambda> {
-        ((|s| self.parse_clang_lambda(s)).map(Lambda::Clang))
-            .or((|s| self.parse_libiberty_lambda(s)).map(Lambda::Libiberty))
+        ((|s| self.parse_clang_lambda_imut(s)).map(Lambda::Clang))
+            .or((|s| self.parse_libiberty_lambda_imut(s)).map(Lambda::Libiberty))
             .parse(s)
     }
 
@@ -38,7 +38,7 @@ impl EntityParser {
     /// Windows-style disk designator at the start, because I have no idea how
     /// to handle this inherent grammar ambiguity better...
     ///
-    fn parse_clang_lambda<'source>(&self, s: &'source str) -> IResult<'source, ClangLambda> {
+    fn parse_clang_lambda_imut<'source>(&self, s: &'source str) -> IResult<'source, ClangLambda> {
         use nom::{
             bytes::complete::{tag, take_till1},
             character::complete::{anychar, char, u32},
@@ -58,7 +58,7 @@ impl EntityParser {
     }
 
     /// Parser for libiberty lambda types `{lambda(<param>, ...)#<id>}`
-    fn parse_libiberty_lambda<'source>(
+    fn parse_libiberty_lambda_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, LibibertyLambda> {
@@ -338,7 +338,7 @@ mod tests {
         let mut parser = EntityParser::new();
         if cfg!(target_os = "windows") {
             assert_eq!(
-                parser.parse_clang_lambda("(lambda at c:/source.cpp:123:45)"),
+                parser.parse_clang_lambda_imut("(lambda at c:/source.cpp:123:45)"),
                 Ok((
                     "",
                     ClangLambda {
@@ -349,7 +349,7 @@ mod tests {
             );
         } else {
             assert_eq!(
-                parser.parse_clang_lambda("(lambda at /path/to/source.cpp:123:45)"),
+                parser.parse_clang_lambda_imut("(lambda at /path/to/source.cpp:123:45)"),
                 Ok((
                     "",
                     ClangLambda {
@@ -366,7 +366,7 @@ mod tests {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         assert_eq!(
-            parser.parse_libiberty_lambda("{lambda(auto:1)#1}"),
+            parser.parse_libiberty_lambda_imut("{lambda(auto:1)#1}"),
             Ok((
                 "",
                 LibibertyLambda {

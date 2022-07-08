@@ -135,10 +135,10 @@ impl EntityParser {
 
         let mut tuple = tuple((
             opt(abi),
-            (|s| self.parse_function_parameter_set(s)).terminated(space0),
+            (|s| self.parse_function_parameter_set_imut(s)).terminated(space0),
             Self::parse_cv.terminated(space0),
             Self::parse_reference.terminated(space0),
-            opt((|s| self.parse_noexcept(s)).terminated(space0)),
+            opt((|s| self.parse_noexcept_imut(s)).terminated(space0)),
             opt(trailing_return),
         ))
         .map(
@@ -156,7 +156,7 @@ impl EntityParser {
     }
 
     /// Parser recognizing a function parameter set
-    fn parse_function_parameter_set<'source>(
+    fn parse_function_parameter_set_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, FunctionParameterSet> {
@@ -222,7 +222,7 @@ impl EntityParser {
     }
 
     /// Parser recognizing the noexcept qualifier and its optional argument
-    fn parse_noexcept<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueKey>> {
+    fn parse_noexcept_imut<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueKey>> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -464,9 +464,9 @@ mod tests {
     #[test]
     fn noexcept() {
         let parser = EntityParser::new();
-        assert_eq!(parser.parse_noexcept("noexcept"), Ok(("", None)));
+        assert_eq!(parser.parse_noexcept_imut("noexcept"), Ok(("", None)));
         assert_eq!(
-            parser.parse_noexcept("noexcept(123)"),
+            parser.parse_noexcept_imut("noexcept(123)"),
             Ok((
                 "",
                 Some(unwrap_parse(parser.parse_value_like("123", true, true)))
@@ -478,7 +478,7 @@ mod tests {
     fn function_parameter_set() {
         let mut parser = EntityParser::new();
         let mut test_case = |parameters: &str, expected_types: &[&str], expected_variadic: bool| {
-            assert_matches!(parser.parse_function_parameter_set(
+            assert_matches!(parser.parse_function_parameter_set_imut(
                 parameters
             ), Ok(("", parameter_set)) => {
                 let parameters = parser.raw_function_parameters(parameter_set.parameters).to_owned();
@@ -502,8 +502,9 @@ mod tests {
     fn function_signature() {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
-        let parameter_set =
-            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_parameter_set(s));
+        let parameter_set = |parser: &mut EntityParser, s| {
+            unwrap_parse(parser.parse_function_parameter_set_imut(s))
+        };
 
         assert_eq!(
             parser.parse_function_signature("()"),

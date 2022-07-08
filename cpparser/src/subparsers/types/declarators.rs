@@ -49,7 +49,7 @@ impl EntityParser {
     ) -> IResult<'source, DeclaratorKey> {
         use nom::{character::complete::space0, multi::fold_many0};
         fold_many0(
-            (|s| self.parse_decl_operator(s)).terminated(space0),
+            (|s| self.parse_decl_operator_imut(s)).terminated(space0),
             || self.declarators.entry(),
             |mut acc, item| {
                 acc.push(item);
@@ -78,7 +78,7 @@ impl EntityParser {
 
     /// Parser for a declarator component
     #[inline]
-    fn parse_decl_operator<'source>(&self, s: &'source str) -> IResult<'source, DeclOperator> {
+    fn parse_decl_operator_imut<'source>(&self, s: &'source str) -> IResult<'source, DeclOperator> {
         use nom::{
             character::complete::{char, space0},
             combinator::opt,
@@ -351,7 +351,7 @@ mod tests {
 
         // CV qualifier
         assert_eq!(
-            parser.parse_decl_operator("const volatile"),
+            parser.parse_decl_operator_imut("const volatile"),
             Ok((
                 "",
                 DeclOperator::ConstVolatile(ConstVolatile::CONST | ConstVolatile::VOLATILE),
@@ -362,7 +362,7 @@ mod tests {
         let nested_name_specifier =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_nested_name_specifier(s));
         assert_eq!(
-            parser.parse_decl_operator("*"),
+            parser.parse_decl_operator_imut("*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -374,7 +374,7 @@ mod tests {
 
         // Pointer with CV qualifier
         assert_eq!(
-            parser.parse_decl_operator("* const"),
+            parser.parse_decl_operator_imut("* const"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -386,7 +386,7 @@ mod tests {
 
         // Pointer to member
         assert_eq!(
-            parser.parse_decl_operator("A::B::*"),
+            parser.parse_decl_operator_imut("A::B::*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
@@ -398,19 +398,19 @@ mod tests {
 
         // Reference
         assert_eq!(
-            parser.parse_decl_operator("&"),
+            parser.parse_decl_operator_imut("&"),
             Ok(("", Reference::LValue.into()))
         );
 
         // Array of unknown length
         assert_eq!(
-            parser.parse_decl_operator("[]"),
+            parser.parse_decl_operator_imut("[]"),
             Ok(("", DeclOperator::Array(None)))
         );
 
         // Array of known length
         assert_eq!(
-            parser.parse_decl_operator("[42]"),
+            parser.parse_decl_operator_imut("[42]"),
             Ok((
                 "",
                 DeclOperator::Array(Some(unwrap_parse(
@@ -421,7 +421,7 @@ mod tests {
 
         // Function signature
         assert_eq!(
-            parser.parse_decl_operator("()"),
+            parser.parse_decl_operator_imut("()"),
             Ok((
                 "",
                 unwrap_parse(parser.parse_function_signature("()")).into()
@@ -430,13 +430,13 @@ mod tests {
 
         // Parenthesized declarator
         assert_eq!(
-            parser.parse_decl_operator("(&&)"),
+            parser.parse_decl_operator_imut("(&&)"),
             Ok(("", unwrap_parse(parser.parse_declarator("&&")).into()))
         );
 
         // Vector size
         assert_eq!(
-            parser.parse_decl_operator("__vector(2)"),
+            parser.parse_decl_operator_imut("__vector(2)"),
             Ok((
                 "",
                 DeclOperator::VectorSize(unwrap_parse(parser.parse_value_like("2", false, true)))
@@ -453,7 +453,7 @@ mod tests {
                 let declarator = parser.raw_declarator(key);
                 assert_eq!(declarator.len(), expected_operators.len());
                 for (expected, actual) in expected_operators.iter().zip(declarator.to_vec()) {
-                    let expected = unwrap_parse(parser.parse_decl_operator(*expected));
+                    let expected = unwrap_parse(parser.parse_decl_operator_imut(*expected));
                     assert_eq!(expected, actual);
                 }
             })

@@ -49,7 +49,7 @@ impl EntityParser {
     ) -> IResult<'source, IdExpression> {
         use nom::combinator::map_opt;
         map_opt(
-            |s| self.parse_proto_id_expression(s),
+            |s| self.parse_proto_id_expression_imut(s),
             |(path, id_opt)| id_opt.map(|(_backtrack, id)| IdExpression { path, id }),
         )(s)
     }
@@ -72,7 +72,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, NestedNameSpecifier> {
-        match self.parse_proto_id_expression(s) {
+        match self.parse_proto_id_expression_imut(s) {
             Ok((_rest, (path, Some((backtrack, _id))))) => Ok((backtrack, path)),
             Ok((rest, (path, None))) => Ok((rest, path)),
             Err(error) => Err(error),
@@ -86,7 +86,7 @@ impl EntityParser {
     /// grammar and if you backtrack on it you get the nested_name_specifier one.
     ///
     #[inline(always)]
-    fn parse_proto_id_expression<'source>(
+    fn parse_proto_id_expression_imut<'source>(
         &self,
         mut input: &'source str,
     ) -> IResult<'source, (NestedNameSpecifier, Option<(&'source str, UnqualifiedId)>)> {
@@ -110,7 +110,7 @@ impl EntityParser {
             )
         };
         //
-        while let Ok((rest, scope_or_id)) = self.parse_scope_or_unqualified_id(input) {
+        while let Ok((rest, scope_or_id)) = self.parse_scope_or_unqualified_id_imut(input) {
             match scope_or_id {
                 // As long as there are scopes, keep going
                 ScopeOrUnqualifiedId::Scope(scope) => scopes.push(scope),
@@ -150,7 +150,7 @@ impl EntityParser {
     /// This parses either the Scope syntax or the UnqualifiedId syntax, in a manner
     /// that avoids parsing the shared UnqualifiedId syntax twice.
     #[inline]
-    fn parse_scope_or_unqualified_id<'source>(
+    fn parse_scope_or_unqualified_id_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, ScopeOrUnqualifiedId> {
@@ -473,7 +473,7 @@ pub mod tests {
 
         // Without function signature
         assert_eq!(
-            parser.parse_scope_or_unqualified_id("std::"),
+            parser.parse_scope_or_unqualified_id_imut("std::"),
             Ok((
                 "",
                 ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "std").into())
@@ -482,7 +482,7 @@ pub mod tests {
 
         // With function signature
         assert_eq!(
-            parser.parse_scope_or_unqualified_id("my_function()::"),
+            parser.parse_scope_or_unqualified_id_imut("my_function()::"),
             Ok((
                 "",
                 ScopeOrUnqualifiedId::Scope(Scope {
@@ -494,7 +494,7 @@ pub mod tests {
 
         // Without scope terminator
         assert_eq!(
-            parser.parse_scope_or_unqualified_id("std"),
+            parser.parse_scope_or_unqualified_id_imut("std"),
             Ok((
                 "",
                 ScopeOrUnqualifiedId::UnqualifiedId(unqualified_id(&mut parser, "std"))
@@ -531,7 +531,7 @@ pub mod tests {
         };
 
         assert_eq!(
-            parser.parse_proto_id_expression(""),
+            parser.parse_proto_id_expression_imut(""),
             Ok((
                 "",
                 (
@@ -544,7 +544,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("something"),
+            parser.parse_proto_id_expression_imut("something"),
             Ok((
                 "",
                 (
@@ -557,7 +557,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("::"),
+            parser.parse_proto_id_expression_imut("::"),
             Ok((
                 "",
                 (
@@ -570,7 +570,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("::x"),
+            parser.parse_proto_id_expression_imut("::x"),
             Ok((
                 "",
                 (
@@ -583,7 +583,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("boost::"),
+            parser.parse_proto_id_expression_imut("boost::"),
             Ok((
                 "",
                 (
@@ -596,7 +596,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("boost::y"),
+            parser.parse_proto_id_expression_imut("boost::y"),
             Ok((
                 "",
                 (
@@ -609,7 +609,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("::std::"),
+            parser.parse_proto_id_expression_imut("::std::"),
             Ok((
                 "",
                 (
@@ -622,7 +622,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("::std::z 1"),
+            parser.parse_proto_id_expression_imut("::std::z 1"),
             Ok((
                 " 1",
                 (
@@ -635,7 +635,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("boost::hana::"),
+            parser.parse_proto_id_expression_imut("boost::hana::"),
             Ok((
                 "",
                 (
@@ -648,7 +648,7 @@ pub mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_proto_id_expression("boost::hana::stuff"),
+            parser.parse_proto_id_expression_imut("boost::hana::stuff"),
             Ok((
                 "",
                 (

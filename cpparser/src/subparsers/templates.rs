@@ -54,7 +54,7 @@ impl EntityParser {
         let arguments_header = char('<').and(space0);
 
         let non_empty_arguments = parse_separated_terminated(
-            |s| self.parse_template_parameter(s),
+            |s| self.parse_template_parameter_imut(s),
             space0.and(char(',')).and(space0),
             space0.and(char('>')),
             || self.template_parameter_lists.entry(),
@@ -100,7 +100,7 @@ impl EntityParser {
     /// Must look ahead to the next template parameter separator (, or `>`) in
     /// order to resolve the type vs value ambiguity properly.
     ///
-    fn parse_template_parameter<'source>(
+    fn parse_template_parameter_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, TemplateParameter> {
@@ -268,7 +268,10 @@ mod tests {
              expected: TemplateParameter| {
                 let mut text = text_wo_sep.to_owned();
                 text.push_str(sep);
-                assert_eq!(parser.parse_template_parameter(&text), Ok((sep, expected)));
+                assert_eq!(
+                    parser.parse_template_parameter_imut(&text),
+                    Ok((sep, expected))
+                );
             };
         let test_template_parameter =
             |parser: &mut EntityParser, text_wo_sep: &str, expected: TemplateParameter| {

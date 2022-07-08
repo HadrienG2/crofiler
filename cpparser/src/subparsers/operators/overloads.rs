@@ -31,12 +31,12 @@ impl EntityParser {
 
         // Try arithmetic operators of increasing length until hopefully finding one
         // that matches optimally.
-        let arith_and_templates = (|s| self.parse_arith_and_templates(s, 1))
-            .or(|s| self.parse_arith_and_templates(s, 2))
-            .or(|s| self.parse_arith_and_templates(s, 3));
+        let arith_and_templates = (|s| self.parse_arith_and_templates_imut(s, 1))
+            .or(|s| self.parse_arith_and_templates_imut(s, 2))
+            .or(|s| self.parse_arith_and_templates_imut(s, 3));
 
         // The other operator parses don't care about template parameters
-        let template_oblivious = (call_or_index.or(|s| self.parse_custom_literal(s)))
+        let template_oblivious = (call_or_index.or(|s| self.parse_custom_literal_imut(s)))
             .or(preceded(
                 char(' '),
                 new.or(super::delete)
@@ -65,7 +65,7 @@ impl EntityParser {
     /// not parsed and the parse must be retried at a greater LEN.
     ///
     #[inline(always)]
-    fn parse_arith_and_templates<'source>(
+    fn parse_arith_and_templates_imut<'source>(
         &self,
         s: &'source str,
         len: usize,
@@ -98,7 +98,7 @@ impl EntityParser {
     }
 
     /// Parse custom literal
-    fn parse_custom_literal<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
+    fn parse_custom_literal_imut<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
         use nom::{character::complete::space0, sequence::preceded};
         use nom_supreme::tag::complete::tag;
         preceded(tag("\"\"").and(space0), |s| self.parse_identifier_imut(s))
@@ -150,7 +150,7 @@ mod tests {
     fn custom_literal() {
         let mut parser = EntityParser::new();
         assert_eq!(
-            parser.parse_custom_literal("\"\" _whatever"),
+            parser.parse_custom_literal_imut("\"\" _whatever"),
             Ok((
                 "",
                 Operator::CustomLiteral(unwrap_parse(parser.parse_identifier("_whatever")))
