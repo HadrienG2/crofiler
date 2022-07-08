@@ -152,7 +152,8 @@ impl EntityParser {
         let unary_op = separated_pair(|s| self.parse_unary_expr_prefix(s), space0, curr_value_like)
             .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
 
-        let new_expression = (|s| self.parse_new_expression(s)).map(ValueHeader::NewExpression);
+        let new_expression =
+            (|s| self.parse_new_expression_imut(s)).map(ValueHeader::NewExpression);
 
         let id_expression = (|s| self.parse_id_expression_imut(s)).map(ValueHeader::IdExpression);
 

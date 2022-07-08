@@ -116,6 +116,14 @@ impl EntityParser {
 
     /// Parse new expression, i.e. usage of the new operator
     pub fn parse_new_expression<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, NewExpression> {
+        self.parse_new_expression_imut(s)
+    }
+
+    /// Implementation of parse_new_expression using internal mutability
+    pub(crate) fn parse_new_expression_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, NewExpression> {
