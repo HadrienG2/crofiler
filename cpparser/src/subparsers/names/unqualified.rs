@@ -319,7 +319,8 @@ pub mod tests {
         );
 
         // Template with no parameters
-        let template_parameters = |s| unwrap_parse(parser.parse_template_parameters(s));
+        let template_parameters =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_template_parameters(s));
         assert_eq!(
             parser.parse_unqualified_id("no_parameters<>"),
             Ok((
@@ -327,13 +328,12 @@ pub mod tests {
                 UnqualifiedId::Named {
                     is_destructor: false,
                     id: identifier(&mut parser, "no_parameters"),
-                    template_parameters: Some(template_parameters("<>")),
+                    template_parameters: Some(template_parameters(&mut parser, "<>")),
                 }
             ))
         );
 
         // Template with a few parameters
-        let template_parameters = |s| unwrap_parse(parser.parse_template_parameters(s));
         assert_eq!(
             parser.parse_unqualified_id("A<B, C>"),
             Ok((
@@ -341,7 +341,7 @@ pub mod tests {
                 UnqualifiedId::Named {
                     is_destructor: false,
                     id: identifier(&mut parser, "A"),
-                    template_parameters: Some(template_parameters("<B, C>"))
+                    template_parameters: Some(template_parameters(&mut parser, "<B, C>"))
                 }
             ))
         );

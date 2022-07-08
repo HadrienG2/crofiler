@@ -72,7 +72,8 @@ type PathKeyImpl = Spur;
 const PATH_LEN_BITS: u32 = 8;
 
 /// Interned file path
-pub type InternedPath<'entities> = path::InternedPath<'entities, PathComponentKey>;
+pub type InternedPath<'entities> =
+    path::InternedPath<'entities, PathComponentKey, RodeoResolver<PathComponentKey>>;
 
 /// Parser for C++ entities
 //
@@ -323,7 +324,7 @@ pub(crate) mod tests {
 
     #[test]
     fn entity() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         // FIXME: Rework test harness to test CustomDisplay
 

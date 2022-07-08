@@ -624,7 +624,7 @@ mod tests {
             assert_eq!(
                 parser.value_like(key),
                 ValueLike {
-                    header: literal(&mut parser, s).into(),
+                    header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
                 }
             );
@@ -787,7 +787,7 @@ mod tests {
             assert_eq!(
                 parser.value_like(key),
                 ValueLike {
-                    header: literal(&mut parser, s).into(),
+                    header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
                 }
             );
@@ -802,7 +802,8 @@ mod tests {
             )) => {
                 let value = parser.value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
-                assert_eq!(parser.raw_value_trailer(value.trailer), vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))].into());
+                let expected = vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
+                assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
             }
         );
         assert_matches!(
@@ -813,11 +814,11 @@ mod tests {
             )) => {
                 let value = parser.value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "func")));
-                assert_eq!(parser.raw_value_trailer(value.trailer), vec![
+                let expected = vec![
                         unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
                         AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
-                    ]
-                    .into());
+                    ];
+                assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
             }
         );
     }

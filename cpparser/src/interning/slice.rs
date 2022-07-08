@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn equality() {
         let entities1 = EntityParser::new().finalize();
-        let entities2 = EntityParser::new();
+        let mut entities2 = EntityParser::new();
         entities2
             .parse_entity("<unknown>")
             .expect("This is a known-good parse which should not fail");
