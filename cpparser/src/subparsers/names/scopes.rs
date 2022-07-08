@@ -61,6 +61,14 @@ impl EntityParser {
     /// id_expression parser for optimal performance.
     ///
     pub fn parse_nested_name_specifier<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, NestedNameSpecifier> {
+        self.parse_nested_name_specifier_imut(s)
+    }
+
+    /// Implementation of parse_nested_name_specifier using internal mutability
+    pub(crate) fn parse_nested_name_specifier_imut<'source>(
         &self,
         s: &'source str,
     ) -> IResult<'source, NestedNameSpecifier> {
@@ -657,8 +665,8 @@ pub mod tests {
     #[test]
     fn nested_name_specifier() {
         // FIXME: Rework test harness to test CustomDisplay
-        let parser = EntityParser::new();
-        let scopes = |ss: &[&str]| -> ScopesKey {
+        let mut parser = EntityParser::new();
+        let scopes = |parser: &mut EntityParser, ss: &[&str]| -> ScopesKey {
             let mut entry = parser.scope_sequences.entry();
             for scope in ss
                 .iter()
@@ -675,7 +683,7 @@ pub mod tests {
                 "",
                 NestedNameSpecifier {
                     rooted: false,
-                    scopes: scopes(&["boost", "hana"]),
+                    scopes: scopes(&mut parser, &["boost", "hana"]),
                 }
             ))
         );
@@ -685,7 +693,7 @@ pub mod tests {
                 "stuff",
                 NestedNameSpecifier {
                     rooted: false,
-                    scopes: scopes(&["boost", "hana"]),
+                    scopes: scopes(&mut parser, &["boost", "hana"]),
                 }
             ))
         );

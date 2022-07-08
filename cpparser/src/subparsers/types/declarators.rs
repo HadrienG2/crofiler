@@ -103,7 +103,7 @@ impl EntityParser {
 
         // The member pointer declarator is very exotic (2/1M parses) and harder to
         // parse so we don't unify it with basic_pointer.
-        let nested_star = (|s| self.parse_nested_name_specifier(s)).terminated(char('*'));
+        let nested_star = (|s| self.parse_nested_name_specifier_imut(s)).terminated(char('*'));
         let mut member_pointer = separated_pair(nested_star, space0, Self::parse_cv)
             .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
@@ -359,13 +359,14 @@ mod tests {
         );
 
         // Basic pointer syntax
-        let nested_name_specifier = |s| unwrap_parse(parser.parse_nested_name_specifier(s));
+        let nested_name_specifier =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_nested_name_specifier(s));
         assert_eq!(
             parser.parse_decl_operator("*"),
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: nested_name_specifier(""),
+                    path: nested_name_specifier(&mut parser, ""),
                     cv: ConstVolatile::default(),
                 }
             ))
@@ -377,7 +378,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: nested_name_specifier(""),
+                    path: nested_name_specifier(&mut parser, ""),
                     cv: ConstVolatile::CONST,
                 }
             ))
@@ -389,7 +390,7 @@ mod tests {
             Ok((
                 "",
                 DeclOperator::Pointer {
-                    path: nested_name_specifier("A::B::"),
+                    path: nested_name_specifier(&mut parser, "A::B::"),
                     cv: ConstVolatile::default(),
                 }
             ))
