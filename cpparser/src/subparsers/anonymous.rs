@@ -50,7 +50,7 @@ impl EntityParser {
 
         let disk_designator = anychar.and(char(':'));
         let path_str = recognize(opt(disk_designator).and(take_till1(|c| c == ':')));
-        let path = path_str.map(|path| self.path_to_key_imut(path));
+        let path = path_str.map(|path| self.intern_path_imut(path));
 
         let file_location = separated_pair(path, char(':'), location);
         let lambda = file_location.map(|(file, location)| ClangLambda { file, location });
@@ -331,7 +331,7 @@ mod tests {
                 Ok((
                     "",
                     ClangLambda {
-                        file: parser.path_to_key("c:/source.cpp"),
+                        file: parser.intern_path("c:/source.cpp"),
                         location: (123, 45)
                     }
                 ))
@@ -342,7 +342,7 @@ mod tests {
                 Ok((
                     "",
                     ClangLambda {
-                        file: parser.path_to_key("/path/to/source.cpp"),
+                        file: parser.intern_path("/path/to/source.cpp"),
                         location: (123, 45)
                     }
                 ))

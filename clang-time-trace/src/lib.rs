@@ -39,9 +39,9 @@ pub use self::{
     tree::{ActivityId, ActivityTrace, ActivityTreeError},
 };
 pub use cpparser::{
-    asylum::path::{InternedComponent, InternedPath, PathError},
+    asylum::path::{InternedComponent, PathError},
     display::CustomDisplay,
-    PathComponentKey, PathKey,
+    InternedPath, PathComponentKey, PathKey,
 };
 pub use json::Error as CtfParseError;
 
@@ -143,7 +143,7 @@ impl ClangTrace {
     }
 
     /// Access a file path using a PathKey
-    pub fn file_path(&self, key: PathKey) -> InternedPath<PathComponentKey> {
+    pub fn file_path(&self, key: PathKey) -> InternedPath {
         self.entities.path(key)
     }
 
@@ -188,7 +188,7 @@ impl FromStr for ClangTrace {
 
         // Process the trace events
         let mut activities = ActivityTreeBuilder::with_capacity(profile_ctf.traceEvents.len() - 1);
-        let entities = EntityParser::new();
+        let mut entities = EntityParser::new();
         let mut demangling_buf = String::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
@@ -212,7 +212,7 @@ impl FromStr for ClangTrace {
                     merge_pid(&mut clang_pid, duration_event.pid)?;
                     activities.insert(ActivityStat::parse(
                         event,
-                        &entities,
+                        &mut entities,
                         &mut demangling_buf,
                     )?)?;
                 }

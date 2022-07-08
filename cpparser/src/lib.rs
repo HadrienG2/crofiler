@@ -77,6 +77,10 @@ pub type InternedPath<'entities> =
 
 /// Parser for C++ entities
 //
+// --- ANYTHING BELOW THIS IS INTERNAL NOTES THAT WON'T END UP IN RUSTDOC ---
+//
+// # Code structure
+//
 // The toplevel module only contains the data structures and general
 // functionality, parser-specific impl blocks can be found in individual modules
 //
@@ -84,6 +88,20 @@ pub type InternedPath<'entities> =
 // - Appropriate key sizes and length types
 // - Interning methods
 // - Retrieval methods and unique entry count (for Entities)
+//
+// # Internal mutability
+//
+// Parser combinators do not mix well with stateful parsing, as the requirement
+// not to capture &mut self in lambdas is too limiting. We cheat by using
+// internal mutability, but in exchange, we pay the price of having runtime
+// borrow checking failure modes, which have bad ergonomics.
+//
+// This price is acceptable in cpparser's implementation, but we don't want
+// users to pay for it when they don't really need to.
+//
+// So we only use internal mutability internally (via pub(crate) parse_xyz_imut
+// functions) and exposing a public API that honors Rust's regular mutability
+// rules (via parse_xyz functions that require an &mut self to mutate state).
 //
 pub struct EntityParser {
     /// Legacy name parser
@@ -151,12 +169,12 @@ impl EntityParser {
     /// appearing in C++ entity names, but appear in other context, can be
     /// interned using the same infrastructure for key comparability.
     ///
-    pub fn path_to_key(&mut self, path: &str) -> PathKey {
-        self.path_to_key_imut(path)
+    pub fn intern_path(&mut self, path: &str) -> PathKey {
+        self.intern_path_imut(path)
     }
 
-    /// Implementation of path_to_key with internal mutability
-    pub(crate) fn path_to_key_imut(&self, path: &str) -> PathKey {
+    /// Implementation of intern_path with internal mutability
+    pub(crate) fn intern_path_imut(&self, path: &str) -> PathKey {
         self.paths
             .borrow_mut()
             .intern(path)

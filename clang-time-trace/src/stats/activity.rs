@@ -43,7 +43,7 @@ impl ActivityStat {
     /// Decode a TraceEvent which is expected to contain a timed activity
     pub fn parse(
         t: TraceEvent,
-        parser: &EntityParser,
+        parser: &mut EntityParser,
         demangling_buf: &mut String,
     ) -> Result<Self, ActivityStatParseError> {
         match t {
@@ -137,7 +137,7 @@ impl Activity {
     fn parse(
         name: Box<str>,
         mut args: Option<HashMap<Box<str>, json::Value>>,
-        parser: &EntityParser,
+        parser: &mut EntityParser,
         demangling_buf: &mut String,
     ) -> Result<Self, ActivityParseError> {
         // Handling of activity name
@@ -177,7 +177,7 @@ impl Activity {
             ActivityArgumentParser::String => ActivityArgument::String(detail_arg()?),
 
             ActivityArgumentParser::FilePath => {
-                ActivityArgument::FilePath(parser.path_to_key(&detail_arg()?))
+                ActivityArgument::FilePath(parser.intern_path(&detail_arg()?))
             }
 
             ActivityArgumentParser::CppEntity => {
@@ -268,7 +268,7 @@ impl Activity {
     }
 
     /// Parse a "detail" argument payload that contains a C++ entity name
-    fn parse_entity(s: &str, parser: &EntityParser) -> Result<EntityKey, ActivityParseError> {
+    fn parse_entity(s: &str, parser: &mut EntityParser) -> Result<EntityKey, ActivityParseError> {
         parser.parse_entity(s).map_err(|e| {
             ActivityParseError::from(nom::error::Error::new(Box::<str>::from(e.input), e.code))
         })
@@ -277,10 +277,10 @@ impl Activity {
     /// Parse a "detail" argument payload that contains a mangled C++ symbol
     fn parse_mangled_symbol(
         symbol: Box<str>,
-        parser: &EntityParser,
+        parser: &mut EntityParser,
         demangling_buf: &mut String,
     ) -> Result<MangledSymbol, ActivityParseError> {
-        let parse_demangled = |entity: Box<str>| -> MangledSymbol {
+        let mut parse_demangled = |entity: Box<str>| -> MangledSymbol {
             if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
                 MangledSymbol::Parsed(parsed)
             } else {
@@ -561,7 +561,7 @@ mod tests {
         args: Option<HashMap<Box<str>, json::Value>>,
         expected: &Activity,
         expected_arg: &ActivityArgument,
-        parser: &EntityParser,
+        parser: &mut EntityParser,
     ) {
         // Check name and argument accessors
         assert_eq!(expected.name(), name);
@@ -671,25 +671,25 @@ mod tests {
 
     #[test]
     fn unknown_activity() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let mut demanging_buf = String::new();
         let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
-            Activity::parse(activity.clone(), None, &parser, &mut demanging_buf),
+            Activity::parse(activity.clone(), None, &mut parser, &mut demanging_buf),
             Err(ActivityParseError::UnknownActivity(activity))
         );
     }
 
     fn nullary_test(name: &str, a: Activity) {
         // Test two different ways of passing no arguments
-        let parser = EntityParser::new();
-        test_valid_activity(name, None, &a, &ActivityArgument::Nothing, &parser);
+        let mut parser = EntityParser::new();
+        test_valid_activity(name, None, &a, &ActivityArgument::Nothing, &mut parser);
         test_valid_activity(
             name,
             Some(HashMap::new()),
             &a,
             &ActivityArgument::Nothing,
-            &parser,
+            &mut parser,
         );
 
         // Add an undesired detail argument
@@ -699,7 +699,7 @@ mod tests {
             Activity::parse(
                 name.into(),
                 Some(args.clone()),
-                &parser,
+                &mut parser,
                 &mut demangling_buf,
             ),
             Err(ActivityParseError::BadArguments(
@@ -751,7 +751,7 @@ mod tests {
         arg: &str,
         expected: Activity,
         expected_argument: ActivityArgument,
-        parser: EntityParser,
+        mut parser: EntityParser,
     ) {
         // Test happy path
         let name = Box::<str>::from(name);
@@ -761,7 +761,7 @@ mod tests {
             Some(good_args.clone()),
             &expected,
             &expected_argument,
-            &parser,
+            &mut parser,
         );
 
         // Try not providing the requested argument
@@ -770,14 +770,14 @@ mod tests {
             "detail",
         )));
         assert_eq!(
-            Activity::parse(name.clone(), None, &parser, &mut demangling_buf),
+            Activity::parse(name.clone(), None, &mut parser, &mut demangling_buf),
             missing_arg_error
         );
         assert_eq!(
             Activity::parse(
                 name.clone(),
                 Some(HashMap::new()),
-                &parser,
+                &mut parser,
                 &mut demangling_buf
             ),
             missing_arg_error
@@ -790,7 +790,7 @@ mod tests {
             Activity::parse(
                 name.clone(),
                 Some(bad_arg_value),
-                &parser,
+                &mut parser,
                 &mut demangling_buf
             ),
             Err(ActivityParseError::BadArguments(
@@ -802,7 +802,12 @@ mod tests {
         let mut bad_arg = good_args.clone();
         bad_arg.insert("wat".into(), json::json!(""));
         assert_eq!(
-            Activity::parse(name, Some(bad_arg.clone()), &parser, &mut demangling_buf),
+            Activity::parse(
+                name,
+                Some(bad_arg.clone()),
+                &mut parser,
+                &mut demangling_buf
+            ),
             Err(ActivityParseError::BadArguments(
                 ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
             ))
@@ -813,8 +818,8 @@ mod tests {
     fn source() {
         const PATH: &'static str =
             "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
-        let parser = EntityParser::new();
-        let key = parser.path_to_key(PATH);
+        let mut parser = EntityParser::new();
+        let key = parser.intern_path(PATH);
         unary_test(
             "Source",
             PATH,
@@ -827,7 +832,7 @@ mod tests {
     #[test]
     fn parse_class() {
         const CLASS: &'static str = "Acts::Test::MeasurementCreator";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(CLASS)
             .expect("Known-good parse, shouldn't fail");
@@ -843,7 +848,7 @@ mod tests {
     #[test]
     fn instantiate_class() {
         const CLASS: &'static str = "std::invoke_result<(lambda at /mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp:354:40), Acts::detail_lt::TrackStateProxy<Acts::Test::ExtendedMinimalSourceLink, 6, 6, true> >";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(CLASS)
             .expect("Known-good parse, shouldn't fail");
@@ -859,7 +864,7 @@ mod tests {
     #[test]
     fn parse_template() {
         const TEMPLATE: &'static str = "<unknown>"; // Yes, clang can do that
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(TEMPLATE)
             .expect("Known-good parse, shouldn't fail");
@@ -875,7 +880,7 @@ mod tests {
     #[test]
     fn instantiate_function() {
         const FUNCTION: &'static str = "boost::unit_test::lazy_ostream_impl<boost::unit_test::lazy_ostream, boost::unit_test::basic_cstring<const char>, const boost::unit_test::basic_cstring<const char> &>::operator()";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(FUNCTION)
             .expect("Known-good parse, shouldn't fail");
@@ -891,7 +896,7 @@ mod tests {
     #[test]
     fn debug_type() {
         const TYPE: &'static str = "generic_dense_assignment_kernel<DstEvaluatorType, SrcEvaluatorType, Eigen::internal::add_assign_op<double, double> >";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(TYPE)
             .expect("Known-good parse, shouldn't fail");
@@ -907,7 +912,7 @@ mod tests {
     #[test]
     fn debug_global_variable() {
         const VAR: &'static str = "std::__detail::__variant::__gen_vtable<true, void, (lambda at /mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp:819:11) &&, std::variant<Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime> > &&>::_S_vtable";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(VAR)
             .expect("Known-good parse, shouldn't fail");
@@ -924,7 +929,7 @@ mod tests {
     fn code_gen_function() {
         const FUNCTION: &'static str =
             "boost::unit_test::operator<<<char, std::char_traits<char>, const char>";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(FUNCTION)
             .expect("Known-good parse, shouldn't fail");
@@ -940,7 +945,7 @@ mod tests {
     #[test]
     fn debug_function() {
         const FUNCTION: &'static str = "Eigen::operator*<Eigen::PermutationMatrix<6, 6, int>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 6, 6, 1, 6, 6> > >";
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
         let key = parser
             .parse_entity(FUNCTION)
             .expect("Known-good parse, shouldn't fail");
@@ -967,7 +972,7 @@ mod tests {
 
     #[test]
     fn opt_function() {
-        let parser = EntityParser::new();
+        let mut parser = EntityParser::new();
 
         const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
         let key = parser
@@ -1007,8 +1012,8 @@ mod tests {
     fn opt_module() {
         const MODULE: &'static str =
             "/mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp";
-        let parser = EntityParser::new();
-        let key = parser.path_to_key(MODULE);
+        let mut parser = EntityParser::new();
+        let key = parser.intern_path(MODULE);
         unary_test(
             "OptModule",
             MODULE,
