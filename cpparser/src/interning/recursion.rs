@@ -8,8 +8,7 @@ use asylum::{
 use reffers::ARef;
 use std::{cell::RefCell, hash::Hash};
 
-/// Extension of SequenceInterner which provides an entry() API that can be
-/// called recursively using shared references
+/// SequenceInterner with interior mutability
 #[derive(Clone)]
 pub struct RecursiveSequenceInterner<
     Item: Clone + Eq + Hash,
@@ -38,6 +37,11 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     // Access an interned sequence
     pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> ARef<[Item]> {
         self.borrow().map(|interner| interner.get(key))
+    }
+
+    // Intern a sequence
+    pub fn intern(&self, sequence: &[Item]) -> SequenceKey<KeyImpl, LEN_BITS> {
+        self.0.borrow_mut().0.intern(sequence)
     }
 
     // Prepare to intern a sequence in an iterative fashion, item by item

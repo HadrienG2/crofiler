@@ -1,15 +1,18 @@
 //! Tools for dealing with interned slices
 
+use super::recursion::RecursiveSequenceInterner;
 use crate::{
     asylum::{
         lasso::{Key, Spur},
-        sequence::{InternedSequences, SequenceKey},
+        sequence::SequenceKey,
     },
     display::{CustomDisplay, DisplayState},
     Entities,
 };
+use reffers::ARef;
 use std::{
     fmt::{self, Display, Formatter},
+    hash::Hash,
     iter::{DoubleEndedIterator, FusedIterator},
     marker::PhantomData,
 };
@@ -17,7 +20,7 @@ use std::{
 /// A view of an interned slice
 pub struct SliceView<
     'entities,
-    Item: Clone,
+    Item: Clone + Eq + Hash,
     ItemView: SliceItemView<'entities, Inner = Item>,
     KeyImpl: Key = Spur,
     const LEN_BITS: u32 = 8,
@@ -26,7 +29,7 @@ pub struct SliceView<
     key: SequenceKey<KeyImpl, LEN_BITS>,
 
     /// Wrapped slice
-    inner: &'entities [Item],
+    inner: ARef<'entities, [Item]>,
 
     /// Underlying interned entity storage
     entities: &'entities Entities,
@@ -37,7 +40,7 @@ pub struct SliceView<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         KeyImpl: Key,
         const LEN_BITS: u32,
@@ -46,7 +49,7 @@ impl<
     /// Set up a new slice view
     pub fn new(
         key: SequenceKey<KeyImpl, LEN_BITS>,
-        sequences: &'entities InternedSequences<Item, KeyImpl, LEN_BITS>,
+        sequences: &'entities RecursiveSequenceInterner<Item, KeyImpl, LEN_BITS>,
         entities: &'entities Entities,
     ) -> Self {
         Self {
@@ -75,16 +78,21 @@ impl<
            + DoubleEndedIterator
            + ExactSizeIterator
            + FusedIterator
-           + 'entities {
+           + '_
+           + Captures<'entities> {
         self.inner
             .iter()
-            .map(|item| ItemView::new(item.clone(), self.entities))
+            .map(move |item| ItemView::new(item.clone(), self.entities))
     }
 }
 //
+/// Workaround for impl Trait limitation
+pub trait Captures<'a> {}
+impl<T: ?Sized> Captures<'_> for T {}
+//
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         KeyImpl: Key,
         const LEN_BITS: u32,
@@ -98,7 +106,7 @@ impl<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         KeyImpl: Key,
         const LEN_BITS: u32,
@@ -130,7 +138,7 @@ impl<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         KeyImpl: Key,
         const LEN_BITS: u32,
@@ -163,7 +171,7 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
 mod tests {
     use super::*;
     use crate::{display::tests::CustomDisplayMock, EntityParser};
-    use asylum::{lasso::Spur, sequence::SequenceInterner};
+    use asylum::lasso::Spur;
 
     // Fake slice item to test SliceView
     type TestItem = usize;
@@ -187,7 +195,7 @@ mod tests {
     /// Sequence interning setup
     type KeyImpl = Spur;
     const LEN_BITS: u32 = 8;
-    type TestSequenceInterner = SequenceInterner<TestItem, KeyImpl, LEN_BITS>;
+    type TestSequenceInterner = RecursiveSequenceInterner<TestItem, KeyImpl, LEN_BITS>;
     type TestSliceView<'entities> = SliceView<'entities, TestItem, TestItemView, KeyImpl, LEN_BITS>;
 
     /// Sequences to be tested
@@ -197,9 +205,8 @@ mod tests {
     fn setup_and_check(check: impl Fn(&[TestItem], TestSliceView)) {
         let entities = EntityParser::new().finalize();
         for sequence in TEST_SEQUENCES {
-            let mut interner = TestSequenceInterner::new();
-            let key = interner.intern(sequence);
-            let sequences = interner.finalize();
+            let mut sequences = TestSequenceInterner::new();
+            let key = sequences.intern(sequence);
             let view = TestSliceView::new(key, &sequences, &entities);
             // FIXME: Add check for pairs of sequences and test equality
             check(sequence, view)
@@ -274,10 +281,9 @@ mod tests {
 
         for sequence1 in TEST_SEQUENCES {
             for sequence2 in TEST_SEQUENCES {
-                let mut interner = TestSequenceInterner::new();
-                let key1 = interner.intern(sequence1);
-                let key2 = interner.intern(sequence2);
-                let sequences = interner.finalize();
+                let mut sequences = TestSequenceInterner::new();
+                let key1 = sequences.intern(sequence1);
+                let key2 = sequences.intern(sequence2);
 
                 let view11 = TestSliceView::new(key1, &sequences, &entities1);
                 let view21 = TestSliceView::new(key2, &sequences, &entities1);
