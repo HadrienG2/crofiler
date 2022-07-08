@@ -5,8 +5,10 @@ use crate::{
     display::{CustomDisplay, DisplayState},
     Entities,
 };
+use reffers::ARef;
 use std::{
     fmt::{self, Display, Formatter},
+    hash::Hash,
     iter::{DoubleEndedIterator, FusedIterator},
     marker::PhantomData,
     ops::Range,
@@ -15,7 +17,7 @@ use std::{
 /// A view of an interned slice
 pub struct SliceView<
     'entities,
-    Item: Clone,
+    Item: Clone + Eq + Hash,
     ItemView: SliceItemView<'entities, Inner = Item>,
     Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
 > {
@@ -23,7 +25,7 @@ pub struct SliceView<
     key: Key,
 
     /// Wrapped slice
-    inner: &'entities [Item],
+    inner: ARef<'entities, [Item]>,
 
     /// Underlying interned entity storage
     entities: &'entities Entities,
@@ -34,20 +36,24 @@ pub struct SliceView<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         Key: InternerKey<ImplKey = Range<usize>>,
     > SliceView<'entities, Item, ItemView, Key>
 {
     /// Set up a new slice view
-    pub fn new(
+    pub fn new<SeqResolver>(
         key: Key,
-        sequences: &'entities impl Resolver<Key = Key, Item = [Item]>,
+        sequences: impl Into<ARef<'entities, SeqResolver>>,
         entities: &'entities Entities,
-    ) -> Self {
+    ) -> Self
+    where
+        SeqResolver: Resolver<Key = Key, Item = [Item]> + 'entities,
+    {
+        let sequences: ARef<'entities, SeqResolver> = sequences.into();
         Self {
             key,
-            inner: sequences.get(key),
+            inner: sequences.map(|sequences| sequences.get(key)),
             entities,
             view: PhantomData,
         }
@@ -71,16 +77,21 @@ impl<
            + DoubleEndedIterator
            + ExactSizeIterator
            + FusedIterator
-           + 'entities {
+           + '_
+           + Captures<'entities> {
         self.inner
             .iter()
-            .map(|item| ItemView::new(item.clone(), self.entities))
+            .map(move |item| ItemView::new(item.clone(), self.entities))
     }
 }
 //
+/// Workaround for impl Trait limitation
+pub trait Captures<'a> {}
+impl<T: ?Sized> Captures<'_> for T {}
+//
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         Key: InternerKey<ImplKey = Range<usize>>,
     > PartialEq for SliceView<'entities, Item, ItemView, Key>
@@ -93,7 +104,7 @@ impl<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         Key: InternerKey<ImplKey = Range<usize>>,
     > CustomDisplay for SliceView<'entities, Item, ItemView, Key>
@@ -124,7 +135,7 @@ impl<
 //
 impl<
         'entities,
-        Item: Clone,
+        Item: Clone + Eq + Hash,
         ItemView: SliceItemView<'entities, Inner = Item>,
         Key: InternerKey<ImplKey = Range<usize>>,
     > Display for SliceView<'entities, Item, ItemView, Key>
@@ -156,7 +167,7 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
 mod tests {
     use super::*;
     use crate::{display::tests::CustomDisplayMock, EntityParser};
-    use asylum::sequence::SequenceInterner;
+    use asylum::sequence::{SequenceInterner, SequenceKey};
 
     // Fake slice item to test SliceView
     type TestItem = usize;
@@ -188,9 +199,8 @@ mod tests {
     fn setup_and_check(check: impl Fn(&[TestItem], TestSliceView)) {
         let entities = EntityParser::new().finalize();
         for sequence in TEST_SEQUENCES {
-            let mut interner = TestSequenceInterner::new();
-            let key = interner.intern(sequence);
-            let sequences = interner.finalize();
+            let mut sequences = TestSequenceInterner::new();
+            let key = sequences.intern(sequence);
             let view = TestSliceView::new(key, &sequences, &entities);
             // FIXME: Add check for pairs of sequences and test equality
             check(sequence, view)
@@ -265,10 +275,9 @@ mod tests {
 
         for sequence1 in TEST_SEQUENCES {
             for sequence2 in TEST_SEQUENCES {
-                let mut interner = TestSequenceInterner::new();
-                let key1 = interner.intern(sequence1);
-                let key2 = interner.intern(sequence2);
-                let sequences = interner.finalize();
+                let mut sequences = TestSequenceInterner::new();
+                let key1 = sequences.intern(sequence1);
+                let key2 = sequences.intern(sequence2);
 
                 let view11 = TestSliceView::new(key1, &sequences, &entities1);
                 let view21 = TestSliceView::new(key2, &sequences, &entities1);
