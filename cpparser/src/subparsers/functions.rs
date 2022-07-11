@@ -36,8 +36,8 @@ use reffers::ARef;
 /// the function_arguments() method of the Entities struct.
 ///
 pub type FunctionArgumentsKey = SequenceKey<FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>;
-pub(crate) type FunctionArgumentsKeyImpl = MiniSpur;
-pub(crate) const FUNCTION_ARGUMENTS_LEN_BITS: u32 = 6;
+type FunctionArgumentsKeyImpl = MiniSpur;
+const FUNCTION_ARGUMENTS_LEN_BITS: u32 = 6;
 //
 /// Interned function parameter sets (= list of parameter types) key
 ///
@@ -49,8 +49,8 @@ pub(crate) const FUNCTION_ARGUMENTS_LEN_BITS: u32 = 6;
 ///
 pub type FunctionParametersKey =
     SequenceKey<FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>;
-pub(crate) type FunctionParametersKeyImpl = Spur;
-pub(crate) const FUNCTION_PARAMETERS_LEN_BITS: u32 = 8;
+type FunctionParametersKeyImpl = Spur;
+const FUNCTION_PARAMETERS_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser recognizing a function call
@@ -258,13 +258,8 @@ impl Entities {
 }
 
 /// View of a function call (function argument set)
-pub type FunctionArgumentsView<'entities> = SliceView<
-    'entities,
-    ValueKey,
-    ValueView<'entities>,
-    FunctionArgumentsKeyImpl,
-    FUNCTION_ARGUMENTS_LEN_BITS,
->;
+pub type FunctionArgumentsView<'entities> =
+    SliceView<'entities, ValueKey, ValueView<'entities>, FunctionArgumentsKey>;
 
 /// Function signature
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -429,13 +424,8 @@ impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
 }
 
 /// View of a function parameter set
-pub type FunctionParametersView<'entities> = SliceView<
-    'entities,
-    TypeKey,
-    TypeView<'entities>,
-    FunctionParametersKeyImpl,
-    FUNCTION_PARAMETERS_LEN_BITS,
->;
+pub type FunctionParametersView<'entities> =
+    SliceView<'entities, TypeKey, TypeView<'entities>, FunctionParametersKey>;
 
 /// Function parameter of ... ellipsis sign
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

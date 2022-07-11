@@ -1,6 +1,6 @@
 //! File path handling
 
-use clang_time_trace::{InternedPath, PathComponentKey};
+use clang_time_trace::InternedPath;
 use once_cell::sync::Lazy;
 use std::path::MAIN_SEPARATOR as PATH_SEPARATOR;
 use unicode_segmentation::UnicodeSegmentation;
@@ -20,7 +20,7 @@ use unicode_width::UnicodeWidthStr;
 /// like this Korean jongseong: ᆨ. But in my testing, common Linux terminals
 /// wouldn't handle those strings correctly either, likely because they use a
 /// similar algorithm, so we're state of the art in this respect...
-pub fn truncate_path(path: &InternedPath<PathComponentKey>, cols: u16) -> Box<str> {
+pub fn truncate_path(path: &InternedPath, cols: u16) -> Box<str> {
     truncate_path_iter(path.components().map(|c| c.value()), cols)
 }
 

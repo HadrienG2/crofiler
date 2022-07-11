@@ -1,37 +1,42 @@
 //! Utilities for handling file paths
 
-use crate::sequence::{InternedSequences, SequenceInterner, SequenceKey};
-use lasso::{Key, Rodeo, RodeoResolver, Spur};
+use crate::{
+    sequence::{InternedSequences, SequenceInterner, SequenceKey},
+    InternerKey,
+};
+use lasso::{Key, Resolver, Rodeo, RodeoResolver, Spur};
 use std::{
     ffi::OsStr,
     fmt::{self, Display, Formatter},
     hash::Hash,
+    ops::Range,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 
-/// Space- and allocation-efficient collection of file paths
-#[derive(Debug, PartialEq)]
-pub struct InternedPaths<ComponentKey: Key, PathKeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
-    /// Interned path components
-    components: RodeoResolver<ComponentKey>,
+/// Object that contains interned file paths
+pub trait PathResolver {
+    /// Interning key that uniquely identifies a file path
+    type PathKey: InternerKey<ImplKey = Range<usize>>;
 
-    /// Concatened sequence of all interned paths
-    sequences: InternedSequences<ComponentKey, PathKeyImpl, LEN_BITS>,
-}
-//
-impl<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32>
-    InternedPaths<ComponentKey, PathKeyImpl, LEN_BITS>
-{
-    /// Retrieve a path, panics if the key is invalid
-    pub fn get(
-        &self,
-        key: PathKey<PathKeyImpl, LEN_BITS>,
-    ) -> InternedPath<ComponentKey, RodeoResolver<ComponentKey>> {
-        InternedPath {
-            components: &self.components,
-            sequence: self.sequences.get(key),
-        }
+    /// Interning key that uniquely identifies a path component
+    type ComponentKey: Key;
+
+    /// Resolver used to get to path components
+    #[doc(hidden)]
+    type ComponentResolver: Resolver<Self::ComponentKey>;
+
+    /// Access the internal component resolver
+    #[doc(hidden)]
+    fn component_resolver(&self) -> &Self::ComponentResolver;
+
+    /// Retrieve a set of path components
+    #[doc(hidden)]
+    fn get_path_components(&self, key: Self::PathKey) -> &[Self::ComponentKey];
+
+    /// Retrieve an object using its interning key
+    fn get(&self, key: Self::PathKey) -> InternedPath<Self> {
+        InternedPath { key, parent: self }
     }
 }
 
@@ -45,37 +50,72 @@ impl<ComponentKey: Key, PathKeyImpl: Key, const LEN_BITS: u32>
 ///
 pub type PathKey<KeyImpl = Spur, const LEN_BITS: u32 = 8> = SequenceKey<KeyImpl, LEN_BITS>;
 
-/// Accessor to an interned path
+/// Space- and allocation-efficient collection of file paths
 #[derive(Debug, PartialEq)]
-pub struct InternedPath<
-    'parent,
-    ComponentKey: Key = Spur,
-    Resolver: lasso::Resolver<ComponentKey> = Rodeo<ComponentKey>,
+pub struct InternedPaths<
+    ComponentKey: Key,
+    PK: InternerKey<ImplKey = Range<usize>> = PathKey<Spur, 8>,
 > {
-    /// Access to interned path components
-    components: &'parent Resolver,
+    /// Interned path components
+    components: RodeoResolver<ComponentKey>,
 
-    /// Sequence of path components
-    sequence: &'parent [ComponentKey],
+    /// Concatened sequence of all interned paths
+    sequences: InternedSequences<ComponentKey, PK>,
 }
 //
-impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>>
-    InternedPath<'parent, ComponentKey, Resolver>
+impl<ComponentKey: Key, PK: InternerKey<ImplKey = Range<usize>>> InternedPaths<ComponentKey, PK> {
+    /// Retrieve a path, panics if the key is invalid
+    pub fn get(&self, key: PK) -> InternedPath<Self> {
+        <Self as PathResolver>::get(self, key)
+    }
+}
+//
+impl<ComponentKey: Key, PK: InternerKey<ImplKey = Range<usize>>> PathResolver
+    for InternedPaths<ComponentKey, PK>
 {
+    type PathKey = PK;
+    type ComponentKey = ComponentKey;
+    type ComponentResolver = RodeoResolver<ComponentKey>;
+
+    fn component_resolver(&self) -> &Self::ComponentResolver {
+        &self.components
+    }
+
+    fn get_path_components(&self, key: PK) -> &[Self::ComponentKey] {
+        self.sequences.get(key)
+    }
+}
+
+/// Accessor to an interned path
+#[derive(Debug, PartialEq)]
+pub struct InternedPath<'parent, Parent: PathResolver + ?Sized> {
+    /// Interned path key
+    key: Parent::PathKey,
+
+    /// Parent from which this path comes
+    parent: &'parent Parent,
+}
+//
+impl<'parent, Parent: PathResolver> InternedPath<'parent, Parent> {
     /// Iterate over path components
     pub fn components(
         &self,
-    ) -> impl Iterator<Item = InternedComponent<'parent, ComponentKey>> + DoubleEndedIterator + Clone
-    {
-        self.sequence.iter().map(|&key| InternedComponent {
-            key,
-            value: self.components.resolve(&key),
-        })
+    ) -> impl Iterator<Item = InternedComponent<'parent, Parent::ComponentKey>>
+           + DoubleEndedIterator
+           + Clone {
+        let component_resolver = self.parent.component_resolver();
+        self.parent
+            .get_path_components(self.key)
+            .iter()
+            .map(move |&key| InternedComponent {
+                key,
+                value: component_resolver.resolve(&key),
+            })
     }
 
     /// Turn the path into a regular Rust filesystem path for convenience
     pub fn to_boxed_path(&self) -> Box<Path> {
-        let mut path_buf = PathBuf::with_capacity(self.sequence.len());
+        let mut path_buf = PathBuf::new();
         for component in self.components() {
             path_buf.push(component);
         }
@@ -83,9 +123,7 @@ impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>>
     }
 }
 //
-impl<'parent, ComponentKey: Key, Resolver: lasso::Resolver<ComponentKey>> Display
-    for InternedPath<'parent, ComponentKey, Resolver>
-{
+impl<'parent, Parent: PathResolver> Display for InternedPath<'parent, Parent> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.to_boxed_path().display())
     }
@@ -136,17 +174,19 @@ impl<ComponentKey: Key> AsRef<Path> for InternedComponent<'_, ComponentKey> {
 }
 
 /// Writable collection of absolute file paths, meant to ultimately become InternedPaths
-pub struct PathInterner<ComponentKey: Key + Hash, PathKeyImpl: Key = Spur, const LEN_BITS: u32 = 8>
-{
+pub struct PathInterner<
+    ComponentKey: Key + Hash,
+    PK: InternerKey<ImplKey = Range<usize>> = PathKey<Spur, 8>,
+> {
     /// Interner for individual path components
     components: Rodeo<ComponentKey>,
 
     /// Interner for the sequences of interned components that make up a path
-    sequences: SequenceInterner<ComponentKey, PathKeyImpl, LEN_BITS>,
+    sequences: SequenceInterner<ComponentKey, PK>,
 }
 //
-impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
-    PathInterner<ComponentKey, PathKeyImpl, LEN_BITS>
+impl<ComponentKey: Key + Hash, PK: InternerKey<ImplKey = Range<usize>>>
+    PathInterner<ComponentKey, PK>
 {
     /// Set up a path interner
     pub fn new() -> Self {
@@ -165,7 +205,7 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
     /// Paths must all be absolute as otherwise, without working directory
     /// information, there is no way to compare a relative path with another path
     ///
-    pub fn intern(&mut self, path: &str) -> Result<PathKey<PathKeyImpl, LEN_BITS>, PathError> {
+    pub fn intern(&mut self, path: &str) -> Result<PK, PathError> {
         // Parse input string as a filesystem path
         let path = Path::new(&path);
 
@@ -205,14 +245,8 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Retrieve a previously interned path
-    pub fn get(
-        &self,
-        key: PathKey<PathKeyImpl, LEN_BITS>,
-    ) -> InternedPath<ComponentKey, Rodeo<ComponentKey>> {
-        InternedPath {
-            components: &self.components,
-            sequence: self.sequences.get(key),
-        }
+    pub fn get(&self, key: PK) -> InternedPath<Self> {
+        <Self as PathResolver>::get(self, key)
     }
 
     /// Truth that no path has been interned yet
@@ -241,7 +275,7 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Finalize the collection of paths, keeping all keys valid
-    pub fn finalize(self) -> InternedPaths<ComponentKey, PathKeyImpl, LEN_BITS> {
+    pub fn finalize(self) -> InternedPaths<ComponentKey, PK> {
         InternedPaths {
             components: self.components.into_resolver(),
             sequences: self.sequences.finalize(),
@@ -249,11 +283,27 @@ impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32>
     }
 }
 //
-impl<ComponentKey: Key + Hash, PathKeyImpl: Key, const LEN_BITS: u32> Default
-    for PathInterner<ComponentKey, PathKeyImpl, LEN_BITS>
+impl<ComponentKey: Key + Hash, PK: InternerKey<ImplKey = Range<usize>>> Default
+    for PathInterner<ComponentKey, PK>
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+//
+impl<ComponentKey: Key + Hash, PK: InternerKey<ImplKey = Range<usize>>> PathResolver
+    for PathInterner<ComponentKey, PK>
+{
+    type PathKey = PK;
+    type ComponentKey = ComponentKey;
+    type ComponentResolver = Rodeo<ComponentKey>;
+
+    fn component_resolver(&self) -> &Self::ComponentResolver {
+        &self.components
+    }
+
+    fn get_path_components(&self, key: PK) -> &[Self::ComponentKey] {
+        self.sequences.get(key)
     }
 }
 
@@ -279,7 +329,7 @@ mod tests {
 
     type TestedComponentKey = MiniSpur;
     type TestedPathKey = PathKey<Spur, 8>;
-    type TestedInterner = PathInterner<TestedComponentKey, Spur, 8>;
+    type TestedInterner = PathInterner<TestedComponentKey, PathKey>;
 
     fn extract_components(interner: &TestedInterner) -> HashMap<TestedComponentKey, String> {
         interner
@@ -307,10 +357,9 @@ mod tests {
             // Check accessor value
             let interned_path = interned_paths.get(*key);
             assert_eq!(
-                interned_path.components as *const _,
-                &interned_paths.components as *const _
+                interned_path.components().count(),
+                expected_components.len()
             );
-            assert_eq!(interned_path.sequence.len(), expected_components.len());
 
             // Check component access
             let mut expected_path_buf = PathBuf::with_capacity(expected_components.len());

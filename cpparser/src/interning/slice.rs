@@ -1,10 +1,7 @@
 //! Tools for dealing with interned slices
 
 use crate::{
-    asylum::{
-        lasso::{Key, Spur},
-        sequence::{InternedSequences, SequenceKey},
-    },
+    asylum::{lasso::Spur, sequence::SequenceKey, InternerKey, Resolver},
     display::{CustomDisplay, DisplayState},
     Entities,
 };
@@ -12,6 +9,7 @@ use std::{
     fmt::{self, Display, Formatter},
     iter::{DoubleEndedIterator, FusedIterator},
     marker::PhantomData,
+    ops::Range,
 };
 
 /// A view of an interned slice
@@ -19,11 +17,10 @@ pub struct SliceView<
     'entities,
     Item: Clone,
     ItemView: SliceItemView<'entities, Inner = Item>,
-    KeyImpl: Key = Spur,
-    const LEN_BITS: u32 = 8,
+    Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
 > {
     /// Key used to retrieve the slice
-    key: SequenceKey<KeyImpl, LEN_BITS>,
+    key: Key,
 
     /// Wrapped slice
     inner: &'entities [Item],
@@ -39,14 +36,13 @@ impl<
         'entities,
         Item: Clone,
         ItemView: SliceItemView<'entities, Inner = Item>,
-        KeyImpl: Key,
-        const LEN_BITS: u32,
-    > SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
+        Key: InternerKey<ImplKey = Range<usize>>,
+    > SliceView<'entities, Item, ItemView, Key>
 {
     /// Set up a new slice view
     pub fn new(
-        key: SequenceKey<KeyImpl, LEN_BITS>,
-        sequences: &'entities InternedSequences<Item, KeyImpl, LEN_BITS>,
+        key: Key,
+        sequences: &'entities impl Resolver<Key = Key, Item = [Item]>,
         entities: &'entities Entities,
     ) -> Self {
         Self {
@@ -86,9 +82,8 @@ impl<
         'entities,
         Item: Clone,
         ItemView: SliceItemView<'entities, Inner = Item>,
-        KeyImpl: Key,
-        const LEN_BITS: u32,
-    > PartialEq for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
+        Key: InternerKey<ImplKey = Range<usize>>,
+    > PartialEq for SliceView<'entities, Item, ItemView, Key>
 {
     fn eq(&self, other: &Self) -> bool {
         (self.entities as *const Entities == other.entities as *const Entities)
@@ -100,9 +95,8 @@ impl<
         'entities,
         Item: Clone,
         ItemView: SliceItemView<'entities, Inner = Item>,
-        KeyImpl: Key,
-        const LEN_BITS: u32,
-    > CustomDisplay for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
+        Key: InternerKey<ImplKey = Range<usize>>,
+    > CustomDisplay for SliceView<'entities, Item, ItemView, Key>
 {
     fn recursion_depth(&self) -> usize {
         self.iter()
@@ -132,9 +126,8 @@ impl<
         'entities,
         Item: Clone,
         ItemView: SliceItemView<'entities, Inner = Item>,
-        KeyImpl: Key,
-        const LEN_BITS: u32,
-    > Display for SliceView<'entities, Item, ItemView, KeyImpl, LEN_BITS>
+        Key: InternerKey<ImplKey = Range<usize>>,
+    > Display for SliceView<'entities, Item, ItemView, Key>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::new(usize::MAX))
@@ -163,7 +156,7 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
 mod tests {
     use super::*;
     use crate::{display::tests::CustomDisplayMock, EntityParser};
-    use asylum::{lasso::Spur, sequence::SequenceInterner};
+    use asylum::sequence::SequenceInterner;
 
     // Fake slice item to test SliceView
     type TestItem = usize;
@@ -185,10 +178,8 @@ mod tests {
     }
 
     /// Sequence interning setup
-    type KeyImpl = Spur;
-    const LEN_BITS: u32 = 8;
-    type TestSequenceInterner = SequenceInterner<TestItem, KeyImpl, LEN_BITS>;
-    type TestSliceView<'entities> = SliceView<'entities, TestItem, TestItemView, KeyImpl, LEN_BITS>;
+    type TestSequenceInterner = SequenceInterner<TestItem, SequenceKey>;
+    type TestSliceView<'entities> = SliceView<'entities, TestItem, TestItemView, SequenceKey>;
 
     /// Sequences to be tested
     static TEST_SEQUENCES: &[&[TestItem]] = &[&[], &[42], &[0, 7], &[2, 5, 1]];

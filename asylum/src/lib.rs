@@ -16,6 +16,51 @@ pub mod sequence;
 /// Re-export used crates to avoid duplicate dependencies
 pub use lasso;
 
+/// Key that uniquely identifies an interned object
+///
+/// Generalization of `lasso::Key` that allows for internal key types other than
+/// `usize`, with transparent support for existing `lasso::Key` impls.
+///
+// NOTE: If I ever add unsafe methods that rely on correct round tripping
+//       between InternerKey and ImplKey, this needs to become an unsafe trait
+pub trait InternerKey: Copy + Eq + Sized {
+    /// Inner key format used within the implementation
+    type ImplKey;
+
+    /// Convert public key to internal format
+    fn into_impl_key(self) -> Self::ImplKey;
+
+    /// Try to convert internal key to the public format
+    ///
+    /// Can fail if the implementation uses compression
+    ///
+    fn try_from_impl_key(impl_key: Self::ImplKey) -> Option<Self>;
+}
+//
+impl<K: Key> InternerKey for K {
+    type ImplKey = usize;
+
+    fn into_impl_key(self) -> Self::ImplKey {
+        self.into_usize()
+    }
+
+    fn try_from_impl_key(impl_key: Self::ImplKey) -> Option<Self> {
+        Self::try_from_usize(impl_key)
+    }
+}
+
+/// Object that contains interned things
+pub trait Resolver {
+    /// Interning key that uniquely identifies an object
+    type Key: InternerKey;
+
+    /// Kind of object being interned
+    type Item: ?Sized;
+
+    /// Retrieve an object using its interning key
+    fn get(&self, key: Self::Key) -> &Self::Item;
+}
+
 /// Interned things
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<K>);
@@ -23,7 +68,15 @@ pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<K>);
 impl<Item, K: Key> Interned<Item, K> {
     /// Retrieve a previously interned thing
     pub fn get(&self, key: K) -> &Item {
-        &self.0[key.into_usize()]
+        <Self as Resolver>::get(self, key)
+    }
+}
+//
+impl<Item, K: Key> Resolver for Interned<Item, K> {
+    type Key = K;
+    type Item = Item;
+    fn get(&self, key: K) -> &Item {
+        &self.0[key.into_impl_key()]
     }
 }
 
@@ -85,7 +138,7 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
 
     /// Retrieve a previously interned item
     pub fn get(&self, key: K) -> &Item {
-        &self.items[key.into_usize()]
+        <Self as Resolver>::get(self, key)
     }
 
     /// Truth that no sequence has been interned yet
@@ -104,17 +157,26 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
     }
 }
 //
+impl<Item: Clone + Eq + Hash> Default for Interner<Item> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+//
+impl<Item: Clone + Eq + Hash, K: Key> Resolver for Interner<Item, K> {
+    type Key = K;
+    type Item = Item;
+
+    fn get(&self, key: Self::Key) -> &Item {
+        &self.items[key.into_impl_key()]
+    }
+}
+//
 /// Hash an item
 fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, item: &Item) -> u64 {
     let mut hasher = random_state.build_hasher();
     item.hash(&mut hasher);
     hasher.finish()
-}
-//
-impl<Item: Clone + Eq + Hash> Default for Interner<Item> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]

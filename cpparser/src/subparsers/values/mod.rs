@@ -47,8 +47,8 @@ pub type ValueKey = MiniSpur;
 /// value_trailer() method of the Entities struct.
 ///
 pub type ValueTrailerKey = SequenceKey<ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>;
-pub(crate) type ValueTrailerKeyImpl = MiniSpur;
-pub(crate) const VALUE_TRAILER_LEN_BITS: u32 = 6;
+type ValueTrailerKeyImpl = MiniSpur;
+const VALUE_TRAILER_LEN_BITS: u32 = 6;
 //
 impl EntityParser {
     /// Parser recognizing values (and some types that are indistinguishable
@@ -476,13 +476,8 @@ impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
 }
 
 /// View of a value's trailer
-pub type ValueTrailerView<'entities> = SliceView<
-    'entities,
-    AfterValue,
-    AfterValueView<'entities>,
-    ValueTrailerKeyImpl,
-    VALUE_TRAILER_LEN_BITS,
->;
+pub type ValueTrailerView<'entities> =
+    SliceView<'entities, AfterValue, AfterValueView<'entities>, ValueTrailerKey>;
 
 /// Things that can come up after a value to form a more complex value
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

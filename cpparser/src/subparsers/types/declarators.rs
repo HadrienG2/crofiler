@@ -30,8 +30,8 @@ use reffers::ARef;
 /// declarator() method of the Entities struct.
 ///
 pub type DeclaratorKey = SequenceKey<DeclaratorKeyImpl, DECLARATOR_LEN_BITS>;
-pub(crate) type DeclaratorKeyImpl = Spur;
-pub(crate) const DECLARATOR_LEN_BITS: u32 = 8;
+type DeclaratorKeyImpl = Spur;
+const DECLARATOR_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser for declarators
@@ -163,13 +163,8 @@ impl Entities {
 }
 
 /// View of a declarator
-pub type DeclaratorView<'entities> = SliceView<
-    'entities,
-    DeclOperator,
-    DeclOperatorView<'entities>,
-    DeclaratorKeyImpl,
-    DECLARATOR_LEN_BITS,
->;
+pub type DeclaratorView<'entities> =
+    SliceView<'entities, DeclOperator, DeclOperatorView<'entities>, DeclaratorKey>;
 
 /// Operators that can appear within a declarator
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

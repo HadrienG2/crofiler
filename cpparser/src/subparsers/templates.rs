@@ -28,8 +28,8 @@ use reffers::ARef;
 ///
 pub type TemplateParameterListKey =
     SequenceKey<TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS>;
-pub(crate) type TemplateParameterListKeyImpl = Spur;
-pub(crate) const TEMPLATE_PARAMETER_LIST_LEN_BITS: u32 = 10;
+type TemplateParameterListKeyImpl = Spur;
+const TEMPLATE_PARAMETER_LIST_LEN_BITS: u32 = 10;
 //
 impl EntityParser {
     /// Parser for unqualified id-expressions
@@ -180,8 +180,7 @@ pub type TemplateParameterListView<'entities> = SliceView<
     'entities,
     TemplateParameter,
     TemplateParameterView<'entities>,
-    TemplateParameterListKeyImpl,
-    TEMPLATE_PARAMETER_LIST_LEN_BITS,
+    TemplateParameterListKey,
 >;
 
 /// Template parameter

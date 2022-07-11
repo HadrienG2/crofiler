@@ -2,23 +2,23 @@
 //! called recursively using shared references
 
 use asylum::{
-    lasso::{Key, Spur},
+    lasso::Spur,
     sequence::{SequenceInterner, SequenceKey},
+    InternerKey,
 };
 use reffers::ARef;
-use std::{cell::RefCell, hash::Hash};
+use std::{cell::RefCell, hash::Hash, ops::Range};
 
 /// Extension of SequenceInterner which provides an entry() API that can be
 /// called recursively using shared references
 #[derive(Clone)]
 pub struct RecursiveSequenceInterner<
     Item: Clone + Eq + Hash,
-    KeyImpl: Key = Spur,
-    const LEN_BITS: u32 = 8,
->(RefCell<(SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>);
+    Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
+>(RefCell<(SequenceInterner<Item, Key>, Vec<Vec<Item>>)>);
 //
-impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
-    RecursiveSequenceInterner<Item, KeyImpl, LEN_BITS>
+impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
+    RecursiveSequenceInterner<Item, Key>
 {
     // Set up a sequence interner
     pub fn new() -> Self {
@@ -26,22 +26,22 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     // Access the inner SequenceInterner
-    pub fn borrow(&self) -> ARef<SequenceInterner<Item, KeyImpl, LEN_BITS>> {
+    pub fn borrow(&self) -> ARef<SequenceInterner<Item, Key>> {
         ARef::new(self.0.borrow()).map(|(interner, _vecs)| interner)
     }
 
     // Extract the inner SequenceInterner
-    pub fn into_inner(self) -> SequenceInterner<Item, KeyImpl, LEN_BITS> {
+    pub fn into_inner(self) -> SequenceInterner<Item, Key> {
         self.0.into_inner().0
     }
 
     // Access an interned sequence
-    pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> ARef<[Item]> {
+    pub fn get(&self, key: Key) -> ARef<[Item]> {
         self.borrow().map(|interner| interner.get(key))
     }
 
     // Prepare to intern a sequence in an iterative fashion, item by item
-    pub fn entry(&self) -> SequenceEntry<Item, KeyImpl, LEN_BITS> {
+    pub fn entry(&self) -> SequenceEntry<Item, Key> {
         let sequence = {
             let mut inner = self.0.borrow_mut();
             if let Some(mut sequence) = inner.1.pop() {
@@ -58,8 +58,8 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 }
 //
-impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
-    for RecursiveSequenceInterner<Item, KeyImpl, LEN_BITS>
+impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>> Default
+    for RecursiveSequenceInterner<Item, Key>
 {
     fn default() -> Self {
         Self::new()
@@ -70,18 +70,17 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
 pub struct SequenceEntry<
     'interner,
     Item: Clone + Eq + Hash,
-    KeyImpl: Key = Spur,
-    const LEN_BITS: u32 = 8,
+    Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
 > {
     /// Underlying sequence interner
-    interner: &'interner RefCell<(SequenceInterner<Item, KeyImpl, LEN_BITS>, Vec<Vec<Item>>)>,
+    interner: &'interner RefCell<(SequenceInterner<Item, Key>, Vec<Vec<Item>>)>,
 
     /// Buffer for a sequence that is in the process of being interned
     sequence: Vec<Item>,
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
-    SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
+    SequenceEntry<'interner, Item, Key>
 {
     /// Add an item to the sequence that is being interned
     pub fn push(&mut self, item: Item) {
@@ -89,13 +88,13 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Finish the interning transaction
-    pub fn intern(self) -> SequenceKey<KeyImpl, LEN_BITS> {
+    pub fn intern(self) -> Key {
         self.interner.borrow_mut().0.intern(&self.sequence[..])
     }
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
-    for SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>> Drop
+    for SequenceEntry<'interner, Item, Key>
 {
     fn drop(&mut self) {
         self.interner

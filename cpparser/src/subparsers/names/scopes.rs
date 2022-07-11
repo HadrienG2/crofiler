@@ -30,8 +30,8 @@ use reffers::ARef;
 /// to the scopes() method of the Entities struct.
 ///
 pub type ScopesKey = SequenceKey<ScopesKeyImpl, SCOPES_LEN_BITS>;
-pub(crate) type ScopesKeyImpl = Spur;
-pub(crate) const SCOPES_LEN_BITS: u32 = 8;
+type ScopesKeyImpl = Spur;
+const SCOPES_LEN_BITS: u32 = 8;
 //
 impl EntityParser {
     /// Parser for id-expressions (= nested name-specifier + UnqualifiedId)
@@ -100,7 +100,7 @@ impl EntityParser {
 
         // Parse sequence of scope_or_unqualified_id, accumulating scopes
         let mut scopes = self.scope_sequences.entry();
-        let make_output = |scopes: SequenceEntry<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>, id_opt| {
+        let make_output = |scopes: SequenceEntry<Scope, ScopesKey>, id_opt| {
             (
                 NestedNameSpecifier {
                     rooted,
@@ -359,8 +359,7 @@ impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
 }
 
 /// View of a sequence of scopes
-pub type ScopesView<'entities> =
-    SliceView<'entities, Scope, ScopeView<'entities>, ScopesKeyImpl, SCOPES_LEN_BITS>;
+pub type ScopesView<'entities> = SliceView<'entities, Scope, ScopeView<'entities>, ScopesKey>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]

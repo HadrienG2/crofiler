@@ -1,5 +1,6 @@
 //! Interning sequences of things
 
+use crate::{InternerKey, Resolver};
 use ahash::RandomState;
 use hashbrown::raw::RawTable;
 use lasso::{Key, Spur};
@@ -29,28 +30,30 @@ impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
         let usize_bits = std::mem::size_of::<usize>() * 8;
         assert!(LEN_BITS < usize_bits as u32);
     }
+}
+//
+impl<Inner: Key, const LEN_BITS: u32> InternerKey for SequenceKey<Inner, LEN_BITS> {
+    type ImplKey = Range<usize>;
 
-    /// Returns the `Range<usize>` that represents the current key
-    pub fn into_range_usize(self) -> Range<usize> {
+    fn into_impl_key(self) -> Range<usize> {
         let packed = self.0.into_usize();
         let len = packed & ((1 << LEN_BITS) - 1);
         let offset = packed >> LEN_BITS;
         offset..offset + len
     }
 
-    /// Attempts to create a key from a `Range<usize>`, returning `None` if it fails
-    pub fn try_from_range_usize(range: Range<usize>) -> Option<Self> {
+    fn try_from_impl_key(impl_key: Range<usize>) -> Option<Self> {
         // Type-level sanity checks that should be validated at compile time
         Self::check_configuration();
 
         // Ensure that the range offset fits in the bit budget
-        let offset = range.start;
+        let offset = impl_key.start;
         if offset.leading_zeros() < LEN_BITS {
             return None;
         }
 
         // Ensure that the range length fits in the bit budget
-        let len = range.count();
+        let len = impl_key.count();
         if len >= (1 << LEN_BITS) {
             return None;
         }
@@ -63,24 +66,35 @@ impl<Inner: Key, const LEN_BITS: u32> SequenceKey<Inner, LEN_BITS> {
 
 /// Interned sequence of things
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InternedSequences<Item, KeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
+pub struct InternedSequences<Item, K: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>> {
     /// Concatened sequence of all interned sequences
     concatenated: Box<[Item]>,
 
     /// Added to please rustc
-    phantom: PhantomData<KeyImpl>,
+    phantom: PhantomData<K>,
 }
 //
-impl<Item, KeyImpl: Key, const LEN_BITS: u32> InternedSequences<Item, KeyImpl, LEN_BITS> {
+impl<Item, K: InternerKey<ImplKey = Range<usize>>> InternedSequences<Item, K> {
     /// Retrieve a previously interned sequence of things
-    pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> &[Item] {
-        &self.concatenated[key.into_range_usize()]
+    pub fn get(&self, key: K) -> &[Item] {
+        <Self as Resolver>::get(self, key)
+    }
+}
+//
+impl<Item, K: InternerKey<ImplKey = Range<usize>>> Resolver for InternedSequences<Item, K> {
+    type Key = K;
+    type Item = [Item];
+    fn get(&self, key: K) -> &[Item] {
+        &self.concatenated[key.into_impl_key()]
     }
 }
 
 /// Interner for sequence of things
 #[derive(Clone)]
-pub struct SequenceInterner<Item: Clone + Eq + Hash, KeyImpl: Key = Spur, const LEN_BITS: u32 = 8> {
+pub struct SequenceInterner<
+    Item: Clone + Eq + Hash,
+    K: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
+> {
     /// Concatenated interned sequences
     concatenated: Vec<Item>,
 
@@ -88,12 +102,10 @@ pub struct SequenceInterner<Item: Clone + Eq + Hash, KeyImpl: Key = Spur, const 
     random_state: RandomState,
 
     /// Keys to sequences interned so far in `concatenated`
-    sequences: RawTable<SequenceKey<KeyImpl, LEN_BITS>>,
+    sequences: RawTable<K>,
 }
 //
-impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
-    SequenceInterner<Item, KeyImpl, LEN_BITS>
-{
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceInterner<Item, K> {
     /// Set up a sequence interner
     pub fn new() -> Self {
         Self {
@@ -104,14 +116,10 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Retrieve a previously interned input sequence's key, if it exists
-    fn get_sequence_key(
-        &self,
-        sequence_hash: u64,
-        sequence: &[Item],
-    ) -> Option<SequenceKey<KeyImpl, LEN_BITS>> {
+    fn get_sequence_key(&self, sequence_hash: u64, sequence: &[Item]) -> Option<K> {
         self.sequences
             .get(sequence_hash, |key| {
-                &self.concatenated[key.into_range_usize()] == sequence
+                &self.concatenated[key.into_impl_key()] == sequence
             })
             .cloned()
     }
@@ -121,21 +129,14 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     /// This assumes that the sequence has not been interned before, and that
     /// self.concatenated has been set up as the key suggests.
     ///
-    fn insert_sequence_key(
-        &mut self,
-        sequence_hash: u64,
-        sequence_key: SequenceKey<KeyImpl, LEN_BITS>,
-    ) {
+    fn insert_sequence_key(&mut self, sequence_hash: u64, sequence_key: K) {
         self.sequences.insert(sequence_hash, sequence_key, |key| {
-            hash(
-                &self.random_state,
-                &self.concatenated[key.into_range_usize()],
-            )
+            hash(&self.random_state, &self.concatenated[key.into_impl_key()])
         });
     }
 
     /// Prepare to intern a sequence in an iterative fashion, item by item
-    pub fn entry(&mut self) -> SequenceEntry<Item, KeyImpl, LEN_BITS> {
+    pub fn entry(&mut self) -> SequenceEntry<Item, K> {
         let initial_concatenated_len = self.concatenated.len();
         SequenceEntry {
             interner: self,
@@ -144,7 +145,7 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Intern a new sequence
-    pub fn intern(&mut self, sequence: &[Item]) -> SequenceKey<KeyImpl, LEN_BITS> {
+    pub fn intern(&mut self, sequence: &[Item]) -> K {
         // Hash the input sequence
         let hash = hash(&self.random_state, sequence);
 
@@ -152,10 +153,8 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
         self.get_sequence_key(hash, sequence).unwrap_or_else(|| {
             // Otherwise intern the sequence
             let start = self.concatenated.len();
-            let key = SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(
-                start..start + sequence.len(),
-            )
-            .expect("Key space exhausted, must use a larger KeyImpl or more LEN_BITS");
+            let key = K::try_from_impl_key(start..start + sequence.len())
+                .expect("Key space exhausted, must use a larger K");
             self.concatenated.extend_from_slice(sequence);
             self.insert_sequence_key(hash, key);
             key
@@ -163,8 +162,8 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Retrieve a previously interned sequence
-    pub fn get(&self, key: SequenceKey<KeyImpl, LEN_BITS>) -> &[Item] {
-        &self.concatenated[key.into_range_usize()]
+    pub fn get(&self, key: K) -> &[Item] {
+        <Self as Resolver>::get(self, key)
     }
 
     /// Truth that no sequence has been interned yet
@@ -189,14 +188,14 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
                 .iter()
                 .map(|bucket| {
                     let range = bucket.read();
-                    range.into_range_usize().count()
+                    range.into_impl_key().count()
                 })
                 .max()
         }
     }
 
     /// Finalize the collection of sequences, keeping all keys valid
-    pub fn finalize(self) -> InternedSequences<Item, KeyImpl, LEN_BITS> {
+    pub fn finalize(self) -> InternedSequences<Item, K> {
         InternedSequences {
             concatenated: self.concatenated.into_boxed_slice(),
             phantom: PhantomData,
@@ -204,11 +203,21 @@ impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 }
 //
-impl<Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Default
-    for SequenceInterner<Item, KeyImpl, LEN_BITS>
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Default
+    for SequenceInterner<Item, K>
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+//
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Resolver
+    for SequenceInterner<Item, K>
+{
+    type Key = K;
+    type Item = [Item];
+    fn get(&self, key: K) -> &[Item] {
+        &self.concatenated[key.into_impl_key()]
     }
 }
 //
@@ -223,18 +232,17 @@ fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, sequence: &[Item]) 
 pub struct SequenceEntry<
     'interner,
     Item: Clone + Eq + Hash,
-    KeyImpl: Key = Spur,
-    const LEN_BITS: u32 = 8,
+    K: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
 > {
     /// Underlying sequence interner
-    interner: &'interner mut SequenceInterner<Item, KeyImpl, LEN_BITS>,
+    interner: &'interner mut SequenceInterner<Item, K>,
 
     /// Initial length of interner.concatenated
     initial_concatenated_len: usize,
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
-    SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
+    SequenceEntry<'interner, Item, K>
 {
     /// Add an item to the sequence that is being interned
     pub fn push(&mut self, item: Item) {
@@ -256,14 +264,13 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 
     /// Finish the interning transaction
-    pub fn intern(self) -> SequenceKey<KeyImpl, LEN_BITS> {
+    pub fn intern(self) -> K {
         // Hash the input sequence and figure what its interning key would be
         let sequence = &self.interner.concatenated[self.initial_concatenated_len..];
         let hash = hash(&self.interner.random_state, sequence);
         let start = self.initial_concatenated_len;
-        let new_key =
-            SequenceKey::<KeyImpl, LEN_BITS>::try_from_range_usize(start..start + sequence.len())
-                .expect("Went above sequence key capacity, please use a bigger sequence key");
+        let new_key = K::try_from_impl_key(start..start + sequence.len())
+            .expect("Key space exhausted, please use a bigger K");
 
         // If this sequence was interned before, return the same key
         if let Some(old_key) = self.interner.get_sequence_key(hash, sequence) {
@@ -278,8 +285,8 @@ impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32>
     }
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, KeyImpl: Key, const LEN_BITS: u32> Drop
-    for SequenceEntry<'interner, Item, KeyImpl, LEN_BITS>
+impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Drop
+    for SequenceEntry<'interner, Item, K>
 {
     fn drop(&mut self) {
         // Undo any previous interning work
@@ -309,8 +316,8 @@ pub(crate) mod tests {
     fn test_sequence_key<Inner: Key + Debug, const LEN_BITS: u32>() {
         // Empty ranges should be supported
         let test_round_trip = |input: Range<usize>| {
-            let key = SequenceKey::<Inner, LEN_BITS>::try_from_range_usize(input.clone());
-            assert_eq!(key.map(SequenceKey::into_range_usize), Some(input));
+            let key = SequenceKey::<Inner, LEN_BITS>::try_from_impl_key(input.clone());
+            assert_eq!(key.map(SequenceKey::into_impl_key), Some(input));
         };
         test_round_trip(0..0);
 
@@ -329,7 +336,7 @@ pub(crate) mod tests {
         // An excessive length or offset should error out cleanly
         let test_failed_conversion = |input: Range<usize>| {
             assert_eq!(
-                SequenceKey::<Inner, LEN_BITS>::try_from_range_usize(input),
+                SequenceKey::<Inner, LEN_BITS>::try_from_impl_key(input),
                 None
             );
         };
@@ -351,7 +358,7 @@ pub(crate) mod tests {
     }
 
     type TestedKey = SequenceKey<lasso::Spur, 8>;
-    type TestedInterner = SequenceInterner<bool, lasso::Spur, 8>;
+    type TestedInterner = SequenceInterner<bool, TestedKey>;
 
     fn test_final_state(inputs: &[&[bool]], interner: TestedInterner) {
         let sequences = interner.finalize();
@@ -367,7 +374,7 @@ pub(crate) mod tests {
         for input in inputs {
             assert_eq!(
                 sequences.get(
-                    TestedKey::try_from_range_usize(seen_so_far..seen_so_far + input.len())
+                    TestedKey::try_from_impl_key(seen_so_far..seen_so_far + input.len())
                         .expect("If input could be interned, its key should fit in TestedKey")
                 ),
                 *input
@@ -472,7 +479,7 @@ pub(crate) mod tests {
         ) {
             let mut interner = TestedInterner::new();
 
-            let expected_key = TestedKey::try_from_range_usize(0..input.len())
+            let expected_key = TestedKey::try_from_impl_key(0..input.len())
                 .expect("The test dataset is chosen so that keys fit in TestedKey");
             assert_eq!(intern(&mut interner, input), expected_key);
             assert_eq!(interner.concatenated, input);
@@ -510,7 +517,7 @@ pub(crate) mod tests {
             let key1 = interner.intern(input1);
             let interner1 = interner.clone();
 
-            let key2 = TestedKey::try_from_range_usize(
+            let key2 = TestedKey::try_from_impl_key(
                 interner.num_items()..interner.num_items() + input2.len(),
             )
             .expect("The test dataset is chosen so that keys fit in TestedKey");

@@ -10,28 +10,23 @@ use crate::{
     display::{CustomDisplay, DisplayState},
     interning::recursion::RecursiveSequenceInterner,
     subparsers::{
-        functions::{
-            FunctionArgumentsKeyImpl, FunctionParametersKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS,
-            FUNCTION_PARAMETERS_LEN_BITS,
-        },
+        functions::{FunctionArgumentsKey, FunctionParametersKey},
         names::{
             atoms::IdentifierKey,
-            scopes::{Scope, ScopesKeyImpl, SCOPES_LEN_BITS},
+            scopes::{Scope, ScopesKey},
         },
-        templates::{
-            TemplateParameter, TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS,
-        },
+        templates::{TemplateParameter, TemplateParameterListKey},
         types::{
-            declarators::{DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS},
+            declarators::{DeclOperator, DeclaratorKey},
             specifiers::legacy::{self, LegacyName},
             TypeKey, TypeLike, TypeView,
         },
-        values::{AfterValue, ValueKey, ValueLike, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS},
+        values::{AfterValue, ValueKey, ValueLike, ValueTrailerKey},
     },
 };
 use asylum::{
     lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
-    path::{self, InternedPaths, PathInterner},
+    path,
     sequence::InternedSequences,
     Interned, Interner,
 };
@@ -71,9 +66,12 @@ pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
 type PathKeyImpl = Spur;
 const PATH_LEN_BITS: u32 = 8;
 
+// Declarations that fall out of the previous ones
+type PathInterner = path::PathInterner<PathComponentKey, PathKey>;
+type InternedPaths = path::InternedPaths<PathComponentKey, PathKey>;
+
 /// Interned file path
-pub type InternedPath<'entities> =
-    path::InternedPath<'entities, PathComponentKey, RodeoResolver<PathComponentKey>>;
+pub type InternedPath<'entities> = path::InternedPath<'entities, InternedPaths>;
 
 /// Parser for C++ entities
 //
@@ -111,7 +109,7 @@ pub struct EntityParser {
     identifiers: RefCell<Rodeo<IdentifierKey>>,
 
     /// Interned file paths
-    paths: RefCell<PathInterner<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>>,
+    paths: RefCell<PathInterner>,
 
     /// Interned types
     types: RefCell<Interner<TypeLike, TypeKey>>,
@@ -120,29 +118,23 @@ pub struct EntityParser {
     values: RefCell<Interner<ValueLike, ValueKey>>,
 
     /// Interned template parameter lists
-    template_parameter_lists: RecursiveSequenceInterner<
-        TemplateParameter,
-        TemplateParameterListKeyImpl,
-        TEMPLATE_PARAMETER_LIST_LEN_BITS,
-    >,
+    template_parameter_lists:
+        RecursiveSequenceInterner<TemplateParameter, TemplateParameterListKey>,
 
     /// Interned value trailers (part of ValueLike that comes after ValueHeader)
-    value_trailers:
-        RecursiveSequenceInterner<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
+    value_trailers: RecursiveSequenceInterner<AfterValue, ValueTrailerKey>,
 
     /// Interned function call arguments (sequences of values)
-    function_arguments:
-        RecursiveSequenceInterner<ValueKey, FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>,
+    function_arguments: RecursiveSequenceInterner<ValueKey, FunctionArgumentsKey>,
 
     /// Interned function parameter sets (sequences of types)
-    function_parameters:
-        RecursiveSequenceInterner<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
+    function_parameters: RecursiveSequenceInterner<TypeKey, FunctionParametersKey>,
 
     /// Interned sequences of scopes
-    scope_sequences: RecursiveSequenceInterner<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+    scope_sequences: RecursiveSequenceInterner<Scope, ScopesKey>,
 
     /// Interned declarators
-    declarators: RecursiveSequenceInterner<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
+    declarators: RecursiveSequenceInterner<DeclOperator, DeclaratorKey>,
 }
 //
 impl EntityParser {
@@ -242,7 +234,7 @@ pub struct Entities {
     identifiers: RodeoResolver<IdentifierKey>,
 
     /// Paths
-    paths: InternedPaths<PathComponentKey, PathKeyImpl, PATH_LEN_BITS>,
+    paths: InternedPaths,
 
     /// Types
     types: Interned<TypeLike, TypeKey>,
@@ -251,28 +243,22 @@ pub struct Entities {
     values: Interned<ValueLike, ValueKey>,
 
     /// Template parameter lists
-    template_parameter_lists: InternedSequences<
-        TemplateParameter,
-        TemplateParameterListKeyImpl,
-        TEMPLATE_PARAMETER_LIST_LEN_BITS,
-    >,
+    template_parameter_lists: InternedSequences<TemplateParameter, TemplateParameterListKey>,
 
     /// Value trailers (part of ValueLike that comes after ValueHeader)
-    value_trailers: InternedSequences<AfterValue, ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>,
+    value_trailers: InternedSequences<AfterValue, ValueTrailerKey>,
 
     /// Function call arguments (sequences of values)
-    function_arguments:
-        InternedSequences<ValueKey, FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>,
+    function_arguments: InternedSequences<ValueKey, FunctionArgumentsKey>,
 
     /// Function parameter sets (sequences of types)
-    function_parameters:
-        InternedSequences<TypeKey, FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>,
+    function_parameters: InternedSequences<TypeKey, FunctionParametersKey>,
 
     /// Sequences of scopes
-    scope_sequences: InternedSequences<Scope, ScopesKeyImpl, SCOPES_LEN_BITS>,
+    scope_sequences: InternedSequences<Scope, ScopesKey>,
 
     /// Declarators (sequences of DeclOperator)
-    declarators: InternedSequences<DeclOperator, DeclaratorKeyImpl, DECLARATOR_LEN_BITS>,
+    declarators: InternedSequences<DeclOperator, DeclaratorKey>,
 }
 //
 impl Entities {
