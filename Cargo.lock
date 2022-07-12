@@ -53,6 +53,7 @@ dependencies = [
  "maplit",
  "more-asserts",
  "pretty_assertions",
+ "reffers",
  "thiserror",
 ]
 

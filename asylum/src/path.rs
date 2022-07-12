@@ -36,7 +36,7 @@ pub trait PathResolver {
 
     /// Retrieve an object using its interning key
     fn get(&self, key: Self::PathKey) -> InternedPath<Self> {
-        InternedPath { key, parent: self }
+        InternedPath::new(self, key)
     }
 }
 
@@ -89,27 +89,48 @@ impl<ComponentKey: Key, PK: InternerKey<ImplKey = Range<usize>>> PathResolver
 /// Accessor to an interned path
 #[derive(Debug, PartialEq)]
 pub struct InternedPath<'parent, Parent: PathResolver + ?Sized> {
-    /// Interned path key
-    key: Parent::PathKey,
-
+    #[cfg(not(feature = "reffers"))]
     /// Parent from which this path comes
     parent: &'parent Parent,
+
+    #[cfg(feature = "reffers")]
+    /// Parent from which this path comes
+    parent: reffers::ARef<'parent, Parent>,
+
+    /// Interned path key
+    key: Parent::PathKey,
 }
 //
-impl<'parent, Parent: PathResolver> InternedPath<'parent, Parent> {
+impl<'parent, Parent: PathResolver + ?Sized> InternedPath<'parent, Parent> {
+    #[cfg(not(feature = "reffers"))]
+    /// Get access to an interned path
+    pub fn new(parent: &'parent Parent, key: Parent::PathKey) -> Self {
+        Self { parent, key }
+    }
+
+    #[cfg(feature = "reffers")]
+    /// Get access to an interned path
+    pub fn new(parent: impl Into<reffers::ARef<'parent, Parent>>, key: Parent::PathKey) -> Self {
+        Self {
+            parent: parent.into(),
+            key,
+        }
+    }
+
     /// Iterate over path components
-    pub fn components(
-        &self,
-    ) -> impl Iterator<Item = InternedComponent<'parent, Parent::ComponentKey>>
+    pub fn components<'self_>(
+        &'self_ self,
+    ) -> impl Iterator<Item = InternedComponent<'self_, Parent::ComponentKey>>
            + DoubleEndedIterator
-           + Clone {
-        let component_resolver = self.parent.component_resolver();
+           + Clone
+           + 'self_
+           + Captures<'parent> {
         self.parent
             .get_path_components(self.key)
             .iter()
             .map(move |&key| InternedComponent {
                 key,
-                value: component_resolver.resolve(&key),
+                value: self.parent.component_resolver().resolve(&key),
             })
     }
 
@@ -123,7 +144,11 @@ impl<'parent, Parent: PathResolver> InternedPath<'parent, Parent> {
     }
 }
 //
-impl<'parent, Parent: PathResolver> Display for InternedPath<'parent, Parent> {
+/// Workaround for impl Trait limitation
+pub trait Captures<'a> {}
+impl<T: ?Sized> Captures<'_> for T {}
+//
+impl<'parent, Parent: PathResolver + ?Sized> Display for InternedPath<'parent, Parent> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.to_boxed_path().display())
     }
