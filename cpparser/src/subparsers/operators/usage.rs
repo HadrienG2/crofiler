@@ -7,7 +7,7 @@ use crate::{
         functions::{FunctionArgumentsKey, FunctionArgumentsView},
         types::{TypeKey, TypeView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -162,9 +162,7 @@ impl EntityParser {
         })
         .parse(s)
     }
-}
-//
-impl Entities {
+
     /// Access a previously parsed new-expression
     pub fn new_expression(&self, ne: NewExpression) -> NewExpressionView {
         NewExpressionView::new(ne, self)
@@ -205,12 +203,12 @@ pub struct NewExpressionView<'entities> {
     inner: NewExpression,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> NewExpressionView<'entities> {
     /// Build a new-expression view
-    pub fn new(inner: NewExpression, entities: &'entities Entities) -> Self {
+    pub fn new(inner: NewExpression, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -229,7 +227,7 @@ impl<'entities> NewExpressionView<'entities> {
 
     /// Type of values being created
     pub fn ty(&self) -> TypeView {
-        TypeView::new(self.inner.ty, self.entities)
+        self.entities.type_like(self.inner.ty)
     }
 
     /// Parameters to the values' constructor (if any)
@@ -242,8 +240,7 @@ impl<'entities> NewExpressionView<'entities> {
 //
 impl<'entities> PartialEq for NewExpressionView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //

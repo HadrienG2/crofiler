@@ -3,7 +3,7 @@
 use crate::{
     asylum::{lasso::Spur, sequence::SequenceKey, InternerKey, Resolver},
     display::{CustomDisplay, DisplayState},
-    Entities,
+    EntityParser,
 };
 use reffers::ARef;
 use std::{
@@ -28,7 +28,7 @@ pub struct SliceView<
     inner: ARef<'entities, [Item]>,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 
     /// Making rustc happy
     view: PhantomData<*const ItemView>,
@@ -45,7 +45,7 @@ impl<
     pub fn new<SeqResolver>(
         key: Key,
         sequences: impl Into<ARef<'entities, SeqResolver>>,
-        entities: &'entities Entities,
+        entities: &'entities EntityParser,
     ) -> Self
     where
         SeqResolver: Resolver<Key = Key, Item = [Item]> + 'entities,
@@ -97,8 +97,7 @@ impl<
     > PartialEq for SliceView<'entities, Item, ItemView, Key>
 {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.key == other.key)
+        (self.entities as *const _ == other.entities as *const _) && (self.key == other.key)
     }
 }
 //
@@ -151,7 +150,7 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
     type Inner: 'entities;
 
     /// Wrap the storage type
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self;
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self;
 
     /// String to be used at the beginning of the display
     const DISPLAY_HEADER: &'static str;
@@ -177,7 +176,7 @@ mod tests {
     impl<'entities> SliceItemView<'entities> for TestItemView {
         type Inner = TestItem;
 
-        fn new(inner: Self::Inner, _entities: &'entities Entities) -> Self {
+        fn new(inner: Self::Inner, _entities: &'entities EntityParser) -> Self {
             Self(inner)
         }
 
@@ -197,7 +196,7 @@ mod tests {
 
     /// Test harness for slices
     fn setup_and_check(check: impl Fn(&[TestItem], TestSliceView)) {
-        let entities = EntityParser::new().finalize();
+        let entities = EntityParser::new();
         for sequence in TEST_SEQUENCES {
             let mut sequences = TestSequenceInterner::new();
             let key = sequences.intern(sequence);
@@ -266,12 +265,11 @@ mod tests {
     /// Test equality operator
     #[test]
     fn equality() {
-        let entities1 = EntityParser::new().finalize();
+        let entities1 = EntityParser::new();
         let mut entities2 = EntityParser::new();
         entities2
             .parse_entity("<unknown>")
             .expect("This is a known-good parse which should not fail");
-        let entities2 = entities2.finalize();
 
         for sequence1 in TEST_SEQUENCES {
             for sequence2 in TEST_SEQUENCES {

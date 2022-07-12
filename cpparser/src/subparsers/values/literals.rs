@@ -2,7 +2,7 @@
 
 use crate::{
     subparsers::names::atoms::{IdentifierKey, IdentifierView},
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -24,9 +24,7 @@ impl EntityParser {
             })
             .parse(s)
     }
-}
-//
-impl Entities {
+
     /// Access a previously parsed literal
     pub fn literal(&self, l: Literal) -> LiteralView {
         LiteralView::new(l, self)
@@ -58,12 +56,12 @@ pub struct LiteralView<'entities> {
     inner: Literal,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> LiteralView<'entities> {
     /// Build an id-expression view
-    pub fn new(inner: Literal, entities: &'entities Entities) -> Self {
+    pub fn new(inner: Literal, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -82,8 +80,7 @@ impl<'entities> LiteralView<'entities> {
 //
 impl<'entities> PartialEq for LiteralView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //

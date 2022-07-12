@@ -11,7 +11,7 @@ use crate::{
         functions::{FunctionSignature, FunctionSignatureView},
         types::qualifiers::{ConstVolatile, Reference},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
@@ -27,7 +27,7 @@ use reffers::ARef;
 /// Scope sequences as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a scope sequence by passing this key
-/// to the scopes() method of the Entities struct.
+/// to the scopes() method of EntityParser.
 ///
 pub type ScopesKey = SequenceKey<ScopesKeyImpl, SCOPES_LEN_BITS>;
 type ScopesKeyImpl = Spur;
@@ -54,6 +54,11 @@ impl EntityParser {
         )(s)
     }
 
+    /// Access a previously parsed id-expression
+    pub fn id_expression(&self, id: IdExpression) -> IdExpressionView {
+        IdExpressionView::new(id, self)
+    }
+
     /// Parser for nested name-specifiers (= sequences of scopes).
     ///
     /// If you expect an UnqualifiedId after your nested-name-specifier, then what
@@ -77,6 +82,11 @@ impl EntityParser {
             Ok((rest, (path, None))) => Ok((rest, path)),
             Err(error) => Err(error),
         }
+    }
+
+    /// Access a previously parsed nested name specifier
+    pub fn nested_name_specifier(&self, nns: NestedNameSpecifier) -> NestedNameSpecifierView {
+        NestedNameSpecifierView::new(nns, self)
     }
 
     /// Parser for a nested name-specifier, optionally followed by an UnqualifiedId,
@@ -129,6 +139,11 @@ impl EntityParser {
         // If control reaches this point, no trailing unqualified-id was found, the
         // scope list ended on its own
         Ok((input, make_output(scopes, None)))
+    }
+
+    /// Access a previously parsed sequence of scopes
+    pub(crate) fn scope_sequence(&self, key: ScopesKey) -> ScopesView {
+        ScopesView::new(key, self.scope_sequences.borrow(), self)
     }
 
     /// Retrieve a scope sequence previously parsed by parse_proto_id_expression
@@ -202,23 +217,6 @@ impl EntityParser {
         }
     }
 }
-//
-impl Entities {
-    /// Access a previously parsed id-expression
-    pub fn id_expression(&self, id: IdExpression) -> IdExpressionView {
-        IdExpressionView::new(id, self)
-    }
-
-    /// Access a previously parsed nested name specifier
-    pub fn nested_name_specifier(&self, nns: NestedNameSpecifier) -> NestedNameSpecifierView {
-        NestedNameSpecifierView::new(nns, self)
-    }
-
-    /// Access a previously parsed sequence of scopes
-    pub(crate) fn scope_sequence(&self, key: ScopesKey) -> ScopesView {
-        ScopesView::new(key, &self.scope_sequences, self)
-    }
-}
 
 /// C++ id-expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -236,12 +234,12 @@ pub struct IdExpressionView<'entities> {
     inner: IdExpression,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> IdExpressionView<'entities> {
     /// Build an id-expression view
-    pub fn new(inner: IdExpression, entities: &'entities Entities) -> Self {
+    pub fn new(inner: IdExpression, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -258,8 +256,7 @@ impl<'entities> IdExpressionView<'entities> {
 //
 impl<'entities> PartialEq for IdExpressionView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -307,12 +304,12 @@ pub struct NestedNameSpecifierView<'entities> {
     inner: NestedNameSpecifier,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> NestedNameSpecifierView<'entities> {
     /// Build a nested name specifier view
-    pub fn new(inner: NestedNameSpecifier, entities: &'entities Entities) -> Self {
+    pub fn new(inner: NestedNameSpecifier, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -329,8 +326,7 @@ impl<'entities> NestedNameSpecifierView<'entities> {
 //
 impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -395,12 +391,12 @@ pub struct ScopeView<'entities> {
     inner: Scope,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> ScopeView<'entities> {
     /// Build a scope view
-    pub fn new(inner: Scope, entities: &'entities Entities) -> Self {
+    pub fn new(inner: Scope, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -420,8 +416,7 @@ impl<'entities> ScopeView<'entities> {
 //
 impl<'entities> PartialEq for ScopeView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -446,7 +441,7 @@ impl<'entities> CustomDisplay for ScopeView<'entities> {
 impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
     type Inner = Scope;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 

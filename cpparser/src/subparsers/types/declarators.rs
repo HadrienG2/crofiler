@@ -11,7 +11,7 @@ use crate::{
         names::scopes::{NestedNameSpecifier, NestedNameSpecifierView},
         values::{ValueKey, ValueView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
@@ -27,7 +27,7 @@ use reffers::ARef;
 /// declarators as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a declarator by passing this key to the
-/// declarator() method of the Entities struct.
+/// declarator() method of EntityParser.
 ///
 pub type DeclaratorKey = SequenceKey<DeclaratorKeyImpl, DECLARATOR_LEN_BITS>;
 type DeclaratorKeyImpl = Spur;
@@ -58,6 +58,11 @@ impl EntityParser {
         )
         .map(|entry| entry.intern())
         .parse(s)
+    }
+
+    /// Access a previously parsed declarator
+    pub fn declarator(&self, d: DeclaratorKey) -> DeclaratorView {
+        DeclaratorView::new(d, self.declarators.borrow(), self)
     }
 
     /// Retrieve a previously interned declarator
@@ -154,13 +159,6 @@ impl EntityParser {
         }
     }
 }
-//
-impl Entities {
-    /// Access a previously parsed declarator
-    pub fn declarator(&self, d: DeclaratorKey) -> DeclaratorView {
-        DeclaratorView::new(d, &self.declarators, self)
-    }
-}
 
 /// View of a declarator
 pub type DeclaratorView<'entities> =
@@ -248,7 +246,7 @@ pub enum DeclOperatorView<'entities> {
 //
 impl<'entities> DeclOperatorView<'entities> {
     /// Build an operator view
-    pub(crate) fn new(op: DeclOperator, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(op: DeclOperator, entities: &'entities EntityParser) -> Self {
         match op {
             DeclOperator::ConstVolatile(cv) => Self::ConstVolatile(cv),
             DeclOperator::Pointer { path, cv } => Self::Pointer {
@@ -321,7 +319,7 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
 impl<'entities> SliceItemView<'entities> for DeclOperatorView<'entities> {
     type Inner = DeclOperator;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 

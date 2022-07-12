@@ -12,11 +12,12 @@ use crate::{
     display::{CustomDisplay, DisplayState},
     interning::slice::SliceItemView,
     subparsers::functions::{FunctionArgumentsKey, FunctionArgumentsView},
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::lasso::Spur;
 use nom::Parser;
 use nom_supreme::ParserExt;
+use reffers::ARef;
 use std::fmt::{self, Display, Formatter};
 
 /// Interned C++ type key
@@ -25,7 +26,7 @@ use std::fmt::{self, Display, Formatter};
 /// types as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a type by passing this key to the
-/// type_like() method of the Entities struct.
+/// type_like() method of EntityParser.
 ///
 pub type TypeKey = Spur;
 //
@@ -72,22 +73,19 @@ impl EntityParser {
         .parse(s)
     }
 
+    /// Access a previously parsed type
+    pub fn type_like(&self, t: TypeKey) -> TypeView {
+        TypeView::new(t, self)
+    }
+
     /// Retrieve a type previously parsed by parse_type_like
-    #[cfg(test)]
-    pub(crate) fn raw_type_like(&self, key: TypeKey) -> TypeLike {
-        self.types.borrow().get(key).clone()
+    pub(crate) fn raw_type_like(&self, key: TypeKey) -> ARef<TypeLike> {
+        ARef::new(self.types.borrow()).map(|types| types.get(key))
     }
 
     /// Tell how many unique types have been parsed so far
     pub fn num_types(&self) -> usize {
         self.types.borrow().len()
-    }
-}
-//
-impl Entities {
-    /// Access a previously parsed type
-    pub fn type_like(&self, t: TypeKey) -> TypeView {
-        TypeView::new(t, self)
     }
 }
 
@@ -110,18 +108,18 @@ pub struct TypeView<'entities> {
     key: TypeKey,
 
     /// Wrapped TypeLike
-    inner: &'entities TypeLike,
+    inner: ARef<'entities, TypeLike>,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> TypeView<'entities> {
     /// Set up a new C++ type view
-    pub fn new(key: TypeKey, entities: &'entities Entities) -> Self {
+    pub fn new(key: TypeKey, entities: &'entities EntityParser) -> Self {
         Self {
             key,
-            inner: entities.types.get(key),
+            inner: entities.raw_type_like(key),
             entities,
         }
     }
@@ -144,8 +142,7 @@ impl<'entities> TypeView<'entities> {
 //
 impl<'entities> PartialEq for TypeView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.key == other.key)
+        (self.entities as *const _ == other.entities as *const _) && (self.key == other.key)
     }
 }
 //
@@ -183,7 +180,7 @@ impl<'entities> CustomDisplay for TypeView<'entities> {
 impl<'entities> SliceItemView<'entities> for TypeView<'entities> {
     type Inner = TypeKey;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 
@@ -207,7 +204,7 @@ mod tests {
         let parse_type_like = |parser: &mut EntityParser, s| {
             parser
                 .parse_type_like(s)
-                .map(|(rest, key)| (rest, parser.raw_type_like(key)))
+                .map(|(rest, key)| (rest, parser.raw_type_like(key).clone()))
         };
         let attributes = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
         let type_specifier =

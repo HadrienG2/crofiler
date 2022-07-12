@@ -25,10 +25,8 @@ use crate::{
     },
 };
 use asylum::{
-    lasso::{MiniSpur, Rodeo, RodeoResolver, Spur},
-    path,
-    sequence::InternedSequences,
-    Interned, Interner,
+    lasso::{MiniSpur, Rodeo, Spur},
+    path, Interner,
 };
 use nom::{error::Error, Parser};
 use nom_supreme::ParserExt;
@@ -66,13 +64,10 @@ pub type PathComponentKey = MiniSpur;
 pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
 type PathKeyImpl = Spur;
 const PATH_LEN_BITS: u32 = 8;
-
-// Declarations that fall out of the previous ones
 type PathInterner = path::PathInterner<PathComponentKey, PathKey>;
-type InternedPaths = path::InternedPaths<PathComponentKey, PathKey>;
 
 /// Interned file path
-pub type InternedPath<'entities> = path::InternedPath<'entities, InternedPaths>;
+pub type InternedPath<'entities> = path::InternedPath<'entities, PathInterner>;
 
 /// Parser for C++ entities
 //
@@ -104,7 +99,7 @@ pub type InternedPath<'entities> = path::InternedPath<'entities, InternedPaths>;
 //
 pub struct EntityParser {
     /// Legacy name parser
-    legacy_name_parser: Box<dyn Fn(&str) -> IResult<LegacyName>>,
+    legacy_name_parser: Box<dyn Send + Fn(&str) -> IResult<LegacyName>>,
 
     /// Interned identifiers
     identifiers: RefCell<Rodeo<IdentifierKey>>,
@@ -175,9 +170,8 @@ impl EntityParser {
     }
 
     /// Retrieve a previously interned path
-    // FIXME: Adjust InternedPath alias to hide PathInterner
-    pub fn path(&self, key: PathKey) -> path::InternedPath<PathInterner> {
-        path::InternedPath::new(ARef::new(self.paths.borrow()), key)
+    pub fn path(&self, key: PathKey) -> InternedPath {
+        InternedPath::new(ARef::new(self.paths.borrow()), key)
     }
 
     /// Total number of path components across all interned paths so far
@@ -211,72 +205,15 @@ impl EntityParser {
         final_parser(type_like.or(unknown).terminated(eof))(s)
     }
 
-    /// Done parsing entities, just keep access to them
-    pub fn finalize(self) -> Entities {
-        Entities {
-            identifiers: self.identifiers.into_inner().into_resolver(),
-            paths: self.paths.into_inner().finalize(),
-            types: self.types.into_inner().finalize(),
-            values: self.values.into_inner().finalize(),
-            template_parameter_lists: self.template_parameter_lists.into_inner().finalize(),
-            value_trailers: self.value_trailers.into_inner().finalize(),
-            function_arguments: self.function_arguments.into_inner().finalize(),
-            function_parameters: self.function_parameters.into_inner().finalize(),
-            scope_sequences: self.scope_sequences.into_inner().finalize(),
-            declarators: self.declarators.into_inner().finalize(),
-        }
+    /// Retrieve a previously interned entity
+    pub fn entity(&self, key: EntityKey) -> EntityView {
+        EntityView::new(key, self)
     }
 }
 //
 impl Default for EntityParser {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Set of previously parsed C++ entities
-#[derive(Debug, PartialEq)]
-pub struct Entities {
-    /// Identifiers
-    identifiers: RodeoResolver<IdentifierKey>,
-
-    /// Paths
-    paths: InternedPaths,
-
-    /// Types
-    types: Interned<TypeLike, TypeKey>,
-
-    /// Values
-    values: Interned<ValueLike, ValueKey>,
-
-    /// Template parameter lists
-    template_parameter_lists: InternedSequences<TemplateParameter, TemplateParameterListKey>,
-
-    /// Value trailers (part of ValueLike that comes after ValueHeader)
-    value_trailers: InternedSequences<AfterValue, ValueTrailerKey>,
-
-    /// Function call arguments (sequences of values)
-    function_arguments: InternedSequences<ValueKey, FunctionArgumentsKey>,
-
-    /// Function parameter sets (sequences of types)
-    function_parameters: InternedSequences<TypeKey, FunctionParametersKey>,
-
-    /// Sequences of scopes
-    scope_sequences: InternedSequences<Scope, ScopesKey>,
-
-    /// Declarators (sequences of DeclOperator)
-    declarators: InternedSequences<DeclOperator, DeclaratorKey>,
-}
-//
-impl Entities {
-    /// Retrieve a previously interned path
-    pub fn path(&self, key: PathKey) -> InternedPath {
-        self.paths.get(key)
-    }
-
-    /// Retrieve a previously interned entity
-    pub fn entity(&self, key: EntityKey) -> EntityView {
-        EntityView::new(key, self)
     }
 }
 
@@ -297,8 +234,8 @@ pub struct EntityView<'entities>(pub Option<TypeView<'entities>>);
 //
 impl<'entities> EntityView<'entities> {
     /// Build a new-expression view
-    pub fn new(inner: EntityKey, entities: &'entities Entities) -> Self {
-        Self(inner.map(|ty| TypeView::new(ty, entities)))
+    pub fn new(inner: EntityKey, entities: &'entities EntityParser) -> Self {
+        Self(inner.map(|ty| entities.type_like(ty)))
     }
 }
 //

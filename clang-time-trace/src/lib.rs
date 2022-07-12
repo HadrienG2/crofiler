@@ -13,7 +13,7 @@ use self::{
     stats::activity::ActivityStat,
     tree::{ActivityTree, ActivityTreeBuilder},
 };
-use cpparser::{Entities, EntityKey, EntityParser, EntityView};
+use cpparser::{EntityKey, EntityParser, EntityView};
 use log::debug;
 use serde_json as json;
 use std::{
@@ -46,13 +46,12 @@ pub use cpparser::{
 pub use json::Error as CtfParseError;
 
 /// Simplified -ftime-trace profile from a clang execution
-#[derive(Debug, PartialEq)]
 pub struct ClangTrace {
     /// Clang activities recorded by -ftime-trace
     activities: ActivityTree,
 
     /// Interned C++ entities and file paths within activities
-    entities: Entities,
+    entities: EntityParser,
 
     /// Global statistics
     global_stats: HashMap<Box<str>, GlobalStat>,
@@ -280,7 +279,7 @@ impl FromStr for ClangTrace {
         if let Some(process_name) = process_name {
             Ok(Self {
                 activities: activities.build(),
-                entities: entities.finalize(),
+                entities,
                 global_stats,
                 process_name,
                 thread_name,

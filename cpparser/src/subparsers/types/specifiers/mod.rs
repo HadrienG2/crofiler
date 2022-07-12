@@ -9,7 +9,7 @@ use super::qualifiers::ConstVolatile;
 use crate::{
     display::{CustomDisplay, DisplayState},
     subparsers::names::scopes::{IdExpression, IdExpressionView},
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -66,9 +66,7 @@ impl EntityParser {
             .map(|(cv, simple_type)| TypeSpecifier { cv, simple_type })
             .parse(s)
     }
-}
-//
-impl Entities {
+
     /// Access a previously parsed type specifier
     pub fn type_specifier(&self, ts: TypeSpecifier) -> TypeSpecifierView {
         TypeSpecifierView::new(ts, self)
@@ -105,12 +103,12 @@ pub struct TypeSpecifierView<'entities> {
     inner: TypeSpecifier,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> TypeSpecifierView<'entities> {
     /// Build a type specifier view
-    pub fn new(inner: TypeSpecifier, entities: &'entities Entities) -> Self {
+    pub fn new(inner: TypeSpecifier, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -127,8 +125,7 @@ impl<'entities> TypeSpecifierView<'entities> {
 //
 impl<'entities> PartialEq for TypeSpecifierView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -192,7 +189,7 @@ pub enum SimpleTypeView<'entities> {
 //
 impl<'entities> SimpleTypeView<'entities> {
     /// Set up a simple type specifier view
-    pub(crate) fn new(inner: SimpleType, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(inner: SimpleType, entities: &'entities EntityParser) -> Self {
         match inner {
             SimpleType::IdExpression(i) => Self::IdExpression(entities.id_expression(i)),
             SimpleType::LegacyName(l) => Self::LegacyName(l),

@@ -11,7 +11,7 @@ use crate::{
         },
         values::{ValueKey, ValueView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::{
     lasso::{MiniSpur, Spur},
@@ -33,7 +33,7 @@ use reffers::ARef;
 /// argument lists as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve the parameter list by passing this key to
-/// the function_arguments() method of the Entities struct.
+/// the function_arguments() method of EntityParser.
 ///
 pub type FunctionArgumentsKey = SequenceKey<FunctionArgumentsKeyImpl, FUNCTION_ARGUMENTS_LEN_BITS>;
 type FunctionArgumentsKeyImpl = MiniSpur;
@@ -45,7 +45,7 @@ const FUNCTION_ARGUMENTS_LEN_BITS: u32 = 6;
 /// parameters lists as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve the parameter list by passing this key to
-/// the function_parameters() method of the Entities struct.
+/// the function_parameters() method of EntityParser.
 ///
 pub type FunctionParametersKey =
     SequenceKey<FunctionParametersKeyImpl, FUNCTION_PARAMETERS_LEN_BITS>;
@@ -89,6 +89,11 @@ impl EntityParser {
         let empty_parameters = char(')').map(|_| self.function_arguments.entry().intern());
 
         preceded(arguments_header, non_empty_parameters.or(empty_parameters)).parse(s)
+    }
+
+    /// Access a previously parsed list of function arguments (from a function call)
+    pub fn function_arguments(&self, a: FunctionArgumentsKey) -> FunctionArgumentsView {
+        FunctionArgumentsView::new(a, self.function_arguments.borrow(), self)
     }
 
     /// Retrieve a function call previously parsed by parse_function_call
@@ -155,6 +160,11 @@ impl EntityParser {
         tuple.parse(s)
     }
 
+    /// Access a previously parsed function signature
+    pub fn function_signature(&self, s: FunctionSignature) -> FunctionSignatureView {
+        FunctionSignatureView::new(s, self)
+    }
+
     /// Parser recognizing a function parameter set
     fn parse_function_parameter_set_imut<'source>(
         &self,
@@ -205,6 +215,11 @@ impl EntityParser {
             .parse(s)
     }
 
+    /// Access a previously parsed list of function parameters
+    pub(crate) fn function_parameters(&self, a: FunctionParametersKey) -> FunctionParametersView {
+        FunctionParametersView::new(a, self.function_parameters.borrow(), self)
+    }
+
     /// Retrieve a function parameter set previously parsed by parse_function_signature
     #[cfg(test)]
     pub(crate) fn raw_function_parameters(&self, key: FunctionParametersKey) -> ARef<[TypeKey]> {
@@ -237,23 +252,6 @@ impl EntityParser {
             )),
         )
         .parse(s)
-    }
-}
-//
-impl Entities {
-    /// Access a previously parsed list of function arguments (from a function call)
-    pub fn function_arguments(&self, a: FunctionArgumentsKey) -> FunctionArgumentsView {
-        FunctionArgumentsView::new(a, &self.function_arguments, self)
-    }
-
-    /// Access a previously parsed function signature
-    pub fn function_signature(&self, s: FunctionSignature) -> FunctionSignatureView {
-        FunctionSignatureView::new(s, self)
-    }
-
-    /// Access a previously parsed list of function parameters
-    pub(crate) fn function_parameters(&self, a: FunctionParametersKey) -> FunctionParametersView {
-        FunctionParametersView::new(a, &self.function_parameters, self)
     }
 }
 
@@ -307,12 +305,12 @@ pub struct FunctionSignatureView<'entities> {
     inner: FunctionSignature,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> FunctionSignatureView<'entities> {
     /// Build a new-expression view
-    pub fn new(inner: FunctionSignature, entities: &'entities Entities) -> Self {
+    pub fn new(inner: FunctionSignature, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -364,8 +362,7 @@ impl<'entities> FunctionSignatureView<'entities> {
 //
 impl<'entities> PartialEq for FunctionSignatureView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //

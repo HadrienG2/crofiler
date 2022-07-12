@@ -30,6 +30,7 @@ impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
     }
 
     // Extract the inner SequenceInterner
+    #[allow(unused)]
     pub fn into_inner(self) -> SequenceInterner<Item, Key> {
         self.0.into_inner().0
     }

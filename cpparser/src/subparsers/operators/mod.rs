@@ -9,13 +9,13 @@ use crate::{
         names::atoms::{IdentifierKey, IdentifierView},
         types::{TypeKey, TypeView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
 
-impl Entities {
+impl EntityParser {
     /// Access a previously parsed operator
     pub fn operator(&self, op: Operator) -> OperatorView {
         OperatorView::new(op, self)
@@ -140,7 +140,7 @@ pub enum OperatorView<'entities> {
 //
 impl<'entities> OperatorView<'entities> {
     /// Build an operator view
-    pub fn new(operator: Operator, entities: &'entities Entities) -> Self {
+    pub fn new(operator: Operator, entities: &'entities EntityParser) -> Self {
         match operator {
             Operator::Basic {
                 symbol,

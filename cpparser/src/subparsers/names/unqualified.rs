@@ -9,7 +9,7 @@ use crate::{
         templates::{TemplateParameters, TemplateParametersView},
         values::{ValueKey, ValueView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use nom::Parser;
 use std::fmt::{self, Display, Formatter};
@@ -91,9 +91,7 @@ impl EntityParser {
             _ => named(false).parse(s),
         }
     }
-}
-//
-impl Entities {
+
     /// Access a previously parsed unqualified id
     pub fn unqualified_id(&self, id: UnqualifiedId) -> UnqualifiedIdView {
         UnqualifiedIdView::new(id, self)
@@ -212,7 +210,7 @@ pub enum UnqualifiedIdView<'entities> {
 //
 impl<'entities> UnqualifiedIdView<'entities> {
     /// Build an operator view
-    pub fn new(id: UnqualifiedId, entities: &'entities Entities) -> Self {
+    pub fn new(id: UnqualifiedId, entities: &'entities EntityParser) -> Self {
         match id {
             UnqualifiedId::Named {
                 is_destructor,

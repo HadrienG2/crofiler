@@ -7,7 +7,7 @@ use crate::{
         types::{TypeKey, TypeView},
         values::{ValueKey, ValueView},
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::{lasso::Spur, sequence::SequenceKey};
 use nom::Parser;
@@ -24,7 +24,7 @@ use reffers::ARef;
 /// EntityParser.
 ///
 /// After parsing, you can retrieve a template parameter set by passing this key
-/// to the template_parameters() method of the Entities struct.
+/// to the template_parameters() method of EntityParser.
 ///
 pub type TemplateParameterListKey =
     SequenceKey<TemplateParameterListKeyImpl, TEMPLATE_PARAMETER_LIST_LEN_BITS>;
@@ -77,6 +77,11 @@ impl EntityParser {
     }
 
     /// Retrieve a previously interned template parameter set
+    pub fn template_parameters(&self, tp: TemplateParameters) -> TemplateParametersView {
+        TemplateParametersView::new(tp, self)
+    }
+
+    /// Retrieve a previously interned template parameter set
     #[cfg(test)]
     pub(crate) fn raw_template_parameters(
         &self,
@@ -93,6 +98,14 @@ impl EntityParser {
     /// Maximal number of template parameters
     pub fn max_template_parameter_set_len(&self) -> Option<usize> {
         self.template_parameter_lists.borrow().max_sequence_len()
+    }
+
+    /// Retrieve a previously interned template parameter list (excludes `<, void>`)
+    pub(crate) fn template_parameter_list(
+        &self,
+        key: TemplateParameterListKey,
+    ) -> TemplateParameterListView {
+        TemplateParameterListView::new(key, self.template_parameter_lists.borrow(), self)
     }
 
     /// Parser recognizing a single template parameter/argument
@@ -117,21 +130,6 @@ impl EntityParser {
         type_like.or(value_like).parse(s)
     }
 }
-//
-impl Entities {
-    /// Retrieve a previously interned template parameter set
-    pub fn template_parameters(&self, tp: TemplateParameters) -> TemplateParametersView {
-        TemplateParametersView::new(tp, self)
-    }
-
-    /// Retrieve a previously interned template parameter list (excludes `<, void>`)
-    pub(crate) fn template_parameter_list(
-        &self,
-        key: TemplateParameterListKey,
-    ) -> TemplateParameterListView {
-        TemplateParameterListView::new(key, &self.template_parameter_lists, self)
-    }
-}
 
 /// Set of template parameters
 ///
@@ -150,7 +148,7 @@ pub struct TemplateParametersView<'entities>(pub Option<TemplateParameterListVie
 //
 impl<'entities> TemplateParametersView<'entities> {
     /// Build a new-expression view
-    pub fn new(inner: TemplateParameters, entities: &'entities Entities) -> Self {
+    pub fn new(inner: TemplateParameters, entities: &'entities EntityParser) -> Self {
         Self(inner.map(|list| entities.template_parameter_list(list)))
     }
 }
@@ -205,7 +203,7 @@ pub enum TemplateParameterView<'entities> {
 //
 impl<'entities> TemplateParameterView<'entities> {
     /// Set up a simple type specifier view
-    pub(crate) fn new(inner: TemplateParameter, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(inner: TemplateParameter, entities: &'entities EntityParser) -> Self {
         match inner {
             TemplateParameter::TypeLike(t) => Self::TypeLike(entities.type_like(t)),
             TemplateParameter::ValueLike(v) => Self::ValueLike(entities.value_like(v)),
@@ -238,7 +236,7 @@ impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
 impl<'entities> SliceItemView<'entities> for TemplateParameterView<'entities> {
     type Inner = TemplateParameter;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 

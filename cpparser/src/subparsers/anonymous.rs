@@ -7,7 +7,7 @@ use crate::{
         functions::{FunctionSignature, FunctionSignatureView},
         names::atoms::{IdentifierKey, IdentifierView},
     },
-    Entities, EntityParser, IResult, InternedPath, PathKey,
+    EntityParser, IResult, InternedPath, PathKey,
 };
 use nom::Parser;
 use nom_supreme::ParserExt;
@@ -23,6 +23,11 @@ impl EntityParser {
     /// Parser for arbitrary lambda representations
     pub fn parse_lambda<'source>(&mut self, s: &'source str) -> IResult<'source, Lambda> {
         self.parse_lambda_imut(s)
+    }
+
+    /// Access a previously parsed lambda
+    pub fn lambda(&self, l: Lambda) -> LambdaView {
+        LambdaView::new(l, self)
     }
 
     /// Implementation of parse_lambda with internal mutability
@@ -57,6 +62,11 @@ impl EntityParser {
         delimited(tag("(lambda at "), lambda, char(')'))(s)
     }
 
+    /// Access a previously parsed clang-style lambda
+    pub(crate) fn clang_lambda(&self, l: ClangLambda) -> ClangLambdaView {
+        ClangLambdaView::new(l, self)
+    }
+
     /// Parser for libiberty lambda types `{lambda(<param>, ...)#<id>}`
     fn parse_libiberty_lambda_imut<'source>(
         &self,
@@ -73,6 +83,11 @@ impl EntityParser {
             .and(id)
             .map(|(signature, id)| LibibertyLambda { signature, id })
             .parse(s)
+    }
+
+    /// Access a previously parsed libiberty-style lambda
+    pub(crate) fn libiberty_lambda(&self, l: LibibertyLambda) -> LibibertyLambdaView {
+        LibibertyLambdaView::new(l, self)
     }
 
     /// Parser for other anonymous clang entities called `(anonymous <stuff>)`
@@ -99,23 +114,6 @@ impl EntityParser {
             opt(preceded(char(' '), |s| self.parse_identifier_imut(s))),
             char(')'),
         )(s)
-    }
-}
-//
-impl Entities {
-    /// Access a previously parsed lambda
-    pub fn lambda(&self, l: Lambda) -> LambdaView {
-        LambdaView::new(l, self)
-    }
-
-    /// Access a previously parsed clang-style lambda
-    pub(crate) fn clang_lambda(&self, l: ClangLambda) -> ClangLambdaView {
-        ClangLambdaView::new(l, self)
-    }
-
-    /// Access a previously parsed libiberty-style lambda
-    pub(crate) fn libiberty_lambda(&self, l: LibibertyLambda) -> LibibertyLambdaView {
-        LibibertyLambdaView::new(l, self)
     }
 
     /// Access a previously parsed anonymous entity
@@ -146,12 +144,12 @@ pub struct ClangLambdaView<'entities> {
     inner: ClangLambda,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> ClangLambdaView<'entities> {
     /// Build a clang lambda
-    pub fn new(inner: ClangLambda, entities: &'entities Entities) -> Self {
+    pub fn new(inner: ClangLambda, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -168,8 +166,7 @@ impl<'entities> ClangLambdaView<'entities> {
 //
 impl<'entities> PartialEq for ClangLambdaView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -196,12 +193,12 @@ pub struct LibibertyLambdaView<'entities> {
     inner: LibibertyLambda,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> LibibertyLambdaView<'entities> {
     /// Build a libiberty lambda view
-    pub fn new(inner: LibibertyLambda, entities: &'entities Entities) -> Self {
+    pub fn new(inner: LibibertyLambda, entities: &'entities EntityParser) -> Self {
         Self { inner, entities }
     }
 
@@ -218,8 +215,7 @@ impl<'entities> LibibertyLambdaView<'entities> {
 //
 impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.inner == other.inner)
+        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
     }
 }
 //
@@ -263,7 +259,7 @@ pub enum LambdaView<'entities> {
 //
 impl<'entities> LambdaView<'entities> {
     /// Set up a lambda view
-    pub(crate) fn new(inner: Lambda, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(inner: Lambda, entities: &'entities EntityParser) -> Self {
         match inner {
             Lambda::Clang(c) => Self::Clang(entities.clang_lambda(c)),
             Lambda::Libiberty(l) => Self::Libiberty(entities.libiberty_lambda(l)),
@@ -303,7 +299,7 @@ pub struct AnonymousEntityView<'entities>(pub Option<IdentifierView<'entities>>)
 //
 impl<'entities> AnonymousEntityView<'entities> {
     /// Build a new-expression view
-    pub fn new(inner: AnonymousEntity, entities: &'entities Entities) -> Self {
+    pub fn new(inner: AnonymousEntity, entities: &'entities EntityParser) -> Self {
         Self(inner.map(|id| entities.identifier(id)))
     }
 }

@@ -1,16 +1,14 @@
 //! Atoms from the C++ entity grammar
 
-use crate::{Entities, EntityParser, Error, IResult};
+use crate::{EntityParser, Error, IResult};
 use asylum::lasso::MiniSpur;
 use nom::{error::ErrorKind, Parser};
 use nom_supreme::ParserExt;
+use reffers::ARef;
 use std::{
     fmt::{self, Display, Formatter},
     ops::Deref,
 };
-
-#[cfg(test)]
-use reffers::ARef;
 
 /// Interned C++ identifier key
 ///
@@ -18,7 +16,7 @@ use reffers::ARef;
 /// identifiers as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve an identifier by passing this key to the
-/// identifier() method of the Entities struct.
+/// identifier() method of EntityParser.
 ///
 pub type IdentifierKey = MiniSpur;
 //
@@ -81,8 +79,12 @@ impl EntityParser {
         Ok((rest, id_key))
     }
 
+    /// Access a previously parsed identifier
+    pub fn identifier(&self, key: IdentifierKey) -> IdentifierView {
+        IdentifierView::new(key, self)
+    }
+
     /// Retrieve an identifier previously parsed by parse_identifier
-    #[cfg(test)]
     pub(crate) fn raw_identifier(&self, key: IdentifierKey) -> ARef<str> {
         ARef::new(self.identifiers.borrow()).map(|identifiers| identifiers.resolve(&key))
     }
@@ -90,13 +92,6 @@ impl EntityParser {
     /// Tell how many unique identifiers have been parsed so far
     pub fn num_identifiers(&self) -> usize {
         self.identifiers.borrow().len()
-    }
-}
-//
-impl Entities {
-    /// Access a previously parsed identifier
-    pub fn identifier(&self, key: IdentifierKey) -> IdentifierView {
-        IdentifierView::new(key, self)
     }
 }
 
@@ -207,18 +202,18 @@ pub struct IdentifierView<'entities> {
     key: IdentifierKey,
 
     /// Wrapped identifier
-    inner: &'entities str,
+    inner: ARef<'entities, str>,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> IdentifierView<'entities> {
     /// Set up a C++ identifier view
-    pub fn new(key: IdentifierKey, entities: &'entities Entities) -> Self {
+    pub fn new(key: IdentifierKey, entities: &'entities EntityParser) -> Self {
         Self {
             key,
-            inner: entities.identifiers.resolve(&key),
+            inner: entities.raw_identifier(key),
             entities,
         }
     }
@@ -226,27 +221,26 @@ impl<'entities> IdentifierView<'entities> {
 //
 impl<'entities> AsRef<str> for IdentifierView<'entities> {
     fn as_ref(&self) -> &str {
-        self.inner
+        &self.inner
     }
 }
 //
 impl<'entities> Deref for IdentifierView<'entities> {
     type Target = str;
     fn deref(&self) -> &str {
-        self.inner
+        &self.inner
     }
 }
 //
 impl<'entities> PartialEq for IdentifierView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.key == other.key)
+        (self.entities as *const _ == other.entities as *const _) && (self.key == other.key)
     }
 }
 //
 impl<'entities> Display for IdentifierView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.inner)
+        write!(f, "{}", self.inner.as_ref())
     }
 }
 
@@ -281,22 +275,20 @@ mod tests {
 
     #[test]
     fn identifier() {
-        let mut parser = EntityParser::new();
+        let mut entities = EntityParser::new();
         const ID: &str = "_abczd_123904";
-        let (rest, key) = parser
+        let (rest, key) = entities
             .parse_identifier(ID)
             .expect("We know this is a valid identifier");
         assert_eq!(rest, "");
-        assert_eq!(parser.num_identifiers(), 1);
-        assert_eq!(&*parser.raw_identifier(key), ID);
+        assert_eq!(entities.num_identifiers(), 1);
+        assert_eq!(&*entities.raw_identifier(key), ID);
+        assert_eq!(entities.identifier(key).as_ref(), ID);
 
         let mut id_str = ID.to_string();
         id_str.push('*');
-        assert_eq!(parser.parse_identifier(&id_str), Ok(("*", key)));
-        assert_eq!(parser.num_identifiers(), 1);
-        assert_eq!(&*parser.raw_identifier(key), ID);
-
-        let entities = parser.finalize();
-        assert_eq!(IdentifierView::new(key, &entities).as_ref(), ID);
+        assert_eq!(entities.parse_identifier(&id_str), Ok(("*", key)));
+        assert_eq!(entities.num_identifiers(), 1);
+        assert_eq!(&*entities.raw_identifier(key), ID);
     }
 }

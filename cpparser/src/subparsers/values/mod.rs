@@ -18,15 +18,13 @@ use crate::{
             Operator, OperatorView,
         },
     },
-    Entities, EntityParser, IResult,
+    EntityParser, IResult,
 };
 use asylum::{lasso::MiniSpur, sequence::SequenceKey};
 use nom::Parser;
 use nom_supreme::ParserExt;
-use std::fmt::{self, Display, Formatter};
-
-#[cfg(test)]
 use reffers::ARef;
+use std::fmt::{self, Display, Formatter};
 
 /// Interned C++ value key
 ///
@@ -34,7 +32,7 @@ use reffers::ARef;
 /// values as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a value by passing this key to the
-/// value_like() method of the Entities struct.
+/// value_like() method of EntityParser.
 ///
 pub type ValueKey = MiniSpur;
 //
@@ -44,7 +42,7 @@ pub type ValueKey = MiniSpur;
 /// ValueTrailers as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a value trailer by passing this key to the
-/// value_trailer() method of the Entities struct.
+/// value_trailer() method of EntityParser.
 ///
 pub type ValueTrailerKey = SequenceKey<ValueTrailerKeyImpl, VALUE_TRAILER_LEN_BITS>;
 type ValueTrailerKeyImpl = MiniSpur;
@@ -100,10 +98,14 @@ impl EntityParser {
             .parse(s)
     }
 
+    /// Access a previously parsed value
+    pub fn value_like(&self, v: ValueKey) -> ValueView {
+        ValueView::new(v, self)
+    }
+
     /// Retrieve a value previously parsed by parse_value_like
-    #[cfg(test)]
-    pub(crate) fn raw_value_like(&self, key: ValueKey) -> ValueLike {
-        self.values.borrow().get(key).clone()
+    pub(crate) fn raw_value_like(&self, key: ValueKey) -> ARef<ValueLike> {
+        ARef::new(self.values.borrow()).map(|values| values.get(key))
     }
 
     /// Tell how many unique types have been parsed so far
@@ -181,6 +183,11 @@ impl EntityParser {
             .parse(s)
     }
 
+    /// Access a previously parsed value header
+    pub(crate) fn value_header(&self, vh: ValueHeader) -> ValueHeaderView {
+        ValueHeaderView::new(vh, self)
+    }
+
     /// Parse things that can come up after a value to form a more complex value
     ///
     /// See parse_value_like for an explanation on the boolean parameters
@@ -246,22 +253,10 @@ impl EntityParser {
             _ => binary_op.or(postfix_op).parse(s),
         }
     }
-}
-//
-impl Entities {
-    /// Access a previously parsed value
-    pub fn value_like(&self, v: ValueKey) -> ValueView {
-        ValueView::new(v, self)
-    }
-
-    /// Access a previously parsed value header
-    pub(crate) fn value_header(&self, vh: ValueHeader) -> ValueHeaderView {
-        ValueHeaderView::new(vh, self)
-    }
 
     /// Access a previously parsed value trailer
     pub(crate) fn value_trailer(&self, vt: ValueTrailerKey) -> ValueTrailerView {
-        ValueTrailerView::new(vt, &self.value_trailers, self)
+        ValueTrailerView::new(vt, self.value_trailers.borrow(), self)
     }
 }
 
@@ -282,18 +277,18 @@ pub struct ValueView<'entities> {
     key: ValueKey,
 
     /// Wrapped ValueLike
-    inner: &'entities ValueLike,
+    inner: ARef<'entities, ValueLike>,
 
     /// Underlying interned entity storage
-    entities: &'entities Entities,
+    entities: &'entities EntityParser,
 }
 //
 impl<'entities> ValueView<'entities> {
     /// Build a value view
-    pub(crate) fn new(key: ValueKey, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(key: ValueKey, entities: &'entities EntityParser) -> Self {
         Self {
             key,
-            inner: entities.values.get(key),
+            inner: entities.raw_value_like(key),
             entities,
         }
     }
@@ -312,8 +307,7 @@ impl<'entities> ValueView<'entities> {
 //
 impl<'entities> PartialEq for ValueView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const Entities == other.entities as *const Entities)
-            && (self.key == other.key)
+        (self.entities as *const _ == other.entities as *const _) && (self.key == other.key)
     }
 }
 //
@@ -339,7 +333,7 @@ impl<'entities> CustomDisplay for ValueView<'entities> {
 impl<'entities> SliceItemView<'entities> for ValueView<'entities> {
     type Inner = ValueKey;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 
@@ -420,7 +414,7 @@ pub enum ValueHeaderView<'entities> {
 //
 impl<'entities> ValueHeaderView<'entities> {
     /// Build an operator view
-    pub(crate) fn new(header: ValueHeader, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(header: ValueHeader, entities: &'entities EntityParser) -> Self {
         match header {
             ValueHeader::Literal(l) => Self::Literal(entities.literal(l)),
             ValueHeader::Parenthesized(v) => Self::Parenthesized(entities.value_like(v)),
@@ -534,7 +528,7 @@ pub enum AfterValueView<'entities> {
 //
 impl<'entities> AfterValueView<'entities> {
     /// Build an operator view
-    pub(crate) fn new(av: AfterValue, entities: &'entities Entities) -> Self {
+    pub(crate) fn new(av: AfterValue, entities: &'entities EntityParser) -> Self {
         match av {
             AfterValue::ArrayIndex(v) => Self::ArrayIndex(entities.value_like(v)),
             AfterValue::FunctionCall(a) => Self::FunctionCall(entities.function_arguments(a)),
@@ -602,7 +596,7 @@ impl<'entities> CustomDisplay for AfterValueView<'entities> {
 impl<'entities> SliceItemView<'entities> for AfterValueView<'entities> {
     type Inner = AfterValue;
 
-    fn new(inner: Self::Inner, entities: &'entities Entities) -> Self {
+    fn new(inner: Self::Inner, entities: &'entities EntityParser) -> Self {
         Self::new(inner, entities)
     }
 
@@ -629,8 +623,9 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            let value = parser.raw_value_like(key).clone();
             assert_eq!(
-                parser.raw_value_like(key),
+                value,
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -713,8 +708,9 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            let value = parser.raw_value_like(key).clone();
             assert_eq!(
-                parser.raw_value_like(key),
+                value,
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -802,8 +798,9 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
+            let value = parser.raw_value_like(key).clone();
             assert_eq!(
-                parser.raw_value_like(key),
+                value,
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -818,7 +815,7 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.raw_value_like(value_key);
+                let value = parser.raw_value_like(value_key).clone();
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
                 let expected = vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
@@ -830,7 +827,7 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.raw_value_like(value_key);
+                let value = parser.raw_value_like(value_key).clone();
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "func")));
                 let expected = vec![
                         unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
