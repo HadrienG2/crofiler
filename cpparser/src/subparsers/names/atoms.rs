@@ -9,6 +9,9 @@ use std::{
     ops::Deref,
 };
 
+#[cfg(test)]
+use reffers::ARef;
+
 /// Interned C++ identifier key
 ///
 /// You can compare two keys as a cheaper alternative to comparing two
@@ -79,12 +82,9 @@ impl EntityParser {
     }
 
     /// Retrieve an identifier previously parsed by parse_identifier
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn identifier(&self, key: IdentifierKey) -> Box<str> {
-        self.identifiers.borrow().resolve(&key).into()
+    pub(crate) fn raw_identifier(&self, key: IdentifierKey) -> ARef<str> {
+        ARef::new(self.identifiers.borrow()).map(|identifiers| identifiers.resolve(&key))
     }
 
     /// Tell how many unique identifiers have been parsed so far
@@ -288,13 +288,13 @@ mod tests {
             .expect("We know this is a valid identifier");
         assert_eq!(rest, "");
         assert_eq!(parser.num_identifiers(), 1);
-        assert_eq!(&*parser.identifier(key), ID);
+        assert_eq!(&*parser.raw_identifier(key), ID);
 
         let mut id_str = ID.to_string();
         id_str.push('*');
         assert_eq!(parser.parse_identifier(&id_str), Ok(("*", key)));
         assert_eq!(parser.num_identifiers(), 1);
-        assert_eq!(&*parser.identifier(key), ID);
+        assert_eq!(&*parser.raw_identifier(key), ID);
 
         let entities = parser.finalize();
         assert_eq!(IdentifierView::new(key, &entities).as_ref(), ID);

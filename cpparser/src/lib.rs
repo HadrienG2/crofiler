@@ -32,6 +32,7 @@ use asylum::{
 };
 use nom::{error::Error, Parser};
 use nom_supreme::ParserExt;
+use reffers::ARef;
 use std::{
     cell::RefCell,
     fmt::{self, Display, Formatter},
@@ -171,6 +172,12 @@ impl EntityParser {
             .borrow_mut()
             .intern(path)
             .expect("Encountered relative (and thus non-interpretable) file path")
+    }
+
+    /// Retrieve a previously interned path
+    // FIXME: Adjust InternedPath alias to hide PathInterner
+    pub fn path(&self, key: PathKey) -> path::InternedPath<PathInterner> {
+        path::InternedPath::new(ARef::new(self.paths.borrow()), key)
     }
 
     /// Total number of path components across all interned paths so far

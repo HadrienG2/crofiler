@@ -35,11 +35,13 @@ impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
     }
 
     // Access an interned sequence
+    #[allow(unused)]
     pub fn get(&self, key: Key) -> ARef<[Item]> {
         self.borrow().map(|interner| interner.get(key))
     }
 
     // Intern a sequence
+    #[allow(unused)]
     pub fn intern(&self, sequence: &[Item]) -> Key {
         self.0.borrow_mut().0.intern(sequence)
     }

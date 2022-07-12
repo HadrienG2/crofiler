@@ -101,11 +101,8 @@ impl EntityParser {
     }
 
     /// Retrieve a value previously parsed by parse_value_like
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn value_like(&self, key: ValueKey) -> ValueLike {
+    pub(crate) fn raw_value_like(&self, key: ValueKey) -> ValueLike {
         self.values.borrow().get(key).clone()
     }
 
@@ -633,7 +630,7 @@ mod tests {
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
-                parser.value_like(key),
+                parser.raw_value_like(key),
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -717,7 +714,7 @@ mod tests {
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
-                parser.value_like(key),
+                parser.raw_value_like(key),
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -806,7 +803,7 @@ mod tests {
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
             assert_eq!(
-                parser.value_like(key),
+                parser.raw_value_like(key),
                 ValueLike {
                     header: literal(parser, s).into(),
                     trailer: parser.value_trailers.entry().intern()
@@ -821,7 +818,7 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.value_like(value_key);
+                let value = parser.raw_value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
                 let expected = vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
@@ -833,7 +830,7 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.value_like(value_key);
+                let value = parser.raw_value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "func")));
                 let expected = vec![
                         unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),

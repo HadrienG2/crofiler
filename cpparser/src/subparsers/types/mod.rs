@@ -73,11 +73,8 @@ impl EntityParser {
     }
 
     /// Retrieve a type previously parsed by parse_type_like
-    ///
-    /// May not perform optimally, meant for validation purposes only
-    ///
     #[cfg(test)]
-    pub(crate) fn type_like(&self, key: TypeKey) -> TypeLike {
+    pub(crate) fn raw_type_like(&self, key: TypeKey) -> TypeLike {
         self.types.borrow().get(key).clone()
     }
 
@@ -210,7 +207,7 @@ mod tests {
         let parse_type_like = |parser: &mut EntityParser, s| {
             parser
                 .parse_type_like(s)
-                .map(|(rest, key)| (rest, parser.type_like(key)))
+                .map(|(rest, key)| (rest, parser.raw_type_like(key)))
         };
         let attributes = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
         let type_specifier =
