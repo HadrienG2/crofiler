@@ -59,7 +59,7 @@ pub type PathComponentKey = MiniSpur;
 /// identifiers as long as both keys were produced by the same EntityParser.
 ///
 /// After parsing, you can retrieve a path by passing this key to the
-/// path() method of the Entities struct.
+/// path() method of EntityParser.
 ///
 pub type PathKey = path::PathKey<PathKeyImpl, PATH_LEN_BITS>;
 type PathKeyImpl = Spur;
@@ -81,7 +81,7 @@ pub type InternedPath<'entities> = path::InternedPath<'entities, PathInterner>;
 // Individual modules will define...
 // - Appropriate key sizes and length types
 // - Interning methods
-// - Retrieval methods and unique entry count (for Entities)
+// - Retrieval methods and unique entry count
 //
 // # Internal mutability
 //
