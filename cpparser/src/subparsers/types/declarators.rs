@@ -283,15 +283,15 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
 
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
-            Self::ConstVolatile(cv) => write!(f, "{cv}")?,
+            Self::ConstVolatile(cv) => write!(f, " {cv}")?,
             Self::Pointer { path, cv } => {
                 path.display_impl(f, state)?;
-                write!(f, "*")?;
+                write!(f, " *")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
                 }
             }
-            Self::Reference(r) => write!(f, "{r}")?,
+            Self::Reference(r) => write!(f, " {r}")?,
             // FIXME: Add recursion bound based on [] sign
             Self::Array(a) => {
                 write!(f, "[")?;
@@ -307,7 +307,7 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
             }
             // FIXME: Add recursion bound based on () sign
             Self::VectorSize(s) => {
-                write!(f, "__vector(")?;
+                write!(f, " __vector(")?;
                 s.display_impl(f, state)?;
                 write!(f, ")")?;
             }
@@ -325,7 +325,7 @@ impl<'entities> SliceItemView<'entities> for DeclOperatorView<'entities> {
 
     const DISPLAY_HEADER: &'static str = "";
 
-    const DISPLAY_SEPARATOR: &'static str = " ";
+    const DISPLAY_SEPARATOR: &'static str = "";
 
     const DISPLAY_TRAILER: &'static str = "";
 }

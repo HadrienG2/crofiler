@@ -262,6 +262,8 @@ impl<'entities> CustomDisplay for EntityView<'entities> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use assert_matches::assert_matches;
+    use display::tests::check_custom_display;
     use pretty_assertions::assert_eq;
 
     pub fn unwrap_parse<Output>(res: IResult<Output>) -> Output {
@@ -274,15 +276,17 @@ pub(crate) mod tests {
     fn entity() {
         let mut parser = EntityParser::new();
 
-        // FIXME: Rework test harness to test CustomDisplay
-
         // Something that looks like a type name
-        assert_eq!(
+        assert_matches!(
             parser.parse_entity("type_name"),
-            Ok(Some(unwrap_parse(parser.parse_type_like("type_name"))))
+            Ok(entity) => {
+                assert_eq!(entity, Some(unwrap_parse(parser.parse_type_like("type_name"))));
+                check_custom_display(parser.entity(entity), &["type_name"]);
+            }
         );
 
         // The infamous unknown clang entity
         assert_eq!(parser.parse_entity("<unknown>"), Ok(None));
+        check_custom_display(parser.entity(None), &["<unknown>"]);
     }
 }

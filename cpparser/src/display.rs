@@ -146,16 +146,10 @@ pub(crate) mod tests {
     /// - Advertised recursion depth is correct
     /// - Display is correct at all recursion depths
     ///
-    pub fn check_custom_display<const NUM_RECURSION_DEPTHS: usize>(
-        view: impl CustomDisplay,
-        displays: [&str; NUM_RECURSION_DEPTHS],
-    ) {
-        assert!(
-            NUM_RECURSION_DEPTHS > 0,
-            "There is always recursion depth 0..."
-        );
+    pub fn check_custom_display(view: impl CustomDisplay, displays: &[&str]) {
+        assert!(displays.len() > 0, "There is always recursion depth 0...");
 
-        assert_eq!(view.recursion_depth(), NUM_RECURSION_DEPTHS - 1);
+        assert_eq!(view.recursion_depth(), displays.len() - 1);
 
         let actual_display =
             |max_recursion| format!("{}", view.display(&DisplayState::new(max_recursion)));
@@ -202,10 +196,10 @@ pub(crate) mod tests {
     // Check that CustomDisplayMock's basic functionality works as intended
     #[test]
     fn custom_display_mock() {
-        check_custom_display(CustomDisplayMock(0), ["@"]);
-        check_custom_display(CustomDisplayMock(1), ["…", "(@)"]);
-        check_custom_display(CustomDisplayMock(2), ["…", "(…)", "((@))"]);
-        check_custom_display(CustomDisplayMock(3), ["…", "(…)", "((…))", "(((@)))"]);
+        check_custom_display(CustomDisplayMock(0), &["@"]);
+        check_custom_display(CustomDisplayMock(1), &["…", "(@)"]);
+        check_custom_display(CustomDisplayMock(2), &["…", "(…)", "((@))"]);
+        check_custom_display(CustomDisplayMock(3), &["…", "(…)", "((…))", "(((@)))"]);
     }
 
     // Check that bounded_display works as intended

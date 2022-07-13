@@ -610,13 +610,14 @@ impl<'entities> SliceItemView<'entities> for AfterValueView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{subparsers::operators::Symbol, tests::unwrap_parse};
+    use crate::{
+        display::tests::check_custom_display, subparsers::operators::Symbol, tests::unwrap_parse,
+    };
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn value_header() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parse_value_header =
             |parser: &mut EntityParser, s| parser.parse_value_header_imut(s, true, true);
@@ -633,75 +634,48 @@ mod tests {
             );
             key
         };
+        let check_value_header = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parse_value_header(parser, input), Ok(("", expected)));
+            check_custom_display(parser.value_header(expected), displays);
+        };
 
         // Literal
-        assert_eq!(
-            parse_value_header(&mut parser, "69"),
-            Ok(("", literal(&mut parser, "69").into()))
-        );
-        assert_eq!(
-            parse_value_header(&mut parser, "'@'"),
-            Ok(("", literal(&mut parser, "'@'").into()))
-        );
+        let mut expected = literal(&mut parser, "69").into();
+        check_value_header(&mut parser, "69", expected, &["69"]);
+        //
+        expected = literal(&mut parser, "'@'").into();
+        check_value_header(&mut parser, "'@'", expected, &["'@'"]);
 
         // Unary operators are supported...
-        assert_eq!(
-            parse_value_header(&mut parser, "&123"),
-            Ok((
-                "",
-                ValueHeader::UnaryOp(Symbol::AndRef.into(), literal_value(&mut parser, "123"))
-            ))
-        );
+        expected = ValueHeader::UnaryOp(Symbol::AndRef.into(), literal_value(&mut parser, "123"));
+        check_value_header(&mut parser, "&123", expected, &["&123"]);
 
         // ...including c-style casts, not to be confused with parenthesized values
-        assert_eq!(
-            parse_value_header(&mut parser, "(T)666"),
-            Ok((
-                "",
-                ValueHeader::UnaryOp(
-                    unwrap_parse(parser.parse_type_like("T")).into(),
-                    literal_value(&mut parser, "666")
-                )
-            ))
+        expected = ValueHeader::UnaryOp(
+            unwrap_parse(parser.parse_type_like("T")).into(),
+            literal_value(&mut parser, "666"),
         );
+        check_value_header(&mut parser, "(T)666", expected, &["(T)666"]);
 
         // Parenthesized values are supported too
-        assert_eq!(
-            parse_value_header(&mut parser, "(42)"),
-            Ok((
-                "",
-                ValueHeader::Parenthesized(literal_value(&mut parser, "42"))
-            ))
-        );
+        expected = ValueHeader::Parenthesized(literal_value(&mut parser, "42"));
+        check_value_header(&mut parser, "(42)", expected, &["(42)"]);
 
         // New expressions too
-        assert_eq!(
-            parse_value_header(&mut parser, "new TROOT"),
-            Ok((
-                "",
-                ValueHeader::NewExpression(unwrap_parse(parser.parse_new_expression("new TROOT"))),
-            ))
-        );
+        expected =
+            ValueHeader::NewExpression(unwrap_parse(parser.parse_new_expression("new TROOT")));
+        check_value_header(&mut parser, "new TROOT", expected, &["new TROOT"]);
 
         // Named values as well
-        assert_eq!(
-            parse_value_header(&mut parser, "MyValue"),
-            Ok((
-                "",
-                ValueHeader::IdExpression(unwrap_parse(parser.parse_id_expression("MyValue")))
-            ))
-        );
+        expected = ValueHeader::IdExpression(unwrap_parse(parser.parse_id_expression("MyValue")));
+        check_value_header(&mut parser, "MyValue", expected, &["MyValue"]);
 
         // Ellipsis (as in fold expressions)
-        assert_eq!(
-            parse_value_header(&mut parser, "..."),
-            Ok(("", ValueHeader::Ellipsis))
-        );
+        check_value_header(&mut parser, "...", ValueHeader::Ellipsis, &["..."]);
     }
 
     #[test]
     fn after_value() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parse_after_value =
             |parser: &mut EntityParser, s| parser.parse_after_value_imut(s, true, true);
@@ -789,7 +763,6 @@ mod tests {
 
     #[test]
     fn value_like() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parse_value_like =
             |parser: &mut EntityParser, s| parser.parse_value_like(s, true, true);
@@ -819,6 +792,7 @@ mod tests {
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
                 let expected = vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
+                check_custom_display(parser.value_like(value_key), &["array…", "array[666]"]);
             }
         );
         assert_matches!(
@@ -834,6 +808,7 @@ mod tests {
                         AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
                     ];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
+                check_custom_display(parser.value_like(value_key), &["func…", "func(…)[666]", "func(3, 'x')[666]"]);
             }
         );
     }

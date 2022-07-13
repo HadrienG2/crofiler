@@ -444,7 +444,7 @@ pub struct FunctionParameterSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn function_parameter_set() {
         let mut parser = EntityParser::new();
-        let mut test_case = |parameters: &str, expected_types: &[&str], expected_variadic: bool| {
+        let mut test_case = |parameters, expected_types: &[&str], expected_variadic| {
             assert_matches!(parser.parse_function_parameter_set_imut(
                 parameters
             ), Ok(("", parameter_set)) => {
@@ -474,7 +474,7 @@ mod tests {
                     let expected = unwrap_parse(parser.parse_type_like(*expected));
                     assert_eq!(expected, actual);
                 }
-                assert_eq!(parameter_set.variadic, expected_variadic)
+                assert_eq!(parameter_set.variadic, expected_variadic);
             })
         };
         test_case("()", &[], false);
@@ -489,158 +489,132 @@ mod tests {
     fn function_signature() {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
-        let parameter_set = |parser: &mut EntityParser, s| {
-            unwrap_parse(parser.parse_function_parameter_set_imut(s))
+        let parameter_set = |parser: &mut EntityParser, input| {
+            unwrap_parse(parser.parse_function_parameter_set_imut(input))
+        };
+        let check_function_signature = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_function_signature(input), Ok(("", expected)));
+            check_custom_display(parser.function_signature(expected), displays);
         };
 
-        assert_eq!(
-            parser.parse_function_signature("()"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::None,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
+        let mut expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "()", expected, &["()"]);
+
+        expected = FunctionSignature {
+            abi: Some(unwrap_parse(parser.parse_identifier("cxx11"))),
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "[abi:cxx11]()", expected, &["[abi:cxx11]()"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "(int)"),
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "(int)", expected, &["(…)", "(int)"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::CONST,
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "() const", expected, &["() const"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::RValue,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "() &&", expected, &["() &&"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: Some(None),
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "() noexcept", expected, &["() noexcept"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::VOLATILE,
+            reference: Reference::LValue,
+            noexcept: None,
+            trailing_return: None,
+        };
+        check_function_signature(&mut parser, "() volatile &", expected, &["() volatile &"]);
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
+            reference: Reference::None,
+            noexcept: Some(None),
+            trailing_return: None,
+        };
+        check_function_signature(
+            &mut parser,
+            "() volatile const noexcept",
+            expected,
+            &["() const volatile noexcept"],
         );
-        assert_eq!(
-            parser.parse_function_signature("[abi:cxx11]()"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: Some(unwrap_parse(parser.parse_identifier("cxx11"))),
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::None,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::RValue,
+            noexcept: Some(Some(unwrap_parse(
+                parser.parse_value_like("456", true, true),
+            ))),
+            trailing_return: None,
+        };
+        check_function_signature(
+            &mut parser,
+            "() && noexcept(456)",
+            expected,
+            &["() && noexcept(456)"],
         );
-        assert_eq!(
-            parser.parse_function_signature("(int)"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "(int)"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::None,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() const"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::CONST,
-                    reference: Reference::None,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() &&"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::RValue,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() noexcept"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::None,
-                    noexcept: Some(None),
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() volatile &"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::VOLATILE,
-                    reference: Reference::LValue,
-                    noexcept: None,
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() volatile const noexcept"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
-                    reference: Reference::None,
-                    noexcept: Some(None),
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() && noexcept(456)"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::RValue,
-                    noexcept: Some(Some(unwrap_parse(
-                        parser.parse_value_like("456", true, true),
-                    ))),
-                    trailing_return: None
-                }
-            ))
-        );
-        assert_eq!(
-            parser.parse_function_signature("() -> int"),
-            Ok((
-                "",
-                FunctionSignature {
-                    abi: None,
-                    parameter_set: parameter_set(&mut parser, "()"),
-                    cv: ConstVolatile::default(),
-                    reference: Reference::None,
-                    noexcept: None,
-                    trailing_return: Some(unwrap_parse(parser.parse_type_like("int"))),
-                }
-            ))
-        );
+
+        expected = FunctionSignature {
+            abi: None,
+            parameter_set: parameter_set(&mut parser, "()"),
+            cv: ConstVolatile::default(),
+            reference: Reference::None,
+            noexcept: None,
+            trailing_return: Some(unwrap_parse(parser.parse_type_like("int"))),
+        };
+        check_function_signature(&mut parser, "() -> int", expected, &["() -> int"]);
     }
 
     #[test]
     fn function_call() {
         let mut parser = EntityParser::new();
-        let mut test_case = |arguments: &str, expected_values: &[&str]| {
+
+        let mut test_case = |arguments, expected_values: &[&str], displays| {
             assert_matches!(parser.parse_function_call(arguments), Ok(("", key)) => {
                 let arguments = parser.raw_function_arguments(key).to_owned();
                 assert_eq!(arguments.len(), expected_values.len());
@@ -648,10 +622,11 @@ mod tests {
                     let expected = unwrap_parse(parser.parse_value_like(*expected, true, true));
                     assert_eq!(expected, actual);
                 }
+                check_custom_display(parser.function_arguments(key), displays);
             })
         };
-        test_case("()", &[]);
-        test_case("(123)", &["123"]);
-        test_case("(42, 'a')", &["42", "'a'"]);
+        test_case("()", &[], &["()"]);
+        test_case("(123)", &["123"], &["(…)", "(123)"]);
+        test_case("(42, 'a')", &["42", "'a'"], &["(…)", "(42, 'a')"]);
     }
 }

@@ -165,12 +165,11 @@ impl<'entities> CustomDisplay for TypeView<'entities> {
         if !attributes.is_empty() {
             write!(f, "__attribute__(")?;
             attributes.display_impl(f, state)?;
-            write!(f, ")")?;
+            write!(f, ") ")?;
         }
         self.type_specifier().display_impl(f, state)?;
         let declarator = self.declarator();
         if !declarator.is_empty() {
-            write!(f, " ")?;
             declarator.display_impl(f, state)?;
         }
         Ok(())
@@ -194,73 +193,73 @@ impl<'entities> SliceItemView<'entities> for TypeView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn type_like() {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
-        let parse_type_like = |parser: &mut EntityParser, s| {
-            parser
-                .parse_type_like(s)
-                .map(|(rest, key)| (rest, parser.raw_type_like(key).clone()))
-        };
         let attributes = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
         let type_specifier =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_type_specifier(s));
         let declarator = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_declarator(s));
+        let check_type_like = |parser: &mut EntityParser, input, expected, displays| {
+            assert_matches!(parser.parse_type_like(input), Ok(("", key)) => {
+                assert_eq!(parser.raw_type_like(key).clone(), expected);
+                check_custom_display(parser.type_like(key), displays);
+            });
+        };
 
         // Basic type specifier
-        assert_eq!(
-            parse_type_like(&mut parser, "signed char"),
-            Ok((
-                "",
-                TypeLike {
-                    attributes: attributes(&mut parser, "()"),
-                    type_specifier: type_specifier(&mut parser, "signed char"),
-                    declarator: declarator(&mut parser, "")
-                }
-            ))
-        );
+        let mut expected = TypeLike {
+            attributes: attributes(&mut parser, "()"),
+            type_specifier: type_specifier(&mut parser, "signed char"),
+            declarator: declarator(&mut parser, ""),
+        };
+        check_type_like(&mut parser, "signed char", expected, &["signed char"]);
 
         // GNU-style attributes before
-        assert_eq!(
-            parse_type_like(&mut parser, "__attribute__((unused)) long long"),
-            Ok((
-                "",
-                TypeLike {
-                    attributes: attributes(&mut parser, "(unused)"),
-                    type_specifier: type_specifier(&mut parser, "long long"),
-                    declarator: declarator(&mut parser, "")
-                }
-            ))
+        expected = TypeLike {
+            attributes: attributes(&mut parser, "(unused)"),
+            type_specifier: type_specifier(&mut parser, "long long"),
+            declarator: declarator(&mut parser, ""),
+        };
+        check_type_like(
+            &mut parser,
+            "__attribute__((unused)) long long",
+            expected,
+            &[
+                "__attribute__((…)) long long",
+                "__attribute__((unused)) long long",
+            ],
         );
 
         // Basic function pointer
-        assert_eq!(
-            parse_type_like(&mut parser, "something()"),
-            Ok((
-                "",
-                TypeLike {
-                    attributes: attributes(&mut parser, "()"),
-                    type_specifier: type_specifier(&mut parser, "something"),
-                    declarator: declarator(&mut parser, "()"),
-                }
-            ))
+        expected = TypeLike {
+            attributes: attributes(&mut parser, "()"),
+            type_specifier: type_specifier(&mut parser, "something"),
+            declarator: declarator(&mut parser, "()"),
+        };
+        check_type_like(
+            &mut parser,
+            "something()",
+            expected,
+            &["something…", "something()"],
         );
 
         // Fun template/expression ambiguity found during testing
-        assert_eq!(
-            parse_type_like(&mut parser, "T<1>(U)"),
-            Ok((
-                "",
-                TypeLike {
-                    attributes: attributes(&mut parser, "()"),
-                    type_specifier: type_specifier(&mut parser, "T<1>"),
-                    declarator: declarator(&mut parser, "(U)"),
-                }
-            ))
+        expected = TypeLike {
+            attributes: attributes(&mut parser, "()"),
+            type_specifier: type_specifier(&mut parser, "T<1>"),
+            declarator: declarator(&mut parser, "(U)"),
+        };
+        check_type_like(
+            &mut parser,
+            "T<1>(U)",
+            expected,
+            &["T<…>…", "T<1>(…)", "T<1>(U)"],
         );
     }
 }
