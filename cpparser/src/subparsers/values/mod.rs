@@ -113,22 +113,6 @@ impl EntityParser {
         self.values.borrow().len()
     }
 
-    /// Retrieve a value trailer previously parsed by parse_value_like
-    #[cfg(test)]
-    pub(crate) fn raw_value_trailer(&self, key: ValueTrailerKey) -> ARef<[AfterValue]> {
-        self.value_trailers.get(key)
-    }
-
-    /// Total number of AfterValues across all interned ValueTrailers
-    pub fn num_after_value(&self) -> usize {
-        self.value_trailers.borrow().num_items()
-    }
-
-    /// Maximal number of template parameters
-    pub fn max_value_trailer_len(&self) -> Option<usize> {
-        self.value_trailers.borrow().max_sequence_len()
-    }
-
     /// Like value_like but excluding patterns that start with a value_like
     ///
     /// Used by value_like to prevent infinite recursion on the expression head.
@@ -254,9 +238,31 @@ impl EntityParser {
         }
     }
 
+    // Access a previously parsed AfterValue
+    #[cfg(test)]
+    fn after_value(&self, av: AfterValue) -> AfterValueView {
+        AfterValueView::new(av, self)
+    }
+
     /// Access a previously parsed value trailer
     pub(crate) fn value_trailer(&self, vt: ValueTrailerKey) -> ValueTrailerView {
         ValueTrailerView::new(vt, self.value_trailers.borrow(), self)
+    }
+
+    /// Retrieve a value trailer previously parsed by parse_value_like
+    #[cfg(test)]
+    pub(crate) fn raw_value_trailer(&self, key: ValueTrailerKey) -> ARef<[AfterValue]> {
+        self.value_trailers.get(key)
+    }
+
+    /// Total number of AfterValues across all interned ValueTrailers
+    pub fn num_after_value(&self) -> usize {
+        self.value_trailers.borrow().num_items()
+    }
+
+    /// Maximal number of template parameters
+    pub fn max_value_trailer_len(&self) -> Option<usize> {
+        self.value_trailers.borrow().max_sequence_len()
     }
 }
 
@@ -692,73 +698,48 @@ mod tests {
             );
             key
         };
+        let check_after_value = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parse_after_value(parser, input), Ok(("", expected)));
+            check_custom_display(parser.after_value(expected), displays);
+        };
 
         // Array indexing
-        assert_eq!(
-            parse_after_value(&mut parser, "[666]"),
-            Ok((
-                "",
-                AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
-            ))
-        );
+        let mut expected = AfterValue::ArrayIndex(literal_value(&mut parser, "666"));
+        check_after_value(&mut parser, "[666]", expected, &["[666]"]);
 
         // Function call
-        assert_eq!(
-            parse_after_value(&mut parser, "('c', -5)"),
-            Ok((
-                "",
-                AfterValue::FunctionCall(unwrap_parse(parser.parse_function_call("('c', -5)"))),
-            ))
-        );
+        expected = AfterValue::FunctionCall(unwrap_parse(parser.parse_function_call("('c', -5)")));
+        check_after_value(&mut parser, "('c', -5)", expected, &["(…)", "('c', -5)"]);
 
         // Binary operator
-        assert_eq!(
-            parse_after_value(&mut parser, "+42"),
-            Ok((
-                "",
-                AfterValue::BinaryOp(Symbol::AddPlus.into(), literal_value(&mut parser, "42"))
-            ))
-        );
+        expected = AfterValue::BinaryOp(Symbol::AddPlus.into(), literal_value(&mut parser, "42"));
+        check_after_value(&mut parser, "+42", expected, &[" + 42"]);
 
         // Ternary operator
-        assert_eq!(
-            parse_after_value(&mut parser, "? 123 : 456"),
-            Ok((
-                "",
-                AfterValue::TernaryOp(
-                    literal_value(&mut parser, "123"),
-                    literal_value(&mut parser, "456")
-                )
-            ))
+        expected = AfterValue::TernaryOp(
+            literal_value(&mut parser, "123"),
+            literal_value(&mut parser, "456"),
         );
+        check_after_value(&mut parser, "? 123 : 456", expected, &[" ? 123 : 456"]);
 
         // Member access
-        assert_eq!(
-            parse_after_value(&mut parser, ".lol"),
-            Ok((
-                "",
-                AfterValue::MemberAccess(unwrap_parse(parser.parse_unqualified_id("lol")))
-            ))
-        );
+        expected = AfterValue::MemberAccess(unwrap_parse(parser.parse_unqualified_id("lol")));
+        check_after_value(&mut parser, ".lol", expected, &[".lol"]);
 
         // Postfix operator
-        assert_eq!(
-            parse_after_value(&mut parser, "++"),
-            Ok((
-                "",
-                AfterValue::PostfixOp(Operator::Basic {
-                    symbol: Symbol::AddPlus,
-                    twice: true,
-                    equal: false,
-                })
-            ))
+        check_after_value(
+            &mut parser,
+            "++",
+            AfterValue::PostfixOp(Operator::Basic {
+                symbol: Symbol::AddPlus,
+                twice: true,
+                equal: false,
+            }),
+            &["++"],
         );
 
         // Trailing ellipsis
-        assert_eq!(
-            parse_after_value(&mut parser, "..."),
-            Ok(("", AfterValue::Ellipsis))
-        );
+        check_after_value(&mut parser, "...", AfterValue::Ellipsis, &["..."]);
     }
 
     #[test]
