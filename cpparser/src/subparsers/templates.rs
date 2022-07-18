@@ -129,6 +129,12 @@ impl EntityParser {
             .terminated(space0.and(peek(char(',').or(char('>')))));
         type_like.or(value_like).parse(s)
     }
+
+    /// Retrieve a previously interned template parameter
+    #[cfg(test)]
+    fn template_parameter(&self, tp: TemplateParameter) -> TemplateParameterView {
+        TemplateParameterView::new(tp, self)
+    }
 }
 
 /// Set of template parameters
@@ -250,44 +256,55 @@ impl<'entities> SliceItemView<'entities> for TemplateParameterView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn template_parameter() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let test_template_parameter_sep =
             |parser: &mut EntityParser,
              text_wo_sep: &str,
              sep: &str,
-             expected: TemplateParameter| {
+             expected: TemplateParameter,
+             displays: &[&str]| {
                 let mut text = text_wo_sep.to_owned();
                 text.push_str(sep);
                 assert_eq!(
                     parser.parse_template_parameter_imut(&text),
                     Ok((sep, expected))
                 );
+                check_custom_display(parser.template_parameter(expected), displays);
             };
-        let test_template_parameter =
-            |parser: &mut EntityParser, text_wo_sep: &str, expected: TemplateParameter| {
-                test_template_parameter_sep(parser, text_wo_sep, ",", expected.clone());
-                test_template_parameter_sep(parser, text_wo_sep, ">", expected);
-            };
+        let test_template_parameter = |parser: &mut EntityParser,
+                                       text_wo_sep: &str,
+                                       expected: TemplateParameter,
+                                       displays: &[&str]| {
+            test_template_parameter_sep(parser, text_wo_sep, ",", expected.clone(), displays);
+            test_template_parameter_sep(parser, text_wo_sep, ">", expected, displays);
+        };
 
-        let value_str = &(i64::MIN.to_string());
+        let value_str = "-1000000000000";
         let value_like = TemplateParameter::ValueLike(unwrap_parse(
             parser.parse_value_like(value_str, true, true),
         ));
-        test_template_parameter(&mut parser, value_str, value_like);
+        test_template_parameter(&mut parser, value_str, value_like, &["-1000000000000"]);
 
-        let test_type_parameter = |parser: &mut EntityParser, s: &str| {
+        let test_type_parameter = |parser: &mut EntityParser, s: &str, displays: &[&str]| {
             let type_like = unwrap_parse(parser.parse_type_like(s));
-            test_template_parameter(parser, s, TemplateParameter::TypeLike(type_like));
+            test_template_parameter(parser, s, TemplateParameter::TypeLike(type_like), displays);
         };
-        test_type_parameter(&mut parser, "signed char*");
-        test_type_parameter(&mut parser, "charamel<lol>&");
+        test_type_parameter(
+            &mut parser,
+            "signed char*",
+            &["signed char…", "signed char *"],
+        );
+        test_type_parameter(
+            &mut parser,
+            "charamel<lol>&",
+            &["charamel<…>…", "charamel<lol> &"],
+        );
     }
 
     #[test]
