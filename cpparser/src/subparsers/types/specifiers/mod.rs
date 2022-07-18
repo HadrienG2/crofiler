@@ -32,8 +32,23 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier> {
+        use nom::character::complete::space0;
+        (Self::parse_cv.terminated(space0))
+            .and(|s| self.parse_simple_type_imut(s))
+            .map(|(cv, simple_type)| TypeSpecifier { cv, simple_type })
+            .parse(s)
+    }
+
+    /// Access a previously parsed type specifier
+    pub fn type_specifier(&self, ts: TypeSpecifier) -> TypeSpecifierView {
+        TypeSpecifierView::new(ts, self)
+    }
+
+    /// Parser recognizing simple types
+    #[inline]
+    fn parse_simple_type_imut<'source>(&self, s: &'source str) -> IResult<'source, SimpleType> {
         use nom::{
-            character::complete::{space0, space1, u32},
+            character::complete::{space1, u32},
             combinator::opt,
             sequence::preceded,
         };
@@ -57,19 +72,10 @@ impl EntityParser {
         let libiberty_auto = preceded(tag("auto:"), u32).map(SimpleType::LibibertyAuto);
 
         // ...and we'll try all of that
-        let simple_type = legacy_primitive.or(libiberty_auto).or(id_expression);
-
-        // The simple type can be surrounded by cv qualifiers on both sides
-
-        (Self::parse_cv.terminated(space0))
-            .and(simple_type)
-            .map(|(cv, simple_type)| TypeSpecifier { cv, simple_type })
+        legacy_primitive
+            .or(libiberty_auto)
+            .or(id_expression)
             .parse(s)
-    }
-
-    /// Access a previously parsed type specifier
-    pub fn type_specifier(&self, ts: TypeSpecifier) -> TypeSpecifierView {
-        TypeSpecifierView::new(ts, self)
     }
 
     /// Access a previously parsed simple type specifier
@@ -225,44 +231,69 @@ impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn type_specifier() {
-        // FIXME: Rework test harness to test SimpleType::CustomDisplay and TypeSpecifier::CustomDisplay
+    fn simple_type() {
         let mut parser = EntityParser::new();
         let id_expression =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_id_expression(s));
+        let check_simple_type = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_simple_type_imut(input), Ok(("", expected)));
+            check_custom_display(parser.simple_type(expected), displays);
+        };
 
         // Normal branch
-        assert_eq!(
-            parser.parse_type_specifier("whatever"),
-            Ok(("", id_expression(&mut parser, "whatever").into()))
-        );
+        let mut expected = id_expression(&mut parser, "whatever").into();
+        check_simple_type(&mut parser, "whatever", expected, &["whatever"]);
 
         // Libiberty auto type branch
-        assert_eq!(
-            parser.parse_type_specifier("auto:1"),
-            Ok(("", SimpleType::LibibertyAuto(1).into()))
+        check_simple_type(
+            &mut parser,
+            "auto:1",
+            SimpleType::LibibertyAuto(1).into(),
+            &["auto:1"],
         );
 
         // Legacy primitive branch
-        assert_eq!(
-            parser.parse_type_specifier("unsigned int"),
-            Ok(("", LegacyName::UnsignedInt.into()))
+        check_simple_type(
+            &mut parser,
+            "unsigned int",
+            LegacyName::UnsignedInt.into(),
+            &["unsigned int"],
         );
 
         // And we can live with the occasional keyword
-        assert_eq!(
-            parser.parse_type_specifier("const class MyClass"),
-            Ok((
-                "",
-                TypeSpecifier {
-                    simple_type: id_expression(&mut parser, "MyClass").into(),
-                    cv: ConstVolatile::CONST,
-                }
-            ))
+        expected = id_expression(&mut parser, "MyClass").into();
+        check_simple_type(&mut parser, "class MyClass", expected, &["MyClass"]);
+    }
+
+    #[test]
+    fn type_specifier() {
+        let mut parser = EntityParser::new();
+        let check_type_specifier = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_type_specifier(input), Ok(("", expected)));
+            check_custom_display(parser.type_specifier(expected), displays);
+        };
+
+        // Works with a simple type specifier...
+        check_type_specifier(
+            &mut parser,
+            "auto:42",
+            SimpleType::LibibertyAuto(42).into(),
+            &["auto:42"],
+        );
+
+        // ...as well as with extra CV qualifiers
+        check_type_specifier(
+            &mut parser,
+            "const int",
+            TypeSpecifier {
+                simple_type: LegacyName::SignedInt.into(),
+                cv: ConstVolatile::CONST,
+            },
+            &["const int"],
         );
     }
 }
