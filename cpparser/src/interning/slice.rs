@@ -201,7 +201,6 @@ mod tests {
             let mut sequences = TestSequenceInterner::new();
             let key = sequences.intern(sequence);
             let view = TestSliceView::new(key, &sequences, &entities);
-            // FIXME: Add check for pairs of sequences and test equality
             check(sequence, view)
         }
     }

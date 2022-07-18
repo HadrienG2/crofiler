@@ -487,7 +487,6 @@ mod tests {
 
     #[test]
     fn function_signature() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let parameter_set = |parser: &mut EntityParser, input| {
             unwrap_parse(parser.parse_function_parameter_set_imut(input))
