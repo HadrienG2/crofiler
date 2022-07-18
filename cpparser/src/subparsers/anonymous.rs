@@ -317,7 +317,7 @@ impl<'entities> Display for AnonymousEntityView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -330,46 +330,50 @@ mod tests {
 
     #[test]
     fn clang_lambda() {
-        // FIXME: Rework test harness to test LambdaView::CustomDisplay
         let mut parser = EntityParser::new();
         if cfg!(target_os = "windows") {
+            let expected = ClangLambda {
+                file: parser.intern_path("c:/source.cpp"),
+                location: (123, 45),
+            };
             assert_eq!(
                 parser.parse_clang_lambda_imut("(lambda at c:/source.cpp:123:45)"),
-                Ok((
-                    "",
-                    ClangLambda {
-                        file: parser.intern_path("c:/source.cpp"),
-                        location: (123, 45)
-                    }
-                ))
+                Ok(("", expected))
             );
+            assert_eq!(
+                parser.clang_lambda(expected).to_string(),
+                "(lambda at c:/source.cpp:123:45)",
+            )
         } else {
+            let expected = ClangLambda {
+                file: parser.intern_path("/path/to/source.cpp"),
+                location: (123, 45),
+            };
             assert_eq!(
                 parser.parse_clang_lambda_imut("(lambda at /path/to/source.cpp:123:45)"),
-                Ok((
-                    "",
-                    ClangLambda {
-                        file: parser.intern_path("/path/to/source.cpp"),
-                        location: (123, 45)
-                    }
-                ))
+                Ok(("", expected))
             );
+            assert_eq!(
+                parser.clang_lambda(expected).to_string(),
+                "(lambda at /path/to/source.cpp:123:45)",
+            )
         }
     }
 
     #[test]
     fn libiberty_lambda() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
+        let expected = LibibertyLambda {
+            signature: unwrap_parse(parser.parse_function_signature("(auto:1)")),
+            id: 1,
+        };
         assert_eq!(
             parser.parse_libiberty_lambda_imut("{lambda(auto:1)#1}"),
-            Ok((
-                "",
-                LibibertyLambda {
-                    signature: unwrap_parse(parser.parse_function_signature("(auto:1)")),
-                    id: 1
-                }
-            ))
+            Ok(("", expected))
+        );
+        check_custom_display(
+            parser.libiberty_lambda(expected),
+            &["{lambda(…)#1}", "{lambda(auto:1)#1}"],
         );
     }
 
@@ -377,14 +381,17 @@ mod tests {
     fn anonymous() {
         let mut parser = EntityParser::new();
         let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
-        assert_eq!(parser.parse_anonymous("(anonymous)"), Ok(("", None)));
-        assert_eq!(
-            parser.parse_anonymous("(anonymous class)"),
-            Ok(("", Some(identifier(&mut parser, "class"))))
-        );
-        assert_eq!(
-            parser.parse_anonymous("(anonymous namespace)"),
-            Ok(("", Some(identifier(&mut parser, "namespace"))))
-        );
+        let check_anonymous = |parser: &mut EntityParser, input, expected| {
+            assert_eq!(parser.parse_anonymous(input), Ok(("", expected)));
+            assert_eq!(format!("{}", parser.anonymous(expected)), input);
+        };
+
+        check_anonymous(&mut parser, "(anonymous)", None);
+
+        let mut expected = Some(identifier(&mut parser, "class"));
+        check_anonymous(&mut parser, "(anonymous class)", expected);
+
+        expected = Some(identifier(&mut parser, "namespace"));
+        check_anonymous(&mut parser, "(anonymous namespace)", expected);
     }
 }
