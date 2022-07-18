@@ -342,13 +342,16 @@ mod tests {
         // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
 
-        // CV qualifier
+        // const qualifier
         assert_eq!(
-            parser.parse_decl_operator_imut("const volatile"),
-            Ok((
-                "",
-                DeclOperator::ConstVolatile(ConstVolatile::CONST | ConstVolatile::VOLATILE),
-            ))
+            parser.parse_decl_operator_imut("const"),
+            Ok(("", DeclOperator::ConstVolatile(ConstVolatile::CONST)))
+        );
+
+        // volatile qualifier
+        assert_eq!(
+            parser.parse_decl_operator_imut("volatile"),
+            Ok(("", DeclOperator::ConstVolatile(ConstVolatile::VOLATILE)))
         );
 
         // Basic pointer syntax
@@ -389,6 +392,50 @@ mod tests {
             ))
         );
 
+        // Pointer to member of lambda
+        assert_eq!(
+            parser.parse_decl_operator_imut("(lambda at /test.cpp:123:456)::X::*"),
+            Ok((
+                "",
+                DeclOperator::Pointer {
+                    path: nested_name_specifier(&mut parser, "(lambda at /test.cpp:123:456)::X::"),
+                    cv: ConstVolatile::default(),
+                }
+            ))
+        );
+
+        // Pointer to member of something whose name starts with a "special" char
+        assert_eq!(
+            parser.parse_decl_operator_imut("_A::B::*"),
+            Ok((
+                "",
+                DeclOperator::Pointer {
+                    path: nested_name_specifier(&mut parser, "_A::B::"),
+                    cv: ConstVolatile::default(),
+                }
+            ))
+        );
+        assert_eq!(
+            parser.parse_decl_operator_imut("c::LOL::*"),
+            Ok((
+                "",
+                DeclOperator::Pointer {
+                    path: nested_name_specifier(&mut parser, "c::LOL::"),
+                    cv: ConstVolatile::default(),
+                }
+            ))
+        );
+        assert_eq!(
+            parser.parse_decl_operator_imut("v::LIL::*"),
+            Ok((
+                "",
+                DeclOperator::Pointer {
+                    path: nested_name_specifier(&mut parser, "v::LIL::"),
+                    cv: ConstVolatile::default(),
+                }
+            ))
+        );
+
         // Reference
         assert_eq!(
             parser.parse_decl_operator_imut("&"),
@@ -412,12 +459,21 @@ mod tests {
             ))
         );
 
-        // Function signature
+        // Basic function signature
         assert_eq!(
             parser.parse_decl_operator_imut("()"),
             Ok((
                 "",
                 unwrap_parse(parser.parse_function_signature("()")).into()
+            ))
+        );
+
+        // Advanced function signature
+        assert_eq!(
+            parser.parse_decl_operator_imut("[abi:cxx11](int)"),
+            Ok((
+                "",
+                unwrap_parse(parser.parse_function_signature("[abi:cxx11](int)")).into()
             ))
         );
 
