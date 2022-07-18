@@ -158,6 +158,12 @@ impl EntityParser {
             _ => member_pointer.parse(s),
         }
     }
+
+    /// Access a previously parsed declarator component
+    #[cfg(test)]
+    fn decl_operator(&self, dop: DeclOperator) -> DeclOperatorView {
+        DeclOperatorView::new(dop, self)
+    }
 }
 
 /// View of a declarator
@@ -285,13 +291,14 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
         match self {
             Self::ConstVolatile(cv) => write!(f, " {cv}")?,
             Self::Pointer { path, cv } => {
+                write!(f, " ")?;
                 path.display_impl(f, state)?;
-                write!(f, " *")?;
+                write!(f, "*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
                 }
             }
-            Self::Reference(r) => write!(f, " {r}")?,
+            Self::Reference(r) => write!(f, "{r}")?,
             // FIXME: Add recursion bound based on [] sign
             Self::Array(a) => {
                 write!(f, "[")?;
@@ -301,7 +308,7 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
             Self::Function(func) => func.display_impl(f, state)?,
             // FIXME: Add recursion bound based on () sign
             Self::Parenthesized(d) => {
-                write!(f, "(")?;
+                write!(f, " (")?;
                 d.display_impl(f, state)?;
                 write!(f, ")")?;
             }
@@ -333,164 +340,147 @@ impl<'entities> SliceItemView<'entities> for DeclOperatorView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn decl_operator() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
+        let check_decl_operator =
+            |parser: &mut EntityParser, input, expected, displays: &[&str]| {
+                assert_eq!(parser.parse_decl_operator_imut(input), Ok(("", expected)));
+                check_custom_display(parser.decl_operator(expected), displays);
+            };
 
         // const qualifier
-        assert_eq!(
-            parser.parse_decl_operator_imut("const"),
-            Ok(("", DeclOperator::ConstVolatile(ConstVolatile::CONST)))
+        check_decl_operator(
+            &mut parser,
+            "const",
+            DeclOperator::ConstVolatile(ConstVolatile::CONST),
+            &[" const"],
         );
 
         // volatile qualifier
-        assert_eq!(
-            parser.parse_decl_operator_imut("volatile"),
-            Ok(("", DeclOperator::ConstVolatile(ConstVolatile::VOLATILE)))
+        check_decl_operator(
+            &mut parser,
+            "volatile",
+            DeclOperator::ConstVolatile(ConstVolatile::VOLATILE),
+            &[" volatile"],
         );
 
         // Basic pointer syntax
         let nested_name_specifier =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_nested_name_specifier(s));
-        assert_eq!(
-            parser.parse_decl_operator_imut("*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, ""),
-                    cv: ConstVolatile::default(),
-                }
-            ))
-        );
+        let mut expected = DeclOperator::Pointer {
+            path: nested_name_specifier(&mut parser, ""),
+            cv: ConstVolatile::default(),
+        };
+        check_decl_operator(&mut parser, "*", expected, &[" *"]);
 
         // Pointer with CV qualifier
-        assert_eq!(
-            parser.parse_decl_operator_imut("* const"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, ""),
-                    cv: ConstVolatile::CONST,
-                }
-            ))
-        );
+        expected = DeclOperator::Pointer {
+            path: nested_name_specifier(&mut parser, ""),
+            cv: ConstVolatile::CONST,
+        };
+        check_decl_operator(&mut parser, "*const", expected, &[" * const"]);
 
-        // Pointer to member
-        assert_eq!(
-            parser.parse_decl_operator_imut("A::B::*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, "A::B::"),
-                    cv: ConstVolatile::default(),
+        // Basic pointer to member
+        let check_simple_member_ptr =
+            |parser: &mut EntityParser, input, expected_path, expected_cv| {
+                let mut display1 = format!(" …::*");
+                let mut display2 = format!(" {}*", parser.nested_name_specifier(expected_path));
+                if expected_cv != ConstVolatile::default() {
+                    let suffix = format!(" {expected_cv}");
+                    display1.push_str(&suffix);
+                    display2.push_str(&suffix);
                 }
-            ))
-        );
-
-        // Pointer to member of lambda
-        assert_eq!(
-            parser.parse_decl_operator_imut("(lambda at /test.cpp:123:456)::X::*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, "(lambda at /test.cpp:123:456)::X::"),
-                    cv: ConstVolatile::default(),
-                }
-            ))
+                check_decl_operator(
+                    parser,
+                    input,
+                    DeclOperator::Pointer {
+                        path: expected_path,
+                        cv: expected_cv,
+                    },
+                    &[&display1, &display2],
+                );
+            };
+        let mut expected_path = nested_name_specifier(&mut parser, "A::B::");
+        check_simple_member_ptr(
+            &mut parser,
+            "A::B::* const",
+            expected_path,
+            ConstVolatile::CONST,
         );
 
         // Pointer to member of something whose name starts with a "special" char
-        assert_eq!(
-            parser.parse_decl_operator_imut("_A::B::*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, "_A::B::"),
-                    cv: ConstVolatile::default(),
-                }
-            ))
+        expected_path = nested_name_specifier(&mut parser, "(lambda at /test.cpp:123:456)::X::");
+        check_simple_member_ptr(
+            &mut parser,
+            "(lambda at /test.cpp:123:456)::X::* volatile",
+            expected_path,
+            ConstVolatile::VOLATILE,
         );
-        assert_eq!(
-            parser.parse_decl_operator_imut("c::LOL::*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, "c::LOL::"),
-                    cv: ConstVolatile::default(),
-                }
-            ))
+        //
+        expected_path = nested_name_specifier(&mut parser, "_A::B::");
+        check_simple_member_ptr(
+            &mut parser,
+            "_A::B::*",
+            expected_path,
+            ConstVolatile::default(),
         );
-        assert_eq!(
-            parser.parse_decl_operator_imut("v::LIL::*"),
-            Ok((
-                "",
-                DeclOperator::Pointer {
-                    path: nested_name_specifier(&mut parser, "v::LIL::"),
-                    cv: ConstVolatile::default(),
-                }
-            ))
+        //
+        expected_path = nested_name_specifier(&mut parser, "c::LOL::");
+        check_simple_member_ptr(
+            &mut parser,
+            "c::LOL::*",
+            expected_path,
+            ConstVolatile::default(),
+        );
+        //
+        expected_path = nested_name_specifier(&mut parser, "v::LIL::");
+        check_simple_member_ptr(
+            &mut parser,
+            "v::LIL::* const",
+            expected_path,
+            ConstVolatile::CONST,
         );
 
         // Reference
-        assert_eq!(
-            parser.parse_decl_operator_imut("&"),
-            Ok(("", Reference::LValue.into()))
-        );
+        check_decl_operator(&mut parser, "&", Reference::LValue.into(), &["&"]);
 
         // Array of unknown length
-        assert_eq!(
-            parser.parse_decl_operator_imut("[]"),
-            Ok(("", DeclOperator::Array(None)))
-        );
+        check_decl_operator(&mut parser, "[]", DeclOperator::Array(None), &["[]"]);
 
         // Array of known length
-        assert_eq!(
-            parser.parse_decl_operator_imut("[42]"),
-            Ok((
-                "",
-                DeclOperator::Array(Some(unwrap_parse(
-                    parser.parse_value_like("42", false, true)
-                )))
-            ))
-        );
+        expected = DeclOperator::Array(Some(unwrap_parse(
+            parser.parse_value_like("42", false, true),
+        )));
+        check_decl_operator(&mut parser, "[42]", expected, &["[42]"]);
 
         // Basic function signature
-        assert_eq!(
-            parser.parse_decl_operator_imut("()"),
-            Ok((
-                "",
-                unwrap_parse(parser.parse_function_signature("()")).into()
-            ))
-        );
+        let function_signature =
+            |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_signature(s));
+        expected = function_signature(&mut parser, "()").into();
+        check_decl_operator(&mut parser, "()", expected, &["()"]);
 
         // Advanced function signature
-        assert_eq!(
-            parser.parse_decl_operator_imut("[abi:cxx11](int)"),
-            Ok((
-                "",
-                unwrap_parse(parser.parse_function_signature("[abi:cxx11](int)")).into()
-            ))
+        expected = function_signature(&mut parser, "[abi:cxx11](int)").into();
+        check_decl_operator(
+            &mut parser,
+            "[abi:cxx11](int)",
+            expected,
+            &["[abi:cxx11](…)", "[abi:cxx11](int)"],
         );
 
         // Parenthesized declarator
-        assert_eq!(
-            parser.parse_decl_operator_imut("(&&)"),
-            Ok(("", unwrap_parse(parser.parse_declarator("&&")).into()))
-        );
+        expected = unwrap_parse(parser.parse_declarator("&&")).into();
+        check_decl_operator(&mut parser, "(&&)", expected, &[" (…)", " (&&)"]);
 
         // Vector size
-        assert_eq!(
-            parser.parse_decl_operator_imut("__vector(2)"),
-            Ok((
-                "",
-                DeclOperator::VectorSize(unwrap_parse(parser.parse_value_like("2", false, true)))
-            ))
-        );
+        expected =
+            DeclOperator::VectorSize(unwrap_parse(parser.parse_value_like("2", false, true)));
+        check_decl_operator(&mut parser, "__vector(2)", expected, &[" __vector(2)"]);
     }
 
     #[test]

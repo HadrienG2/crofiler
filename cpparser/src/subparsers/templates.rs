@@ -311,7 +311,7 @@ mod tests {
         test_type_parameter(
             &mut parser,
             "charamel<lol>&",
-            &["charamel<…>…", "charamel<lol> &"],
+            &["charamel<…>…", "charamel<lol>&"],
         );
     }
 

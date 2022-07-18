@@ -89,10 +89,18 @@ impl<T: CustomDisplay> CustomDisplay for Option<T> {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DisplayState(RefCell<DisplayStateInner>);
 //
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct DisplayStateInner {
     /// Recursion limit from current point
     max_recursion: usize,
+}
+//
+impl Default for DisplayStateInner {
+    fn default() -> Self {
+        Self {
+            max_recursion: usize::MAX,
+        }
+    }
 }
 //
 impl DisplayState {
