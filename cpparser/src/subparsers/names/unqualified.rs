@@ -311,6 +311,16 @@ pub mod tests {
             Ok(("", identifier(&mut parser, "basic").into()))
         );
 
+        // ...including some starting chars treated specially by the parser
+        assert_eq!(
+            parser.parse_unqualified_id("data"),
+            Ok(("", identifier(&mut parser, "data").into()))
+        );
+        assert_eq!(
+            parser.parse_unqualified_id("ozzy"),
+            Ok(("", identifier(&mut parser, "ozzy").into()))
+        );
+
         // Destructor
         assert_eq!(
             parser.parse_unqualified_id("~stuff"),
@@ -367,12 +377,21 @@ pub mod tests {
             ))
         );
 
-        // Lambda
+        // Clang-style lambda
         assert_eq!(
             parser.parse_unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
             Ok((
                 "",
                 unwrap_parse(parser.parse_lambda("(lambda at /path/to/stuff.h:9876:54)")).into()
+            ))
+        );
+
+        // Libiberty-style lambda
+        assert_eq!(
+            parser.parse_unqualified_id("{lambda(auto:1)#1}"),
+            Ok((
+                "",
+                unwrap_parse(parser.parse_lambda("{lambda(auto:1)#1}")).into()
             ))
         );
 
