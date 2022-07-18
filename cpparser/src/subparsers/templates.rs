@@ -167,14 +167,22 @@ impl<'entities> Display for TemplateParametersView<'entities> {
 //
 impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
     fn recursion_depth(&self) -> usize {
-        self.0.recursion_depth()
+        if let Some(list) = &self.0 {
+            list.recursion_depth()
+        } else {
+            1
+        }
     }
 
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(list) = &self.0 {
             list.display_impl(f, state)
         } else {
-            write!(f, "<, void>")
+            if let Ok(_guard) = state.recurse() {
+                write!(f, "<, void>")
+            } else {
+                write!(f, "<…>")
+            }
         }
     }
 }
@@ -309,9 +317,8 @@ mod tests {
 
     #[test]
     fn template_parameters() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
-        let mut test_case = |input: &str, expected_types: Option<&[&str]>| {
+        let mut test_case = |input: &str, expected_types: Option<&[&str]>, displays: &[&str]| {
             if let Some(expected_types) = expected_types {
                 assert_matches!(parser.parse_template_parameters(input), Ok(("", Some(key))) => {
                     let parameters = parser.raw_template_parameters(key).to_owned();
@@ -320,14 +327,20 @@ mod tests {
                         let expected = TemplateParameter::TypeLike(unwrap_parse(parser.parse_type_like(*expected)));
                         assert_eq!(expected, actual);
                     }
+                    check_custom_display(parser.template_parameters(Some(key)), displays);
                 })
             } else {
                 assert_eq!(parser.parse_template_parameters(input), Ok(("", None)));
+                check_custom_display(parser.template_parameters(None), displays)
             }
         };
-        test_case("<>", Some(&[]));
-        test_case("<T>", Some(&["T"]));
-        test_case("<char, stuff>", Some(&["char", "stuff"]));
-        test_case("<, void>", None);
+        test_case("<>", Some(&[]), &["<>"]);
+        test_case("<T>", Some(&["T"]), &["<…>", "<T>"]);
+        test_case(
+            "<char, stuff>",
+            Some(&["char", "stuff"]),
+            &["<…>", "<char, stuff>"],
+        );
+        test_case("<, void>", None, &["<…>", "<, void>"]);
     }
 }
