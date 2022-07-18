@@ -306,7 +306,7 @@ mod tests {
         test_type_parameter(
             &mut parser,
             "signed char*",
-            &["signed char…", "signed char *"],
+            &["signed char…", "signed char*"],
         );
         test_type_parameter(
             &mut parser,

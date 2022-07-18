@@ -291,8 +291,10 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
         match self {
             Self::ConstVolatile(cv) => write!(f, " {cv}")?,
             Self::Pointer { path, cv } => {
-                write!(f, " ")?;
-                path.display_impl(f, state)?;
+                if path.is_rooted() || !path.scopes().is_empty() {
+                    write!(f, " ")?;
+                    path.display_impl(f, state)?;
+                }
                 write!(f, "*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
@@ -376,14 +378,14 @@ mod tests {
             path: nested_name_specifier(&mut parser, ""),
             cv: ConstVolatile::default(),
         };
-        check_decl_operator(&mut parser, "*", expected, &[" *"]);
+        check_decl_operator(&mut parser, "*", expected, &["*"]);
 
         // Pointer with CV qualifier
         expected = DeclOperator::Pointer {
             path: nested_name_specifier(&mut parser, ""),
             cv: ConstVolatile::CONST,
         };
-        check_decl_operator(&mut parser, "*const", expected, &[" * const"]);
+        check_decl_operator(&mut parser, "*const", expected, &["* const"]);
 
         // Basic pointer to member
         let check_simple_member_ptr =
