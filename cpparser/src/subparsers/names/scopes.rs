@@ -216,6 +216,12 @@ impl EntityParser {
             Err(error) => Err(error),
         }
     }
+
+    /// Access a scope previously parsed by parse_scope_or_unqualified_id
+    #[cfg(test)]
+    fn scope(&self, scope: Scope) -> ScopeView {
+        ScopeView::new(scope, self)
+    }
 }
 
 /// C++ id-expression
@@ -455,56 +461,47 @@ impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
 
     #[test]
     fn scope_or_unqualified_id() {
-        // FIXME: Rework test harness to test Scope::CustomDisplay
         let mut parser = EntityParser::new();
         let unqualified_id =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_unqualified_id(s));
+        let check_scope = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(
+                parser.parse_scope_or_unqualified_id_imut(input),
+                Ok(("", ScopeOrUnqualifiedId::Scope(expected)))
+            );
+            check_custom_display(parser.scope(expected), displays);
+        };
 
         // Without function signature
-        assert_eq!(
-            parser.parse_scope_or_unqualified_id_imut("std::"),
-            Ok((
-                "",
-                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "std").into())
-            ))
-        );
+        let mut expected = unqualified_id(&mut parser, "std").into();
+        check_scope(&mut parser, "std::", expected, &["std::"]);
 
         // With function signature
-        assert_eq!(
-            parser.parse_scope_or_unqualified_id_imut("my_function()::"),
-            Ok((
-                "",
-                ScopeOrUnqualifiedId::Scope(Scope {
-                    id: unqualified_id(&mut parser, "my_function"),
-                    function_signature: Some(unwrap_parse(parser.parse_function_signature("()"))),
-                })
-            ))
+        expected = Scope {
+            id: unqualified_id(&mut parser, "my_function"),
+            function_signature: Some(unwrap_parse(parser.parse_function_signature("()"))),
+        };
+        check_scope(
+            &mut parser,
+            "my_function()::",
+            expected,
+            &["my_function()::"],
         );
 
         // Scope CV qualifiers are ignored (it's the same scope)
-        assert_eq!(
-            parser.parse_scope_or_unqualified_id_imut("MyClass const::"),
-            Ok((
-                "",
-                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "MyClass").into())
-            ))
-        );
+        expected = unqualified_id(&mut parser, "MyClass").into();
+        check_scope(&mut parser, "MyClass const::", expected, &["MyClass::"]);
 
         // Reference qualifiers are ignored (it's the same scope)
-        assert_eq!(
-            parser.parse_scope_or_unqualified_id_imut("Something&::"),
-            Ok((
-                "",
-                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "Something").into())
-            ))
-        );
+        expected = unqualified_id(&mut parser, "Something").into();
+        check_scope(&mut parser, "Something&::", expected, &["Something::"]);
 
-        // Without scope terminator
+        // Without scope terminator, that's an UnqualifiedId
         assert_eq!(
             parser.parse_scope_or_unqualified_id_imut("std"),
             Ok((
