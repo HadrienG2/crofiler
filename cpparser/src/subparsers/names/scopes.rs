@@ -486,6 +486,24 @@ pub mod tests {
             ))
         );
 
+        // Scope CV qualifiers are ignored (it's the same scope)
+        assert_eq!(
+            parser.parse_scope_or_unqualified_id_imut("MyClass const::"),
+            Ok((
+                "",
+                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "MyClass").into())
+            ))
+        );
+
+        // Reference qualifiers are ignored (it's the same scope)
+        assert_eq!(
+            parser.parse_scope_or_unqualified_id_imut("Something&::"),
+            Ok((
+                "",
+                ScopeOrUnqualifiedId::Scope(unqualified_id(&mut parser, "Something").into())
+            ))
+        );
+
         // Without scope terminator
         assert_eq!(
             parser.parse_scope_or_unqualified_id_imut("std"),
