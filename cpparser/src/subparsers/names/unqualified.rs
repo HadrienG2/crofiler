@@ -296,112 +296,97 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
 
     #[test]
     fn unqualified_id() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
+        let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
+        let check_unqualified_id = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_unqualified_id(input), Ok(("", expected)));
+            check_custom_display(parser.unqualified_id(expected), displays);
+        };
 
         // Just an identifier
-        let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
-        assert_eq!(
-            parser.parse_unqualified_id("basic"),
-            Ok(("", identifier(&mut parser, "basic").into()))
-        );
+        let mut expected = identifier(&mut parser, "basic").into();
+        check_unqualified_id(&mut parser, "basic", expected, &["basic"]);
 
         // ...including some starting chars treated specially by the parser
-        assert_eq!(
-            parser.parse_unqualified_id("data"),
-            Ok(("", identifier(&mut parser, "data").into()))
-        );
-        assert_eq!(
-            parser.parse_unqualified_id("ozzy"),
-            Ok(("", identifier(&mut parser, "ozzy").into()))
-        );
+        expected = identifier(&mut parser, "data").into();
+        check_unqualified_id(&mut parser, "data", expected, &["data"]);
+        expected = identifier(&mut parser, "ozzy").into();
+        check_unqualified_id(&mut parser, "ozzy", expected, &["ozzy"]);
 
         // Destructor
-        assert_eq!(
-            parser.parse_unqualified_id("~stuff"),
-            Ok((
-                "",
-                UnqualifiedId::Named {
-                    is_destructor: true,
-                    id: identifier(&mut parser, "stuff"),
-                    template_parameters: None,
-                }
-            ))
-        );
+        expected = UnqualifiedId::Named {
+            is_destructor: true,
+            id: identifier(&mut parser, "stuff"),
+            template_parameters: None,
+        };
+        check_unqualified_id(&mut parser, "~stuff", expected, &["~stuff"]);
 
         // Template with no parameters
         let template_parameters =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_template_parameters(s));
-        assert_eq!(
-            parser.parse_unqualified_id("no_parameters<>"),
-            Ok((
-                "",
-                UnqualifiedId::Named {
-                    is_destructor: false,
-                    id: identifier(&mut parser, "no_parameters"),
-                    template_parameters: Some(template_parameters(&mut parser, "<>")),
-                }
-            ))
+        expected = UnqualifiedId::Named {
+            is_destructor: false,
+            id: identifier(&mut parser, "no_parameters"),
+            template_parameters: Some(template_parameters(&mut parser, "<>")),
+        };
+        check_unqualified_id(
+            &mut parser,
+            "no_parameters<>",
+            expected,
+            &["no_parameters<>"],
         );
 
         // Template with a few parameters
-        assert_eq!(
-            parser.parse_unqualified_id("A<B, C>"),
-            Ok((
-                "",
-                UnqualifiedId::Named {
-                    is_destructor: false,
-                    id: identifier(&mut parser, "A"),
-                    template_parameters: Some(template_parameters(&mut parser, "<B, C>"))
-                }
-            ))
-        );
+        expected = UnqualifiedId::Named {
+            is_destructor: false,
+            id: identifier(&mut parser, "A"),
+            template_parameters: Some(template_parameters(&mut parser, "<B, C>")),
+        };
+        check_unqualified_id(&mut parser, "A<B, C>", expected, &["A<…>", "A<B, C>"]);
 
         // Operator overload
-        assert_eq!(
-            parser.parse_unqualified_id("operator()"),
-            Ok(("", Operator::CallIndex { is_index: false }.into()))
+        check_unqualified_id(
+            &mut parser,
+            "operator()",
+            Operator::CallIndex { is_index: false }.into(),
+            &["operator()"],
         );
 
         // Decltype
-        assert_eq!(
-            parser.parse_unqualified_id("decltype(42)"),
-            Ok((
-                "",
-                UnqualifiedId::Decltype(unwrap_parse(parser.parse_value_like("42", true, true)))
-            ))
-        );
+        expected = UnqualifiedId::Decltype(unwrap_parse(parser.parse_value_like("42", true, true)));
+        check_unqualified_id(&mut parser, "decltype(42)", expected, &["decltype(42)"]);
 
         // Clang-style lambda
-        assert_eq!(
-            parser.parse_unqualified_id("(lambda at /path/to/stuff.h:9876:54)"),
-            Ok((
-                "",
-                unwrap_parse(parser.parse_lambda("(lambda at /path/to/stuff.h:9876:54)")).into()
-            ))
+        let lambda = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_lambda(s));
+        expected = lambda(&mut parser, "(lambda at /path/to/stuff.h:9876:54)").into();
+        check_unqualified_id(
+            &mut parser,
+            "(lambda at /path/to/stuff.h:9876:54)",
+            expected,
+            &["(lambda at /path/to/stuff.h:9876:54)"],
         );
 
         // Libiberty-style lambda
-        assert_eq!(
-            parser.parse_unqualified_id("{lambda(auto:1)#1}"),
-            Ok((
-                "",
-                unwrap_parse(parser.parse_lambda("{lambda(auto:1)#1}")).into()
-            ))
+        expected = lambda(&mut parser, "{lambda(auto:1)#1}").into();
+        check_unqualified_id(
+            &mut parser,
+            "{lambda(auto:1)#1}",
+            expected,
+            &["{lambda(…)#1}", "{lambda(auto:1)#1}"],
         );
 
         // Anonymous entity
-        assert_eq!(
-            parser.parse_unqualified_id("(anonymous class)"),
-            Ok((
-                "",
-                unwrap_parse(parser.parse_anonymous("(anonymous class)")).into()
-            ))
+        expected = unwrap_parse(parser.parse_anonymous("(anonymous class)")).into();
+        check_unqualified_id(
+            &mut parser,
+            "(anonymous class)",
+            expected,
+            &["(anonymous class)"],
         );
     }
 }
