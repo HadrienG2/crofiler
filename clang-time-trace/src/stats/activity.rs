@@ -108,7 +108,7 @@ pub enum ActivityStatParseError {
 }
 
 /// Activity that Clang can engage in during the compilation process
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Activity {
     /// Machine identifier that can be translated back into a human identifier
     id: ActivityId,
@@ -437,7 +437,7 @@ generate_activities! {
 }
 //
 /// Empirically observed activity argument parsing logics for time-trace entries
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActivityArgumentParser {
     /// No argument
     Nothing,
@@ -465,7 +465,7 @@ pub enum ActivityArgumentParser {
 }
 //
 /// Concrete things that an activity can take as an argument
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActivityArgument {
     /// No argument
     Nothing,
@@ -487,7 +487,7 @@ pub enum ActivityArgument {
 }
 //
 /// A mangled C++ symbol that we tried to demangle and parse
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MangledSymbol {
     /// Symbol was successfully mangled and interned
     Parsed(EntityKey),
@@ -546,7 +546,10 @@ mod tests {
     #[test]
     fn activity_stat_accessors() {
         let stat = ActivityStat {
-            activity: Activity::ExecuteCompiler,
+            activity: Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
             start: 12.3,
             duration: 45.6,
         };
@@ -557,18 +560,12 @@ mod tests {
     }
 
     fn test_valid_activity(
-        name: &str,
         args: Option<HashMap<Box<str>, json::Value>>,
         expected: &Activity,
-        expected_arg: &ActivityArgument,
         parser: &mut EntityParser,
     ) {
-        // Check name and argument accessors
-        assert_eq!(expected.name(), name);
-        assert_eq!(expected.argument(), *expected_arg);
-
         // Check direct Activity parsing
-        let name = Box::<str>::from(name);
+        let name = Box::<str>::from(expected.name());
         let mut demangling_buf = String::new();
         assert_eq!(
             Activity::parse(name.clone(), args.clone(), parser, &mut demangling_buf),
@@ -676,93 +673,55 @@ mod tests {
         let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
             Activity::parse(activity.clone(), None, &mut parser, &mut demanging_buf),
-            Err(ActivityParseError::UnknownActivity(activity))
-        );
-    }
-
-    fn nullary_test(name: &str, a: Activity) {
-        // Test two different ways of passing no arguments
-        let mut parser = EntityParser::new();
-        test_valid_activity(name, None, &a, &ActivityArgument::Nothing, &mut parser);
-        test_valid_activity(
-            name,
-            Some(HashMap::new()),
-            &a,
-            &ActivityArgument::Nothing,
-            &mut parser,
-        );
-
-        // Add an undesired detail argument
-        let args = maplit::hashmap! { "detail".into() => json::json!("") };
-        let mut demangling_buf = String::new();
-        assert_eq!(
-            Activity::parse(
-                name.into(),
-                Some(args.clone()),
-                &mut parser,
-                &mut demangling_buf,
-            ),
-            Err(ActivityParseError::BadArguments(
-                ArgParseError::UnexpectedKeys(args)
-            ))
+            Err(ActivityParseError::UnknownActivity(activity, None))
         );
     }
 
     #[test]
-    fn perform_pending_instantiations() {
-        nullary_test(
-            "PerformPendingInstantiations",
-            Activity::PerformPendingInstantiations,
-        );
+    fn nullary_activities() {
+        let nullary_test = |id| {
+            // Determine activity name and associated Activity struct
+            let name = <&str>::from(id);
+            let activity = Activity {
+                id,
+                arg: ActivityArgument::Nothing,
+            };
+
+            // Test two different ways of passing no arguments
+            let mut parser = EntityParser::new();
+            test_valid_activity(None, &activity, &mut parser);
+            test_valid_activity(Some(HashMap::new()), &activity, &mut parser);
+
+            // Add an undesired detail argument
+            let args = maplit::hashmap! { "detail".into() => json::json!("") };
+            let mut demangling_buf = String::new();
+            assert_eq!(
+                Activity::parse(
+                    name.into(),
+                    Some(args.clone()),
+                    &mut parser,
+                    &mut demangling_buf,
+                ),
+                Err(ActivityParseError::BadArguments(
+                    ArgParseError::UnexpectedKeys(args)
+                ))
+            );
+        };
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::Nothing
+                || *activity_parser == ActivityArgumentParser::MangledSymbolOpt
+                || *activity_parser == ActivityArgumentParser::UnnamedLoopOpt
+            {
+                nullary_test(*activity_id);
+            }
+        }
     }
 
-    #[test]
-    fn frontend() {
-        nullary_test("Frontend", Activity::Frontend);
-    }
-
-    #[test]
-    fn per_function_passes() {
-        nullary_test("PerFunctionPasses", Activity::PerFunctionPasses);
-    }
-
-    #[test]
-    fn per_module_passes() {
-        nullary_test("PerModulePasses", Activity::PerModulePasses);
-    }
-
-    #[test]
-    fn code_gen_passes() {
-        nullary_test("CodeGenPasses", Activity::CodeGenPasses);
-    }
-
-    #[test]
-    fn backend() {
-        nullary_test("Backend", Activity::Backend);
-    }
-
-    #[test]
-    fn execute_compiler() {
-        nullary_test("ExecuteCompiler", Activity::ExecuteCompiler);
-    }
-
-    fn unary_test(
-        name: &str,
-        arg: &str,
-        expected: Activity,
-        expected_argument: ActivityArgument,
-        mut parser: EntityParser,
-    ) {
+    fn unary_test(arg: &str, expected: Activity, mut parser: EntityParser) {
         // Test happy path
-        let name = Box::<str>::from(name);
+        let name = <Box<str>>::from(<&str>::from(expected.id()));
         let good_args = maplit::hashmap! { "detail".into() => json::json!(arg) };
-        test_valid_activity(
-            &name,
-            Some(good_args.clone()),
-            &expected,
-            &expected_argument,
-            &mut parser,
-        );
+        test_valid_activity(Some(good_args.clone()), &expected, &mut parser);
 
         // Try not providing the requested argument
         let mut demangling_buf = String::new();
@@ -815,211 +774,129 @@ mod tests {
     }
 
     #[test]
-    fn source() {
-        const PATH: &'static str =
-            "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
-        let mut parser = EntityParser::new();
-        let key = parser.intern_path(PATH);
-        unary_test(
-            "Source",
-            PATH,
-            Activity::Source(key),
-            ActivityArgument::FilePath(key),
-            parser,
-        );
+    fn string_activities() {
+        let string_test = |id| {
+            let mock_arg = "X86 DAG->DAG Instruction Selection";
+            unary_test(
+                mock_arg,
+                Activity {
+                    id,
+                    arg: ActivityArgument::String(mock_arg.into()),
+                },
+                EntityParser::new(),
+            );
+        };
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::String {
+                string_test(*activity_id);
+            }
+        }
     }
 
     #[test]
-    fn parse_class() {
-        const CLASS: &'static str = "Acts::Test::MeasurementCreator";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(CLASS)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "ParseClass",
-            CLASS,
-            Activity::ParseClass(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
+    fn path_activities() {
+        let path_test = |id| {
+            let mock_path = "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
+            let mut parser = EntityParser::new();
+            let path_key = parser.intern_path(mock_path);
+            unary_test(
+                mock_path,
+                Activity {
+                    id,
+                    arg: ActivityArgument::FilePath(path_key),
+                },
+                parser,
+            );
+        };
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::FilePath {
+                path_test(*activity_id);
+            }
+        }
     }
 
     #[test]
-    fn instantiate_class() {
-        const CLASS: &'static str = "std::invoke_result<(lambda at /mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp:354:40), Acts::detail_lt::TrackStateProxy<Acts::Test::ExtendedMinimalSourceLink, 6, 6, true> >";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(CLASS)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "InstantiateClass",
-            CLASS,
-            Activity::InstantiateClass(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
+    fn entity_activities() {
+        let entity_test = |id| {
+            let mock_entity = "Acts::Test::MeasurementCreator";
+            let mut parser = EntityParser::new();
+            let key = parser
+                .parse_entity(mock_entity)
+                .expect("Known-good parse, shouldn't fail");
+            unary_test(
+                mock_entity,
+                Activity {
+                    id,
+                    arg: ActivityArgument::CppEntity(key),
+                },
+                parser,
+            );
+        };
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::CppEntity {
+                entity_test(*activity_id);
+            }
+        }
     }
 
     #[test]
-    fn parse_template() {
-        const TEMPLATE: &'static str = "<unknown>"; // Yes, clang can do that
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(TEMPLATE)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "ParseTemplate",
-            TEMPLATE,
-            Activity::ParseTemplate(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
+    fn mangled_activities() {
+        let mangled_test = |id| {
+            // Mangled symbol that demangles
+            const VALID: &'static str =
+                "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
+            let mut parser = EntityParser::new();
+            let key = parser
+                .parse_entity("Acts::Test::comb_kalman_filter_zero_field::test_method()")
+                .expect("Known-good parse, shouldn't fail");
+            unary_test(
+                VALID,
+                Activity {
+                    id,
+                    arg: ActivityArgument::MangledSymbol(MangledSymbol::Parsed(key)),
+                },
+                parser,
+            );
+
+            // Mangled symbol that doesn't demangle
+            const INVALID: &'static str = "__cxx_global_var_init.1";
+            unary_test(
+                INVALID,
+                Activity {
+                    id,
+                    arg: ActivityArgument::MangledSymbol(MangledSymbol::Mangled(INVALID.into())),
+                },
+                EntityParser::new(),
+            );
+        };
+
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::MangledSymbol
+                || *activity_parser == ActivityArgumentParser::MangledSymbolOpt
+            {
+                mangled_test(*activity_id);
+            }
+        }
     }
 
     #[test]
-    fn instantiate_function() {
-        const FUNCTION: &'static str = "boost::unit_test::lazy_ostream_impl<boost::unit_test::lazy_ostream, boost::unit_test::basic_cstring<const char>, const boost::unit_test::basic_cstring<const char> &>::operator()";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(FUNCTION)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "InstantiateFunction",
-            FUNCTION,
-            Activity::InstantiateFunction(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn debug_type() {
-        const TYPE: &'static str = "generic_dense_assignment_kernel<DstEvaluatorType, SrcEvaluatorType, Eigen::internal::add_assign_op<double, double> >";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(TYPE)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "DebugType",
-            TYPE,
-            Activity::DebugType(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn debug_global_variable() {
-        const VAR: &'static str = "std::__detail::__variant::__gen_vtable<true, void, (lambda at /mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp:819:11) &&, std::variant<Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime>, Acts::Measurement<Acts::Test::ExtendedMinimalSourceLink, Acts::eBoundLoc0, Acts::eBoundLoc1, Acts::eBoundPhi, Acts::eBoundTheta, Acts::eBoundQOverP, Acts::eBoundTime> > &&>::_S_vtable";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(VAR)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "DebugGlobalVariable",
-            VAR,
-            Activity::DebugGlobalVariable(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn code_gen_function() {
-        const FUNCTION: &'static str =
-            "boost::unit_test::operator<<<char, std::char_traits<char>, const char>";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(FUNCTION)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "CodeGen Function",
-            FUNCTION,
-            Activity::CodeGenFunction(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn debug_function() {
-        const FUNCTION: &'static str = "Eigen::operator*<Eigen::PermutationMatrix<6, 6, int>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 6, 6, 1, 6, 6> > >";
-        let mut parser = EntityParser::new();
-        let key = parser
-            .parse_entity(FUNCTION)
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "DebugFunction",
-            FUNCTION,
-            Activity::DebugFunction(key),
-            ActivityArgument::CppEntity(key),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn run_pass() {
-        const PASS: &'static str = "X86 DAG->DAG Instruction Selection";
-        unary_test(
-            "RunPass",
-            PASS,
-            Activity::RunPass(PASS.into()),
-            ActivityArgument::String(PASS.into()),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn opt_function() {
-        let mut parser = EntityParser::new();
-
-        const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
-        let key = parser
-            .parse_entity("Acts::Test::comb_kalman_filter_zero_field::test_method()")
-            .expect("Known-good parse, shouldn't fail");
-        unary_test(
-            "OptFunction",
-            VALID,
-            Activity::OptFunction(MangledSymbol::Parsed(key)),
-            ActivityArgument::MangledSymbol(MangledSymbol::Parsed(key)),
-            EntityParser::new(),
-        );
-
-        const INVALID: &'static str = "__cxx_global_var_init.1";
-        unary_test(
-            "OptFunction",
-            INVALID,
-            Activity::OptFunction(MangledSymbol::Mangled(INVALID.into())),
-            ActivityArgument::MangledSymbol(MangledSymbol::Mangled(INVALID.into())),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn run_loop_pass() {
-        const PASS: &'static str = "Induction Variable Users";
-        unary_test(
-            "RunLoopPass",
-            PASS,
-            Activity::RunLoopPass(PASS.into()),
-            ActivityArgument::String(PASS.into()),
-            EntityParser::new(),
-        );
-    }
-
-    #[test]
-    fn opt_module() {
-        const MODULE: &'static str =
-            "/mnt/acts/Tests/UnitTests/Core/TrackFinder/CombinatorialKalmanFilterTests.cpp";
-        let mut parser = EntityParser::new();
-        let key = parser.intern_path(MODULE);
-        unary_test(
-            "OptModule",
-            MODULE,
-            Activity::OptModule(key.clone()),
-            ActivityArgument::FilePath(key),
-            parser,
-        );
+    fn unnamed_activities() {
+        let unnamed_test = |id| {
+            unary_test(
+                "<unnamed loop>",
+                Activity {
+                    id,
+                    arg: ActivityArgument::UnnamedLoop,
+                },
+                EntityParser::new(),
+            );
+        };
+        for (activity_id, activity_parser) in ACTIVITIES.values() {
+            if *activity_parser == ActivityArgumentParser::UnnamedLoop
+                || *activity_parser == ActivityArgumentParser::UnnamedLoopOpt
+            {
+                unnamed_test(*activity_id);
+            }
+        }
     }
 }
