@@ -674,7 +674,6 @@ pub mod tests {
 
     #[test]
     fn nested_name_specifier() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let scopes = |parser: &mut EntityParser, ss: &[&str]| -> ScopesKey {
             let mut entry = parser.scope_sequences.entry();
@@ -686,26 +685,46 @@ pub mod tests {
             }
             entry.intern()
         };
+        let check_nested_name_specifier = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_nested_name_specifier(input), Ok(expected));
+            check_custom_display(parser.nested_name_specifier(expected.1), displays);
+        };
 
-        assert_eq!(
-            parser.parse_nested_name_specifier("boost::hana::"),
-            Ok((
-                "",
-                NestedNameSpecifier {
-                    rooted: false,
-                    scopes: scopes(&mut parser, &["boost", "hana"]),
-                }
-            ))
+        let mut expected = (
+            "",
+            NestedNameSpecifier {
+                rooted: false,
+                scopes: scopes(&mut parser, &[]),
+            },
         );
-        assert_eq!(
-            parser.parse_nested_name_specifier("boost::hana::stuff"),
-            Ok((
-                "stuff",
-                NestedNameSpecifier {
-                    rooted: false,
-                    scopes: scopes(&mut parser, &["boost", "hana"]),
-                }
-            ))
+        check_nested_name_specifier(&mut parser, "", expected, &[""]);
+
+        expected = (
+            "",
+            NestedNameSpecifier {
+                rooted: false,
+                scopes: scopes(&mut parser, &["boost", "hana"]),
+            },
+        );
+        check_nested_name_specifier(
+            &mut parser,
+            "boost::hana::",
+            expected,
+            &["…::", "boost::hana::"],
+        );
+
+        expected = (
+            "stuff",
+            NestedNameSpecifier {
+                rooted: true,
+                scopes: scopes(&mut parser, &["boost", "hana"]),
+            },
+        );
+        check_nested_name_specifier(
+            &mut parser,
+            "::boost::hana::stuff",
+            expected,
+            &["…::", "::boost::hana::"],
         );
     }
 
