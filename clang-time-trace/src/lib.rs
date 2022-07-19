@@ -31,12 +31,13 @@ pub use self::{
     metadata::NameParseError,
     stats::{
         activity::{
-            Activity, ActivityArgument, ActivityParseError, ActivityStatParseError, MangledSymbol,
+            Activity, ActivityArgument, ActivityId, ActivityParseError, ActivityStatParseError,
+            MangledSymbol,
         },
         global::{GlobalStat, GlobalStatParseError},
         ArgParseError,
     },
-    tree::{ActivityId, ActivityTrace, ActivityTreeError},
+    tree::{ActivityStatId, ActivityTrace, ActivityTreeError},
 };
 pub use cpparser::{
     asylum::path::{InternedComponent, PathError},
@@ -102,7 +103,7 @@ impl ClangTrace {
     }
 
     /// Retrieve an activity by a previously acquired identifier
-    pub fn activity(&self, id: ActivityId) -> ActivityTrace {
+    pub fn activity(&self, id: ActivityStatId) -> ActivityTrace {
         self.activities.activity(id)
     }
 
@@ -413,7 +414,6 @@ pub enum ClangTraceParseError {
 mod tests {
     use super::{
         ctf::{events::duration::DurationEvent, DisplayTimeUnit},
-        stats::activity::Activity,
         *,
     };
     use assert_matches::assert_matches;
@@ -521,16 +521,17 @@ mod tests {
 
         // Check flat activity list
         let expected_activities = [
-            (Activity::Frontend, 0.3, 6788.7),
-            (Activity::CodeGenPasses, 6789.3, 5554.2),
-            (Activity::Backend, 6789.1, 5554.5),
-            (Activity::ExecuteCompiler, 0.1, 12344.8),
+            (ActivityId::Frontend, 0.3, 6788.7),
+            (ActivityId::CodeGenPasses, 6789.3, 5554.2),
+            (ActivityId::Backend, 6789.1, 5554.5),
+            (ActivityId::ExecuteCompiler, 0.1, 12344.8),
         ];
         for (trace, (expected_activity, expected_start, expected_duration)) in trace
             .all_activities()
             .zip(expected_activities.iter().cloned())
         {
-            assert_eq!(trace.activity(), &expected_activity);
+            assert_eq!(trace.activity().id(), expected_activity);
+            assert_eq!(trace.activity().argument(), &ActivityArgument::Nothing);
             assert_eq!(trace.start(), expected_start);
             assert_eq!(trace.duration(), expected_duration);
         }
@@ -541,19 +542,32 @@ mod tests {
             .last()
             .expect("Already checked there is >1 activity");
         assert_matches!(root_iter.next(), Some(root) => {
-            assert_eq!(root.activity(), root_activity);
+            assert_eq!(root.activity().id(), *root_activity);
             assert_eq!(root.start(), *root_start);
             assert_eq!(root.duration(), *root_duration);
         });
         assert_eq!(root_iter.next(), None);
     }
 
+    macro_rules! expect_err {
+        ($e:expr) => {
+            if let Err(error) = $e {
+                error
+            } else {
+                unreachable!(
+                    "{} is a known-bad parse that should error out",
+                    stringify!($e)
+                )
+            }
+        };
+    }
+
     #[test]
     fn invalid_ctf_json() {
+        // Missing traceEvents
         assert_matches!(
-            // Missing traceEvents
-            ClangTrace::from_str("{}"),
-            Err(ClangTraceParseError::CtfParseError(_))
+            expect_err!(ClangTrace::from_str("{}")),
+            ClangTraceParseError::CtfParseError(_)
         );
     }
 
@@ -561,8 +575,8 @@ mod tests {
     fn unexpected_metadata() {
         assert_matches!(
             // Expecting nothing but traceEvents
-            ClangTrace::from_str(r#"{"traceEvents": [], "displayTimeUnit": "ns"}"#),
-            Err(ClangTraceParseError::UnexpectedTraceMetadata(trace_data_object)) => {
+            expect_err!(ClangTrace::from_str(r#"{"traceEvents": [], "displayTimeUnit": "ns"}"#)),
+            ClangTraceParseError::UnexpectedTraceMetadata(trace_data_object) => {
                 assert_eq!(trace_data_object, TraceDataObject {
                     displayTimeUnit: DisplayTimeUnit::ns,
                     ..TraceDataObject::default()
@@ -575,7 +589,7 @@ mod tests {
     fn invalid_activity_stat() {
         assert_matches!(
             // Invalid name
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [{
         "ph": "X",
@@ -586,8 +600,8 @@ mod tests {
         "name": "WhatIsThisThing"
     }]
 }"#
-            ),
-            Err(ClangTraceParseError::ActivityStatParseError(_))
+            )),
+            ClangTraceParseError::ActivityStatParseError(_)
         );
     }
 
@@ -595,7 +609,7 @@ mod tests {
     fn invalid_activity_tree() {
         assert_matches!(
             // Events not in increading end timestamp order
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [
         {
@@ -616,8 +630,8 @@ mod tests {
         }
     ]
 }"#
-            ),
-            Err(ClangTraceParseError::ActivityTreeError(_))
+            )),
+            ClangTraceParseError::ActivityTreeError(_)
         );
     }
 
@@ -625,7 +639,7 @@ mod tests {
     fn invalid_global_stat() {
         assert_matches!(
             // Invalid start timestamp
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [{
         "ph": "X",
@@ -640,8 +654,8 @@ mod tests {
         }
     }]
 }"#
-            ),
-            Err(ClangTraceParseError::GlobalStatParseError(_))
+            )),
+            ClangTraceParseError::GlobalStatParseError(_)
         );
     }
 
@@ -649,7 +663,7 @@ mod tests {
     fn duplicate_global_stat() {
         assert_matches!(
             // Duplicate global stat
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [
         {
@@ -678,12 +692,12 @@ mod tests {
         }
     ]
 }"#
-            ),
-            Err(ClangTraceParseError::DuplicateGlobalStat(
+            )),
+            ClangTraceParseError::DuplicateGlobalStat(
                 name,
                 old,
                 new
-            )) => {
+            ) => {
                 assert_eq!(&*name, "ExecuteCompiler");
                 assert_eq!(old, GlobalStat::new(12345.0, 1));
                 assert_eq!(new, GlobalStat::new(54321.0, 1));
@@ -695,7 +709,7 @@ mod tests {
     fn invalid_process_name() {
         assert_matches!(
             // Bad start timestamp
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [{
         "ph":"M",
@@ -709,8 +723,8 @@ mod tests {
         }
     }]
 }"#
-            ),
-            Err(ClangTraceParseError::NameParseError(_))
+            )),
+            ClangTraceParseError::NameParseError(_)
         );
     }
 
@@ -718,7 +732,7 @@ mod tests {
     fn duplicate_process_name() {
         assert_matches!(
             // Multiple process names
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [
         {
@@ -745,8 +759,8 @@ mod tests {
         }
     ]
 }"#
-            ),
-            Err(ClangTraceParseError::DuplicateProcessName(old, new)) => {
+            )),
+            ClangTraceParseError::DuplicateProcessName(old, new) => {
                 assert_eq!(&*old, "clang-14.0.0");
                 assert_eq!(&*new, "clang-13.9.9");
             }
@@ -757,7 +771,7 @@ mod tests {
     fn no_process_name() {
         assert_matches!(
             // No process name in an otherwise correct stream
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [{
         "ph": "X",
@@ -768,8 +782,8 @@ mod tests {
         "name": "ExecuteCompiler"
     }]
 }"#
-            ),
-            Err(ClangTraceParseError::NoProcessName)
+            )),
+            ClangTraceParseError::NoProcessName
         );
     }
 
@@ -777,7 +791,7 @@ mod tests {
     fn unexpected_event() {
         assert_matches!(
             // clang should not emit Begin/End events
-            ClangTrace::from_str(
+            expect_err!(ClangTrace::from_str(
                 r#"{
     "traceEvents": [{
         "ph": "B",
@@ -787,8 +801,8 @@ mod tests {
         "name": "ExecuteCompiler"
     }]
 }"#
-            ),
-            Err(ClangTraceParseError::UnexpectedEvent(e)) => {
+            )),
+            ClangTraceParseError::UnexpectedEvent(e) => {
                 assert_eq!(e, TraceEvent::B(DurationEvent {
                     pid: 1,
                     tid: 0,

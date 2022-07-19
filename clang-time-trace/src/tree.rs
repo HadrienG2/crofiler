@@ -72,7 +72,7 @@ impl ActivityTree {
     }
 
     /// Get an activity using its activity ID
-    pub fn activity(&self, id: ActivityId) -> ActivityTrace {
+    pub fn activity(&self, id: ActivityStatId) -> ActivityTrace {
         ActivityTrace {
             tree: self,
             activity: &self.activities[id],
@@ -96,7 +96,7 @@ pub struct ActivityTrace<'a> {
 //
 impl ActivityTrace<'_> {
     /// Identifier that can be used to refer to this ActivityTrace
-    pub fn id(&self) -> ActivityId {
+    pub fn id(&self) -> ActivityStatId {
         self.activity_idx
     }
 
@@ -176,7 +176,7 @@ impl Debug for ActivityTrace<'_> {
 }
 
 /// Identifier that can be used to refer to an ActivityTrace
-pub type ActivityId = usize;
+pub type ActivityStatId = usize;
 
 /// Individual clang activity within the activity tree
 #[derive(Debug, PartialEq)]
@@ -354,6 +354,7 @@ pub enum ActivityTreeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stats::activity::{ActivityArgument, ActivityId};
     use more_asserts::*;
     use pretty_assertions::assert_eq;
 
@@ -454,7 +455,14 @@ mod tests {
     fn build_single_node_tree() {
         // Build the tree
         let mut builder = ActivityTreeBuilder::with_capacity(1);
-        let activity_stat = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
+        let activity_stat = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            0.1,
+            4.2,
+        );
         builder
             .insert(activity_stat.clone())
             .expect("Inserting a single node shouldn't fail");
@@ -484,11 +492,46 @@ mod tests {
     fn build_basic_tree() {
         // Build the tree
         let mut builder = ActivityTreeBuilder::with_capacity(5);
-        let root = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2e6); // End time 4.2e6
-        let child1 = ActivityStat::new(Activity::Frontend, 0.2, 3.2e6); // End time 3.2e6
-        let subchild1 = ActivityStat::new(Activity::PerformPendingInstantiations, 0.3, 3.0e6); // End time 3.0e6
-        let child2 = ActivityStat::new(Activity::Backend, 3.5e6, 0.6e6); // End time 4.1e6
-        let subchild2 = ActivityStat::new(Activity::CodeGenPasses, 3.6e6, 0.4e6); // End time 4.0e6
+        let root = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            0.1,
+            4.2e6,
+        ); // End time 4.2e6
+        let child1 = ActivityStat::new(
+            Activity {
+                id: ActivityId::Frontend,
+                arg: ActivityArgument::Nothing,
+            },
+            0.2,
+            3.2e6,
+        ); // End time 3.2e6
+        let subchild1 = ActivityStat::new(
+            Activity {
+                id: ActivityId::PerformPendingInstantiations,
+                arg: ActivityArgument::Nothing,
+            },
+            0.3,
+            3.0e6,
+        ); // End time 3.0e6
+        let child2 = ActivityStat::new(
+            Activity {
+                id: ActivityId::Backend,
+                arg: ActivityArgument::Nothing,
+            },
+            3.5e6,
+            0.6e6,
+        ); // End time 4.1e6
+        let subchild2 = ActivityStat::new(
+            Activity {
+                id: ActivityId::CodeGenPasses,
+                arg: ActivityArgument::Nothing,
+            },
+            3.6e6,
+            0.4e6,
+        ); // End time 4.0e6
         static EXPECT_MSG: &str = "Test is designed so this doesn't fail";
         builder.insert(subchild1.clone()).expect(EXPECT_MSG);
         builder.insert(child1.clone()).expect(EXPECT_MSG);
@@ -552,11 +595,25 @@ mod tests {
     #[test]
     fn build_error_unordered_timestamps() {
         let mut builder = ActivityTreeBuilder::with_capacity(2);
-        let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 4.6, 6.4);
+        let activity1 = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            4.6,
+            6.4,
+        );
         builder
             .insert(activity1.clone())
             .expect("Test is designed so this doesn't fail");
-        let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 0.1, 4.2);
+        let activity2 = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            0.1,
+            4.2,
+        );
         assert_eq!(
             builder.insert(activity2.clone()),
             Err(ActivityTreeError::UnexpectedActivityOrder {
@@ -569,11 +626,25 @@ mod tests {
     #[test]
     fn build_error_partial_overlap_before() {
         let mut builder = ActivityTreeBuilder::with_capacity(2);
-        let activity1 = ActivityStat::new(Activity::ExecuteCompiler, 1.2, 3.4);
+        let activity1 = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            1.2,
+            3.4,
+        );
         builder
             .insert(activity1.clone())
             .expect("Test is designed so this doesn't fail");
-        let activity2 = ActivityStat::new(Activity::ExecuteCompiler, 2.3, 5.6);
+        let activity2 = ActivityStat::new(
+            Activity {
+                id: ActivityId::ExecuteCompiler,
+                arg: ActivityArgument::Nothing,
+            },
+            2.3,
+            5.6,
+        );
         assert_eq!(
             builder.insert(activity2.clone()),
             Err(ActivityTreeError::PartialActivityOverlap {

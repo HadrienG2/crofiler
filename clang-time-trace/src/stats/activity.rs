@@ -111,10 +111,10 @@ pub enum ActivityStatParseError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Activity {
     /// Machine identifier that can be translated back into a human identifier
-    id: ActivityId,
+    pub(crate) id: ActivityId,
 
     /// Supplementary data received as an argument, if any
-    arg: ActivityArgument,
+    pub(crate) arg: ActivityArgument,
 }
 //
 impl Activity {
@@ -438,7 +438,7 @@ generate_activities! {
 //
 /// Empirically observed activity argument parsing logics for time-trace entries
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ActivityArgumentParser {
+enum ActivityArgumentParser {
     /// No argument
     Nothing,
 

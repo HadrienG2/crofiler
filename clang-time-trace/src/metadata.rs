@@ -105,7 +105,7 @@ mod tests {
         let test_unexpected_input = |input: MetadataEvent| {
             assert_eq!(
                 super::parse_process_name(input.clone()),
-                Err(ProcessNameParseError::UnexpectedInput(input))
+                Err(NameParseError::UnexpectedInput(input))
             )
         };
         test_unexpected_input(make_event(
