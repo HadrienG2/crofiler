@@ -730,36 +730,34 @@ pub mod tests {
 
     #[test]
     fn id_expression() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let unqualified_id =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_unqualified_id(s));
+        let check_id_expression = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_id_expression(input), Ok(("", expected)));
+            check_custom_display(parser.id_expression(expected), displays);
+        };
 
         // Without any path
-        assert_eq!(
-            parser.parse_id_expression("something"),
-            Ok((
-                "",
-                IdExpression {
-                    path: NestedNameSpecifier {
-                        rooted: false,
-                        scopes: parser.scope_sequences.entry().intern()
-                    },
-                    id: unqualified_id(&mut parser, "something")
-                }
-            ))
-        );
+        let mut expected = IdExpression {
+            path: NestedNameSpecifier {
+                rooted: false,
+                scopes: parser.scope_sequences.entry().intern(),
+            },
+            id: unqualified_id(&mut parser, "something"),
+        };
+        check_id_expression(&mut parser, "something", expected, &["something"]);
 
         // With a path
-        assert_eq!(
-            parser.parse_id_expression("boost::hana::to_t<unsigned long long>"),
-            Ok((
-                "",
-                IdExpression {
-                    path: unwrap_parse(parser.parse_nested_name_specifier("boost::hana::")),
-                    id: unqualified_id(&mut parser, "to_t<unsigned long long>"),
-                }
-            ))
+        expected = IdExpression {
+            path: unwrap_parse(parser.parse_nested_name_specifier("boost::hana::")),
+            id: unqualified_id(&mut parser, "to_t<unsigned long long>"),
+        };
+        check_id_expression(
+            &mut parser,
+            "boost::hana::to_t<unsigned long long>",
+            expected,
+            &["…::to_t<…>", "boost::hana::to_t<unsigned long long>"],
         );
     }
 }
