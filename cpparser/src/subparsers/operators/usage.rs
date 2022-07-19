@@ -273,7 +273,7 @@ impl<'entities> CustomDisplay for NewExpressionView<'entities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::unwrap_parse;
+    use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -437,58 +437,54 @@ mod tests {
 
     #[test]
     fn new_expression() {
-        // FIXME: Rework test harness to test CustomDisplay
         let mut parser = EntityParser::new();
         let type_like = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_type_like(s));
+        let check_new_expression = |parser: &mut EntityParser, input, expected, displays| {
+            assert_eq!(parser.parse_new_expression(input), Ok(("", expected)));
+            check_custom_display(parser.new_expression(expected), displays);
+        };
 
         // Basic form
-        assert_eq!(
-            parser.parse_new_expression("new int"),
-            Ok(("", NewExpression::from(type_like(&mut parser, "int"))))
-        );
+        let mut expected = NewExpression::from(type_like(&mut parser, "int"));
+        check_new_expression(&mut parser, "new int", expected, &["new int"]);
 
         // Rooted form
-        assert_eq!(
-            parser.parse_new_expression("::new double"),
-            Ok((
-                "",
-                NewExpression {
-                    rooted: true,
-                    placement: None,
-                    ty: type_like(&mut parser, "double"),
-                    constructor: None,
-                }
-            ))
-        );
+        expected = NewExpression {
+            rooted: true,
+            placement: None,
+            ty: type_like(&mut parser, "double"),
+            constructor: None,
+        };
+        check_new_expression(&mut parser, "::new double", expected, &["::new double"]);
 
         // Placement parameters
         let function_call =
             |parser: &mut EntityParser, s| unwrap_parse(parser.parse_function_call(s));
-        assert_eq!(
-            parser.parse_new_expression("new (42) MyClass"),
-            Ok((
-                "",
-                NewExpression {
-                    rooted: false,
-                    placement: Some(function_call(&mut parser, "(42)")),
-                    ty: type_like(&mut parser, "MyClass"),
-                    constructor: None,
-                }
-            ))
+        expected = NewExpression {
+            rooted: false,
+            placement: Some(function_call(&mut parser, "(42)")),
+            ty: type_like(&mut parser, "MyClass"),
+            constructor: None,
+        };
+        check_new_expression(
+            &mut parser,
+            "new (42) MyClass",
+            expected,
+            &["new(…) MyClass", "new(42) MyClass"],
         );
 
         // Constructor parameters
-        assert_eq!(
-            parser.parse_new_expression("new MyClass('x')"),
-            Ok((
-                "",
-                NewExpression {
-                    rooted: false,
-                    placement: None,
-                    ty: type_like(&mut parser, "MyClass"),
-                    constructor: Some(function_call(&mut parser, "('x')")),
-                }
-            ))
+        expected = NewExpression {
+            rooted: false,
+            placement: None,
+            ty: type_like(&mut parser, "MyClass"),
+            constructor: Some(function_call(&mut parser, "('x')")),
+        };
+        check_new_expression(
+            &mut parser,
+            "new MyClass('x')",
+            expected,
+            &["new MyClass(…)", "new MyClass('x')"],
         );
     }
 }
