@@ -56,150 +56,205 @@ pub enum NameParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ctf::EventCategories;
+    use crate::{ctf::EventCategories, Pid};
     use serde_json as json;
     use std::collections::HashMap;
 
-    #[test]
-    fn parse_process_name() {
+    fn test_name_parser(mock_name: &str, test_process_name: bool) {
         // Have a way to generate good and bad test inputs
-        let process_name = Box::<str>::from("clang-12.0.1");
-        let make_event = |good_type, pid, extra, tid, cat, ts, tts| {
+        let name = Box::<str>::from(mock_name);
+        let make_event = |good_type, pid: Option<Pid>, extra, tid, cat, ts, tts| {
             let args = NameArgs {
-                name: process_name.clone(),
+                name: name.clone(),
                 extra,
             };
             let options = MetadataOptions { cat, ts, tts };
-            if good_type {
+            if good_type ^ (!test_process_name) {
                 MetadataEvent::process_name {
-                    pid,
+                    pid: pid.unwrap(),
                     args,
                     tid,
                     options,
                 }
             } else {
                 MetadataEvent::thread_name {
-                    tid: pid,
+                    tid: tid.unwrap(),
                     args,
-                    pid: tid,
+                    pid,
                     options,
                 }
             }
         };
 
         // Valid parse_process_name input
+        let tested_parser = if test_process_name {
+            super::parse_process_name
+        } else {
+            super::parse_thread_name
+        };
+        if test_process_name {
+            // Only the process_name parser accepts legacy clang 10 PID/TID duos
+            assert_eq!(
+                tested_parser(make_event(
+                    true,
+                    Some(1),
+                    HashMap::new(),
+                    Some(0),
+                    Some(EventCategories::default()),
+                    Some(0.0),
+                    None
+                )),
+                Ok(name.clone())
+            );
+        }
         assert_eq!(
-            super::parse_process_name(make_event(
+            tested_parser(make_event(
                 true,
-                1,
-                HashMap::new(),
-                Some(0),
-                Some(EventCategories::default()),
-                Some(0.0),
-                None
-            )),
-            Ok(process_name.clone())
-        );
-        assert_eq!(
-            super::parse_process_name(make_event(
-                true,
-                42,
+                Some(42),
                 HashMap::new(),
                 Some(42),
                 Some(EventCategories::default()),
                 Some(0.0),
                 None
             )),
-            Ok(process_name.clone())
+            Ok(name.clone())
         );
 
         // Various flavors of unexpected input
         let test_unexpected_input = |input: MetadataEvent| {
             assert_eq!(
-                super::parse_process_name(input.clone()),
+                tested_parser(input.clone()),
                 Err(NameParseError::UnexpectedInput(input))
             )
         };
+
+        // Bad input type
         test_unexpected_input(make_event(
             false,
-            1,
-            HashMap::new(),
-            Some(0),
-            Some(EventCategories::default()),
-            Some(0.0),
-            None,
-        ));
-        test_unexpected_input(make_event(
-            true,
-            42,
-            HashMap::new(),
-            Some(0),
-            Some(EventCategories::default()),
-            Some(0.0),
-            None,
-        ));
-        test_unexpected_input(make_event(
-            true,
-            1,
-            maplit::hashmap! { "wtf".into() => json::json!("") },
-            Some(0),
-            Some(EventCategories::default()),
-            Some(0.0),
-            None,
-        ));
-        test_unexpected_input(make_event(
-            true,
-            1,
+            Some(42),
             HashMap::new(),
             Some(42),
             Some(EventCategories::default()),
             Some(0.0),
             None,
         ));
+
+        // Unexpected PID absence (thread_name specific)
+        if !test_process_name {
+            test_unexpected_input(make_event(
+                true,
+                None,
+                HashMap::new(),
+                Some(42),
+                Some(EventCategories::default()),
+                Some(0.0),
+                None,
+            ));
+        }
+
+        // Unexpected (PID, TID) pair
         test_unexpected_input(make_event(
             true,
-            1,
+            Some(42),
             HashMap::new(),
             Some(0),
+            Some(EventCategories::default()),
+            Some(0.0),
+            None,
+        ));
+        test_unexpected_input(make_event(
+            true,
+            Some(42),
+            HashMap::new(),
+            Some(43),
+            Some(EventCategories::default()),
+            Some(0.0),
+            None,
+        ));
+
+        // Unexpected extra metadata
+        test_unexpected_input(make_event(
+            true,
+            Some(42),
+            maplit::hashmap! { "wtf".into() => json::json!("") },
+            Some(42),
+            Some(EventCategories::default()),
+            Some(0.0),
+            None,
+        ));
+
+        // Unexpected TID absence (process_name specific)
+        if test_process_name {
+            test_unexpected_input(make_event(
+                true,
+                Some(42),
+                HashMap::new(),
+                None,
+                Some(EventCategories::default()),
+                Some(0.0),
+                None,
+            ));
+        }
+
+        // Unexpected event categories metadata
+        test_unexpected_input(make_event(
+            true,
+            Some(42),
+            HashMap::new(),
+            Some(42),
             Some(EventCategories(vec!["lol".into()].into_boxed_slice())),
             Some(0.0),
             None,
         ));
         test_unexpected_input(make_event(
             true,
-            1,
+            Some(42),
             HashMap::new(),
-            Some(0),
+            Some(42),
             None,
             Some(0.0),
             None,
         ));
+
+        // Unexpected timestamp metadata
         test_unexpected_input(make_event(
             true,
-            1,
+            Some(42),
             HashMap::new(),
-            Some(0),
+            Some(42),
             Some(EventCategories::default()),
             Some(4.2),
             None,
         ));
         test_unexpected_input(make_event(
             true,
-            1,
+            Some(42),
             HashMap::new(),
-            Some(0),
+            Some(42),
             Some(EventCategories::default()),
             None,
             None,
         ));
+
+        // Unexpected thread timestamp metadata
         test_unexpected_input(make_event(
             true,
-            1,
+            Some(42),
             HashMap::new(),
-            Some(0),
+            Some(42),
             Some(EventCategories::default()),
             Some(0.0),
             Some(0.0),
         ));
+    }
+
+    #[test]
+    fn parse_process_name() {
+        test_name_parser("clang-12.0.1", true);
+    }
+
+    #[test]
+    fn parse_thread_name() {
+        test_name_parser("clang", false);
     }
 }
