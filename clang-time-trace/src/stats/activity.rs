@@ -612,6 +612,18 @@ mod tests {
                 duration,
             })
         );
+        assert_eq!(
+            ActivityStat::parse(
+                make_event(true, 42, 42, None, None, None, None, None),
+                parser,
+                &mut demangling_buf
+            ),
+            Ok(ActivityStat {
+                activity: expected.clone(),
+                start,
+                duration,
+            })
+        );
 
         // Invalid inputs
         let mut test_bad_input = |input: TraceEvent| {
@@ -621,6 +633,7 @@ mod tests {
             )
         };
         test_bad_input(make_event(false, 1, 0, None, None, None, None, None));
+        test_bad_input(make_event(true, 123, 456, None, None, None, None, None));
         test_bad_input(make_event(
             true,
             1,

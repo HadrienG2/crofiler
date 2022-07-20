@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn parse_process_name() {
         // Have a way to generate good and bad test inputs
-        let process_name = Box::<str>::from("clang");
+        let process_name = Box::<str>::from("clang-12.0.1");
         let make_event = |good_type, pid, extra, tid, cat, ts, tts| {
             let args = NameArgs {
                 name: process_name.clone(),
@@ -94,6 +94,18 @@ mod tests {
                 1,
                 HashMap::new(),
                 Some(0),
+                Some(EventCategories::default()),
+                Some(0.0),
+                None
+            )),
+            Ok(process_name.clone())
+        );
+        assert_eq!(
+            super::parse_process_name(make_event(
+                true,
+                42,
+                HashMap::new(),
+                Some(42),
                 Some(EventCategories::default()),
                 Some(0.0),
                 None
