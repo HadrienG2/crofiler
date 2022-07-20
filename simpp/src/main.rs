@@ -40,11 +40,10 @@ fn main() {
         .expect("Please provide a C++ entity name via either CLI or stdin");
 
     // Parse C++ entity name
-    let parser = EntityParser::new();
-    let entity = parser
+    let mut entities = EntityParser::new();
+    let entity = entities
         .parse_entity(&entity)
         .expect("Failed to parse entity name");
-    let entities = parser.finalize();
     let entity = entities.entity(entity);
 
     // Display it
