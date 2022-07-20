@@ -268,6 +268,7 @@ dependencies = [
 name = "crofiler"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "atty",
  "chrono",
  "clang-time-trace",
