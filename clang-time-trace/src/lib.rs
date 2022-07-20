@@ -766,6 +766,36 @@ mod tests {
     }
 
     #[test]
+    fn inconsistent_pid() {
+        assert_matches!(
+            // Invalid name
+            expect_err!(ClangTrace::from_str(
+                r#"{
+    "traceEvents": [
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 42,
+            "ts": 1.3,
+            "dur": 6787.7,
+            "name": "Frontend"
+        },
+        {
+            "ph": "X",
+            "pid": 43,
+            "tid": 43,
+            "ts": 6789.3,
+            "dur": 5554.2,
+            "name": "CodeGenPasses"
+        }
+    ]
+}"#
+            )),
+            ClangTraceParseError::InconsistentPid(42, 43)
+        );
+    }
+
+    #[test]
     fn invalid_activity_tree() {
         assert_matches!(
             // Events not in increading end timestamp order
