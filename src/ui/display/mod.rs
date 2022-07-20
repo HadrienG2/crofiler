@@ -9,11 +9,13 @@ pub mod metadata;
 pub mod path;
 
 /// Truncate a string so that it only eats up n columns, by eating up the middle
+/// Assumes absence of line feeds in the input string.
 pub fn display_string(mut output: impl io::Write, input: &str, max_cols: u16) -> io::Result<()> {
     // Handle trivial case
     if input.width() <= max_cols.into() {
         return write!(output, "{input}");
     }
+    debug_assert!(input.chars().all(|c| c != '\r' && c != '\n'));
 
     // Make sure the request makes sense, set up common infrastructure
     assert!(max_cols >= 1);
@@ -59,4 +61,38 @@ pub fn display_string(mut output: impl io::Write, input: &str, max_cols: u16) ->
 
     // Emit the result
     write!(output, "{last_good}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn display_string() {
+        let mut display = Vec::new();
+        const MOCK_STR: &str = "Coucou, tu veux voir mon string ?";
+        let mut check_display = |max_cols, expected_display: &str| {
+            display.clear();
+            assert_matches!(
+                super::display_string(&mut display, MOCK_STR, max_cols),
+                Ok(())
+            );
+            assert_eq!(
+                display,
+                expected_display.as_bytes(),
+                "Expected display {:?} (width = {}), got display {:?} (width = {:?})",
+                expected_display,
+                expected_display.width(),
+                std::str::from_utf8(&display),
+                std::str::from_utf8(&display).map(|s| s.width())
+            );
+        };
+        check_display(33, MOCK_STR);
+        check_display(32, "Coucou, tu veux…oir mon string ?");
+        check_display(31, "Coucou, tu veux…ir mon string ?");
+        check_display(29, "Coucou, tu veu…r mon string ?");
+        check_display(3, "C…?");
+        check_display(1, "…");
+    }
 }
