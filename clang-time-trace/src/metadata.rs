@@ -119,7 +119,7 @@ mod tests {
         ));
         test_unexpected_input(make_event(
             true,
-            0,
+            42,
             HashMap::new(),
             Some(0),
             Some(EventCategories::default()),
@@ -139,7 +139,7 @@ mod tests {
             true,
             1,
             HashMap::new(),
-            Some(1),
+            Some(42),
             Some(EventCategories::default()),
             Some(0.0),
             None,

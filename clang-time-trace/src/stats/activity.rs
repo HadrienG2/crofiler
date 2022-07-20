@@ -621,8 +621,6 @@ mod tests {
             )
         };
         test_bad_input(make_event(false, 1, 0, None, None, None, None, None));
-        test_bad_input(make_event(true, 0, 0, None, None, None, None, None));
-        test_bad_input(make_event(true, 1, 1, None, None, None, None, None));
         test_bad_input(make_event(
             true,
             1,
@@ -679,7 +677,7 @@ mod tests {
 
     #[test]
     fn nullary_activities() {
-        let nullary_test = |id| {
+        let nullary_test = |id, arg_parser| {
             // Determine activity name and associated Activity struct
             let name = <&str>::from(id);
             let activity = Activity {
@@ -692,55 +690,66 @@ mod tests {
             test_valid_activity(None, &activity, &mut parser);
             test_valid_activity(Some(HashMap::new()), &activity, &mut parser);
 
-            // Add an undesired detail argument
-            let args = maplit::hashmap! { "detail".into() => json::json!("") };
-            let mut demangling_buf = String::new();
-            assert_eq!(
-                Activity::parse(
-                    name.into(),
-                    Some(args.clone()),
-                    &mut parser,
-                    &mut demangling_buf,
-                ),
-                Err(ActivityParseError::BadArguments(
-                    ArgParseError::UnexpectedKeys(args)
-                ))
-            );
+            // Add an undesired detail argument (true nullary only)
+            if arg_parser == ActivityArgumentParser::Nothing {
+                let args = maplit::hashmap! { "detail".into() => json::json!("") };
+                let mut demangling_buf = String::new();
+                assert_eq!(
+                    Activity::parse(
+                        name.into(),
+                        Some(args.clone()),
+                        &mut parser,
+                        &mut demangling_buf,
+                    ),
+                    Err(ActivityParseError::BadArguments(
+                        ArgParseError::UnexpectedKeys(args)
+                    ))
+                );
+            }
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentParser::Nothing
                 || *activity_parser == ActivityArgumentParser::MangledSymbolOpt
-                || *activity_parser == ActivityArgumentParser::UnnamedLoopOpt
             {
-                nullary_test(*activity_id);
+                nullary_test(*activity_id, activity_parser.clone());
             }
         }
     }
 
-    fn unary_test(arg: &str, expected: Activity, mut parser: EntityParser) {
+    fn unary_test(
+        arg: &str,
+        expected: Activity,
+        mut parser: EntityParser,
+        expected_wo_args: Option<Activity>,
+    ) {
         // Test happy path
-        let name = <Box<str>>::from(<&str>::from(expected.id()));
         let good_args = maplit::hashmap! { "detail".into() => json::json!(arg) };
         test_valid_activity(Some(good_args.clone()), &expected, &mut parser);
 
         // Try not providing the requested argument
+        let name = <Box<str>>::from(<&str>::from(expected.id()));
         let mut demangling_buf = String::new();
-        let missing_arg_error = Err(ActivityParseError::BadArguments(ArgParseError::MissingKey(
-            "detail",
-        )));
-        assert_eq!(
-            Activity::parse(name.clone(), None, &mut parser, &mut demangling_buf),
-            missing_arg_error
-        );
-        assert_eq!(
-            Activity::parse(
-                name.clone(),
-                Some(HashMap::new()),
-                &mut parser,
-                &mut demangling_buf
-            ),
-            missing_arg_error
-        );
+        if let Some(activity_wo_args) = expected_wo_args {
+            test_valid_activity(None, &activity_wo_args, &mut parser);
+            test_valid_activity(Some(HashMap::new()), &activity_wo_args, &mut parser);
+        } else {
+            let missing_arg_error = Err(ActivityParseError::BadArguments(
+                ArgParseError::MissingKey("detail"),
+            ));
+            assert_eq!(
+                Activity::parse(name.clone(), None, &mut parser, &mut demangling_buf),
+                missing_arg_error
+            );
+            assert_eq!(
+                Activity::parse(
+                    name.clone(),
+                    Some(HashMap::new()),
+                    &mut parser,
+                    &mut demangling_buf
+                ),
+                missing_arg_error
+            );
+        }
 
         // Try providing a wrongly typed value
         let bad_value = json::json!(42usize);
@@ -784,6 +793,7 @@ mod tests {
                     arg: ActivityArgument::String(mock_arg.into()),
                 },
                 EntityParser::new(),
+                None,
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
@@ -806,6 +816,7 @@ mod tests {
                     arg: ActivityArgument::FilePath(path_key),
                 },
                 parser,
+                None,
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
@@ -830,6 +841,7 @@ mod tests {
                     arg: ActivityArgument::CppEntity(key),
                 },
                 parser,
+                None,
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
@@ -841,7 +853,7 @@ mod tests {
 
     #[test]
     fn mangled_activities() {
-        let mangled_test = |id| {
+        let mangled_test = |id, optional: bool| {
             // Mangled symbol that demangles
             const VALID: &'static str =
                 "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
@@ -856,6 +868,10 @@ mod tests {
                     arg: ActivityArgument::MangledSymbol(MangledSymbol::Parsed(key)),
                 },
                 parser,
+                optional.then_some(Activity {
+                    id,
+                    arg: ActivityArgument::Nothing,
+                }),
             );
 
             // Mangled symbol that doesn't demangle
@@ -867,6 +883,10 @@ mod tests {
                     arg: ActivityArgument::MangledSymbol(MangledSymbol::Mangled(INVALID.into())),
                 },
                 EntityParser::new(),
+                optional.then_some(Activity {
+                    id,
+                    arg: ActivityArgument::Nothing,
+                }),
             );
         };
 
@@ -874,14 +894,18 @@ mod tests {
             if *activity_parser == ActivityArgumentParser::MangledSymbol
                 || *activity_parser == ActivityArgumentParser::MangledSymbolOpt
             {
-                mangled_test(*activity_id);
+                mangled_test(
+                    *activity_id,
+                    *activity_parser == ActivityArgumentParser::MangledSymbolOpt,
+                );
             }
         }
     }
 
     #[test]
     fn unnamed_activities() {
-        let unnamed_test = |id| {
+        let unnamed_test = |id, optional: bool| {
+            // Correct syntax
             unary_test(
                 "<unnamed loop>",
                 Activity {
@@ -889,13 +913,35 @@ mod tests {
                     arg: ActivityArgument::UnnamedLoop,
                 },
                 EntityParser::new(),
+                optional.then_some(Activity {
+                    id,
+                    arg: ActivityArgument::Nothing,
+                }),
+            );
+
+            // Unexpected loop name
+            let activity_name = Box::<str>::from(<&str>::from(id));
+            let bad_name = Box::<str>::from("xxx");
+            let args = maplit::hashmap! { "detail".into() => json::json!(&*bad_name) };
+            let mut demangling_buf = String::new();
+            assert_eq!(
+                Activity::parse(
+                    activity_name,
+                    Some(args),
+                    &mut EntityParser::new(),
+                    &mut demangling_buf,
+                ),
+                Err(ActivityParseError::UnexpectedLoopName(bad_name))
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentParser::UnnamedLoop
                 || *activity_parser == ActivityArgumentParser::UnnamedLoopOpt
             {
-                unnamed_test(*activity_id);
+                unnamed_test(
+                    *activity_id,
+                    *activity_parser == ActivityArgumentParser::UnnamedLoopOpt,
+                );
             }
         }
     }

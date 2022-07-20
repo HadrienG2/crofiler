@@ -275,17 +275,6 @@ mod tests {
         ));
         test_unexpected_input(make_event(
             true,
-            0,
-            1,
-            good_name.clone(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ));
-        test_unexpected_input(make_event(
-            true,
             1,
             0,
             good_name.clone(),

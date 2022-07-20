@@ -428,8 +428,8 @@ mod tests {
             "ph": "X",
             "pid": 1,
             "tid": 0,
-            "ts": 0.3,
-            "dur": 6788.7,
+            "ts": 1.3,
+            "dur": 6787.7,
             "name": "Frontend"
         },
         {
@@ -452,8 +452,8 @@ mod tests {
             "ph": "X",
             "pid": 1,
             "tid": 0,
-            "ts": 0.1,
-            "dur": 12344.8,
+            "ts": 1.1,
+            "dur": 12343.8,
             "name": "ExecuteCompiler"
         },
         {
@@ -521,10 +521,10 @@ mod tests {
 
         // Check flat activity list
         let expected_activities = [
-            (ActivityId::Frontend, 0.3, 6788.7),
+            (ActivityId::Frontend, 1.3, 6787.7),
             (ActivityId::CodeGenPasses, 6789.3, 5554.2),
             (ActivityId::Backend, 6789.1, 5554.5),
-            (ActivityId::ExecuteCompiler, 0.1, 12344.8),
+            (ActivityId::ExecuteCompiler, 1.1, 12343.8),
         ];
         for (trace, (expected_activity, expected_start, expected_duration)) in trace
             .all_activities()
@@ -595,8 +595,8 @@ mod tests {
         "ph": "X",
         "pid": 1,
         "tid": 0,
-        "ts": 0.3,
-        "dur": 6788.7,
+        "ts": 1.3,
+        "dur": 6787.7,
         "name": "WhatIsThisThing"
     }]
 }"#
@@ -624,8 +624,8 @@ mod tests {
             "ph": "X",
             "pid": 1,
             "tid": 0,
-            "ts": 0.3,
-            "dur": 6788.7,
+            "ts": 1.3,
+            "dur": 6787.7,
             "name": "Frontend"
         }
     ]
@@ -645,7 +645,7 @@ mod tests {
         "ph": "X",
         "pid": 1,
         "tid": 1,
-        "ts": 4.2,
+        "ts": 0.2,
         "dur": 12345,
         "name": "Total ExecuteCompiler",
         "args": {
@@ -777,8 +777,8 @@ mod tests {
         "ph": "X",
         "pid": 1,
         "tid": 0,
-        "ts": 0.1,
-        "dur": 12344.8,
+        "ts": 1.1,
+        "dur": 12343.8,
         "name": "ExecuteCompiler"
     }]
 }"#
