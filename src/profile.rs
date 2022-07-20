@@ -50,9 +50,7 @@ pub fn hottest_activities<'activities>(
 mod tests {
     use super::*;
     use crate::tests::TEST_TRACE;
-
-    const MILLISECONDS: Duration = 1000.0;
-    const MICROSECONDS: Duration = 1.0;
+    use clang_time_trace::{MICROSECOND, MILLISECOND, SECOND};
 
     fn assert_close(actual: Duration, reference: Duration) {
         assert!((actual - reference).abs() < 0.01 * reference.abs());
@@ -62,64 +60,64 @@ mod tests {
     fn duration_norm() {
         assert_close(
             super::duration_norm(TEST_TRACE.lock().unwrap().root_activities()),
-            1.0 / (3.77 * 1_000_000.0),
+            1.0 / (3.77 * SECOND),
         );
     }
 
     #[test]
     fn activity_type_breakdown() {
         let expected = [
-            ("Source", 911.15 * MILLISECONDS),
-            ("InstantiateClass", 711.40 * MILLISECONDS),
-            ("InstantiateFunction", 341.60 * MILLISECONDS),
-            ("ParseClass", 316.39 * MILLISECONDS),
-            ("PassManager<llvm::Function>", 231.79 * MILLISECONDS),
-            ("ModuleToPostOrderCGSCCPassAdaptor", 177.07 * MILLISECONDS),
-            ("RunPass", 171.33 * MILLISECONDS),
-            ("Frontend", 152.09 * MILLISECONDS),
-            ("OptFunction", 107.78 * MILLISECONDS),
-            ("DevirtSCCRepeatedPass", 85.93 * MILLISECONDS),
-            ("CodeGen Function", 78.33 * MILLISECONDS),
-            ("ParseTemplate", 76.88 * MILLISECONDS),
-            ("InlinerPass", 70.18 * MILLISECONDS),
-            ("ModuleToFunctionPassAdaptor", 70.02 * MILLISECONDS),
-            ("OptModule", 41.97 * MILLISECONDS),
-            ("PerformPendingInstantiations", 41.77 * MILLISECONDS),
-            ("InstCombinePass", 29.63 * MILLISECONDS),
-            ("FunctionToLoopPassAdaptor", 24.59 * MILLISECONDS),
-            ("ExecuteCompiler", 21.79 * MILLISECONDS),
-            ("JumpThreadingPass", 21.35 * MILLISECONDS),
-            ("IPSCCPPass", 9.83 * MILLISECONDS),
-            ("GlobalOptPass", 9.23 * MILLISECONDS),
-            ("GVNPass", 7.99 * MILLISECONDS),
-            ("MemCpyOptPass", 5.01 * MILLISECONDS),
-            ("CalledValuePropagationPass", 4.83 * MILLISECONDS),
-            ("DSEPass", 4.70 * MILLISECONDS),
-            ("Optimizer", 4.68 * MILLISECONDS),
-            ("EarlyCSEPass", 4.67 * MILLISECONDS),
-            ("SROAPass", 4.58 * MILLISECONDS),
-            ("CGSCCToFunctionPassAdaptor", 3.82 * MILLISECONDS),
-            ("DebugType", 3.31 * MILLISECONDS),
-            ("CGProfilePass", 2.83 * MILLISECONDS),
-            ("RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>", 2.11 * MILLISECONDS),
-            ("Backend", 1.80 * MILLISECONDS),
-            ("GlobalDCEPass", 1.68 * MILLISECONDS),
-            ("SLPVectorizerPass", 1.57 * MILLISECONDS),
-            ("CorrelatedValuePropagationPass", 1.37 * MILLISECONDS),
-            ("LoopUnrollPass", 1.37 * MILLISECONDS),
-            ("RunLoopPass", 1.18 * MILLISECONDS),
-            ("ADCEPass", 1.17 * MILLISECONDS),
-            ("PromotePass", 1.15 * MILLISECONDS),
-            ("ModuleInlinerWrapperPass", 1.08 * MILLISECONDS),
-            ("CodeGenPasses", 1.01 * MILLISECONDS),
-            ("PostOrderFunctionAttrsPass", 959.0 * MICROSECONDS),
-            ("BDCEPass", 751.0 * MICROSECONDS),
-            ("SCCPPass", 707.0 * MICROSECONDS),
-            ("ReversePostOrderFunctionAttrsPass", 648.0 * MICROSECONDS),
-            ("ReassociatePass", 618.0 * MICROSECONDS),
-            ("TailCallElimPass", 553.0 * MICROSECONDS),
-            ("DeadArgumentEliminationPass", 546.0 * MICROSECONDS),
-            ("PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>", 531.0 * MICROSECONDS),
+            ("Source", 911.15 * MILLISECOND),
+            ("InstantiateClass", 711.40 * MILLISECOND),
+            ("InstantiateFunction", 341.60 * MILLISECOND),
+            ("ParseClass", 316.39 * MILLISECOND),
+            ("PassManager<llvm::Function>", 231.79 * MILLISECOND),
+            ("ModuleToPostOrderCGSCCPassAdaptor", 177.07 * MILLISECOND),
+            ("RunPass", 171.33 * MILLISECOND),
+            ("Frontend", 152.09 * MILLISECOND),
+            ("OptFunction", 107.78 * MILLISECOND),
+            ("DevirtSCCRepeatedPass", 85.93 * MILLISECOND),
+            ("CodeGen Function", 78.33 * MILLISECOND),
+            ("ParseTemplate", 76.88 * MILLISECOND),
+            ("InlinerPass", 70.18 * MILLISECOND),
+            ("ModuleToFunctionPassAdaptor", 70.02 * MILLISECOND),
+            ("OptModule", 41.97 * MILLISECOND),
+            ("PerformPendingInstantiations", 41.77 * MILLISECOND),
+            ("InstCombinePass", 29.63 * MILLISECOND),
+            ("FunctionToLoopPassAdaptor", 24.59 * MILLISECOND),
+            ("ExecuteCompiler", 21.79 * MILLISECOND),
+            ("JumpThreadingPass", 21.35 * MILLISECOND),
+            ("IPSCCPPass", 9.83 * MILLISECOND),
+            ("GlobalOptPass", 9.23 * MILLISECOND),
+            ("GVNPass", 7.99 * MILLISECOND),
+            ("MemCpyOptPass", 5.01 * MILLISECOND),
+            ("CalledValuePropagationPass", 4.83 * MILLISECOND),
+            ("DSEPass", 4.70 * MILLISECOND),
+            ("Optimizer", 4.68 * MILLISECOND),
+            ("EarlyCSEPass", 4.67 * MILLISECOND),
+            ("SROAPass", 4.58 * MILLISECOND),
+            ("CGSCCToFunctionPassAdaptor", 3.82 * MILLISECOND),
+            ("DebugType", 3.31 * MILLISECOND),
+            ("CGProfilePass", 2.83 * MILLISECOND),
+            ("RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>", 2.11 * MILLISECOND),
+            ("Backend", 1.80 * MILLISECOND),
+            ("GlobalDCEPass", 1.68 * MILLISECOND),
+            ("SLPVectorizerPass", 1.57 * MILLISECOND),
+            ("CorrelatedValuePropagationPass", 1.37 * MILLISECOND),
+            ("LoopUnrollPass", 1.37 * MILLISECOND),
+            ("RunLoopPass", 1.18 * MILLISECOND),
+            ("ADCEPass", 1.17 * MILLISECOND),
+            ("PromotePass", 1.15 * MILLISECOND),
+            ("ModuleInlinerWrapperPass", 1.08 * MILLISECOND),
+            ("CodeGenPasses", 1.01 * MILLISECOND),
+            ("PostOrderFunctionAttrsPass", 959.0 * MICROSECOND),
+            ("BDCEPass", 751.0 * MICROSECOND),
+            ("SCCPPass", 707.0 * MICROSECOND),
+            ("ReversePostOrderFunctionAttrsPass", 648.0 * MICROSECOND),
+            ("ReassociatePass", 618.0 * MICROSECOND),
+            ("TailCallElimPass", 553.0 * MICROSECOND),
+            ("DeadArgumentEliminationPass", 546.0 * MICROSECOND),
+            ("PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>", 531.0 * MICROSECOND),
         ];
         let trace = TEST_TRACE.lock().unwrap();
         let actual = super::activity_type_breakdown(&*&trace);
@@ -134,23 +132,23 @@ mod tests {
     #[test]
     fn hottest_activities() {
         let expected = [
-            ("ModuleToPostOrderCGSCCPassAdaptor", 177.07 * MILLISECONDS),
-            ("Frontend", 136.55 * MILLISECONDS),
-            ("OptModule", 41.97 * MILLISECONDS),
-            ("PerformPendingInstantiations", 41.77 * MILLISECONDS),
-            ("ModuleToFunctionPassAdaptor", 35.02 * MILLISECONDS),
-            ("ModuleToFunctionPassAdaptor", 25.64 * MILLISECONDS),
-            ("RunPass", 22.58 * MILLISECONDS),
-            ("ExecuteCompiler", 21.79 * MILLISECONDS),
-            ("Source", 21.65 * MILLISECONDS),
-            ("JumpThreadingPass", 20.21 * MILLISECONDS),
-            ("InlinerPass", 17.24 * MILLISECONDS),
+            ("ModuleToPostOrderCGSCCPassAdaptor", 177.07 * MILLISECOND),
+            ("Frontend", 136.55 * MILLISECOND),
+            ("OptModule", 41.97 * MILLISECOND),
+            ("PerformPendingInstantiations", 41.77 * MILLISECOND),
+            ("ModuleToFunctionPassAdaptor", 35.02 * MILLISECOND),
+            ("ModuleToFunctionPassAdaptor", 25.64 * MILLISECOND),
+            ("RunPass", 22.58 * MILLISECOND),
+            ("ExecuteCompiler", 21.79 * MILLISECOND),
+            ("Source", 21.65 * MILLISECOND),
+            ("JumpThreadingPass", 20.21 * MILLISECOND),
+            ("InlinerPass", 17.24 * MILLISECOND),
         ];
         let trace = TEST_TRACE.lock().unwrap();
         let actual = super::hottest_activities(
             trace.all_activities(),
             |activity| activity.self_duration(),
-            17.20 * MILLISECONDS,
+            17.20 * MILLISECOND,
         );
         for ((expected_name, expected_duration), actual_activity) in
             expected.iter().zip(actual.iter())

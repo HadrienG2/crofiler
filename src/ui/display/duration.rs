@@ -1,6 +1,6 @@
 //! Utility to display durations
 
-use clang_time_trace::Duration;
+use clang_time_trace::{Duration, DAY, HOUR, MICROSECOND, MILLISECOND, MINUTE, SECOND};
 use std::io;
 
 /// Display a duration in a human-readable format
@@ -14,11 +14,6 @@ fn display_duration_impl(
     duration: Duration,
     hms: Option<HMS>,
 ) -> io::Result<()> {
-    const MILLISECOND: Duration = 1000.0;
-    const SECOND: Duration = 1000.0 * MILLISECOND;
-    const MINUTE: Duration = 60.0 * SECOND;
-    const HOUR: Duration = 60.0 * MINUTE;
-    const DAY: Duration = 24.0 * HOUR;
     if duration >= DAY {
         let days = (duration / DAY).floor();
         write!(output, "{days}d ")?;
@@ -40,7 +35,7 @@ fn display_duration_impl(
     } else if duration >= MILLISECOND {
         write!(output, "{:.2}ms", duration / MILLISECOND)
     } else {
-        write!(output, "{duration}µs")
+        write!(output, "{}µs", duration / MICROSECOND)
     }
 }
 //

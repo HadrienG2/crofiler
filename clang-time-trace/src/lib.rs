@@ -27,7 +27,7 @@ use thiserror::Error;
 
 // Reexport types which appear in the public interface
 pub use self::{
-    ctf::{Duration, Pid, Timestamp},
+    ctf::{Duration, Pid, Timestamp, DAY, HOUR, MICROSECOND, MILLISECOND, MINUTE, SECOND},
     metadata::NameParseError,
     stats::{
         activity::{

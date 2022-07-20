@@ -124,6 +124,19 @@ pub type Timestamp = f64;
 /// Durations are just a difference of timestamps
 pub type Duration = Timestamp;
 
+/// One microsecond
+pub const MICROSECOND: Duration = 1.0;
+/// One millisecond
+pub const MILLISECOND: Duration = 1000.0 * MICROSECOND;
+/// One second
+pub const SECOND: Duration = 1000.0 * MILLISECOND;
+/// One minute
+pub const MINUTE: Duration = 60.0 * SECOND;
+/// One hour
+pub const HOUR: Duration = 60.0 * MINUTE;
+/// One day
+pub const DAY: Duration = 24.0 * HOUR;
+
 /// Unit in which timestamps should be displayed
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
