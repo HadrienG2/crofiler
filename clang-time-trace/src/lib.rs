@@ -978,6 +978,45 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_thread_name() {
+        assert_matches!(
+            // Multiple process names
+            expect_err!(ClangTrace::from_str(
+                r#"{
+    "traceEvents": [
+        {
+            "ph":"M",
+            "pid": 42,
+            "tid": 42,
+            "ts": 0,
+            "cat": "",
+            "name": "thread_name",
+            "args": {
+                "name": "clang"
+            }
+        },
+        {
+            "ph":"M",
+            "pid": 42,
+            "tid": 42,
+            "ts": 0,
+            "cat": "",
+            "name": "thread_name",
+            "args": {
+                "name": "cling"
+            }
+        }
+    ]
+}"#
+            )),
+            ClangTraceParseError::DuplicateThreadName(old, new) => {
+                assert_eq!(&*old, "clang");
+                assert_eq!(&*new, "cling");
+            }
+        );
+    }
+
+    #[test]
     fn unexpected_event() {
         assert_matches!(
             // clang should not emit Begin/End events
