@@ -50,8 +50,8 @@ impl ActivityStat {
             TraceEvent::X {
                 duration_event:
                     DurationEvent {
-                        pid: _,
-                        tid: _,
+                        pid,
+                        tid,
                         ts,
                         name: Some(name),
                         cat: None,
@@ -62,7 +62,7 @@ impl ActivityStat {
                 dur,
                 tdur: None,
                 end_stack_trace: None,
-            } => {
+            } if (pid == 1 && tid == 0) || tid == pid => {
                 let activity = Activity::parse(name, args, parser, demangling_buf)?;
                 Ok(Self {
                     activity,
