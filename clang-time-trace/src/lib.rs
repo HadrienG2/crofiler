@@ -413,7 +413,13 @@ pub enum ClangTraceParseError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ctf::{events::duration::DurationEvent, DisplayTimeUnit},
+        ctf::{
+            events::{
+                duration::DurationEvent,
+                metadata::{MetadataOptions, SortIndexArgs},
+            },
+            DisplayTimeUnit, EventCategories,
+        },
         *,
     };
     use assert_matches::assert_matches;
@@ -1039,6 +1045,43 @@ mod tests {
                     name: Some("ExecuteCompiler".into()),
                     ..DurationEvent::default()
                 }));
+            }
+        );
+    }
+
+    #[test]
+    fn unexpected_metadata_event() {
+        assert_matches!(
+            // clang should not emit process_sort_index events
+            expect_err!(ClangTrace::from_str(
+                r#"{
+    "traceEvents": [{
+        "ph":"M",
+        "pid": 42,
+        "tid": 42,
+        "ts": 0,
+        "cat": "",
+        "name": "process_sort_index",
+        "args": {
+            "sort_order": 123
+        }
+    }]
+}"#
+            )),
+            ClangTraceParseError::UnexpectedMetadataEvent(e) => {
+                assert_eq!(e, MetadataEvent::process_sort_index {
+                    pid: 42,
+                    tid: Some(42),
+                    args: SortIndexArgs {
+                        sort_order: 123,
+                        ..Default::default()
+                    },
+                    options: MetadataOptions {
+                        cat: Some(EventCategories(Box::default())),
+                        ts: Some(0.0),
+                        tts: None,
+                    }
+                });
             }
         );
     }
