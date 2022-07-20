@@ -154,75 +154,82 @@ impl Activity {
         let args = RefCell::new(args);
 
         // Handling of activities with one "detail" argument
-        let detail_arg = || -> Result<Box<str>, ArgParseError> {
+        let detail_arg = || -> Result<Box<str>, ActivityArgumentError> {
             Self::parse_detail_arg(args.borrow_mut().take())
         };
         //
-        let mut mangled_arg = || -> Result<MangledSymbol, ActivityParseError> {
-            let symbol = detail_arg()?;
-            Self::parse_mangled_symbol(symbol, parser, demangling_buf)
-        };
+        let mut mangled_arg =
+            |parser: &mut EntityParser| -> Result<MangledSymbol, ActivityArgumentError> {
+                Self::parse_mangled_symbol(detail_arg()?, parser, demangling_buf)
+            };
         //
-        let parse_unnamed_loop_arg = || -> Result<(), ActivityParseError> {
-            let loop_name = detail_arg()?;
-            Self::parse_unnamed_loop(loop_name)
-        };
+        let parse_unnamed_loop_arg =
+            || -> Result<(), ActivityArgumentError> { Self::parse_unnamed_loop(detail_arg()?) };
         //
-        let arg = match *arg_parser {
+        let arg_result = match *arg_parser {
             ActivityArgumentParser::Nothing => {
-                Self::parse_empty_args(args.borrow_mut().take())?;
-                ActivityArgument::Nothing
+                Self::parse_empty_args(args.borrow_mut().take()).map(|()| ActivityArgument::Nothing)
             }
 
-            ActivityArgumentParser::String => ActivityArgument::String(detail_arg()?),
+            ActivityArgumentParser::String => detail_arg().map(ActivityArgument::String),
 
-            ActivityArgumentParser::FilePath => {
-                ActivityArgument::FilePath(parser.intern_path(&detail_arg()?))
-            }
+            ActivityArgumentParser::FilePath => match detail_arg() {
+                Ok(path) => Ok(ActivityArgument::FilePath(parser.intern_path(&path))),
+                Err(e) => Err(e),
+            },
 
-            ActivityArgumentParser::CppEntity => {
-                ActivityArgument::CppEntity(Self::parse_entity(&detail_arg()?, parser)?)
-            }
+            ActivityArgumentParser::CppEntity => match detail_arg() {
+                Ok(entity) => match Self::parse_entity(&entity, parser) {
+                    Ok(entity) => Ok(ActivityArgument::CppEntity(entity)),
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(e),
+            },
 
             ActivityArgumentParser::MangledSymbol => {
-                ActivityArgument::MangledSymbol(mangled_arg()?)
+                mangled_arg(parser).map(ActivityArgument::MangledSymbol)
             }
 
-            ActivityArgumentParser::MangledSymbolOpt => match mangled_arg() {
-                Ok(sym) => ActivityArgument::MangledSymbol(sym),
-                Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => {
-                    ActivityArgument::Nothing
+            ActivityArgumentParser::MangledSymbolOpt => match mangled_arg(parser) {
+                Ok(sym) => Ok(ActivityArgument::MangledSymbol(sym)),
+                Err(ActivityArgumentError::BadParse(ArgParseError::MissingKey("detail"))) => {
+                    Ok(ActivityArgument::Nothing)
                 }
-                Err(e) => return Err(e)?,
+                Err(e) => Err(e),
             },
 
             ActivityArgumentParser::UnnamedLoop => {
-                parse_unnamed_loop_arg()?;
-                ActivityArgument::UnnamedLoop
+                parse_unnamed_loop_arg().map(|()| ActivityArgument::UnnamedLoop)
             }
 
             ActivityArgumentParser::UnnamedLoopOpt => match parse_unnamed_loop_arg() {
-                Ok(()) => ActivityArgument::UnnamedLoop,
-                Err(ActivityParseError::BadArguments(ArgParseError::MissingKey("detail"))) => {
-                    ActivityArgument::Nothing
+                Ok(()) => Ok(ActivityArgument::UnnamedLoop),
+                Err(ActivityArgumentError::BadParse(ArgParseError::MissingKey("detail"))) => {
+                    Ok(ActivityArgument::Nothing)
                 }
-                Err(e) => return Err(e)?,
+                Err(e) => Err(e),
             },
         };
-
-        Ok(Self {
-            id: id.clone(),
-            arg,
-        })
+        match arg_result {
+            Ok(arg) => Ok(Self {
+                id: id.clone(),
+                arg,
+            }),
+            Err(e) => Err(ActivityParseError::BadArguments(id.clone(), e)),
+        }
     }
 
     /// Check for absence of arguments
-    fn parse_empty_args(args: Option<HashMap<Box<str>, json::Value>>) -> Result<(), ArgParseError> {
+    fn parse_empty_args(
+        args: Option<HashMap<Box<str>, json::Value>>,
+    ) -> Result<(), ActivityArgumentError> {
         if let Some(args) = args {
             if args.is_empty() {
                 Ok(())
             } else {
-                Err(ArgParseError::UnexpectedKeys(args))
+                Err(ActivityArgumentError::BadParse(
+                    ArgParseError::UnexpectedKeys(args),
+                ))
             }
         } else {
             Ok(())
@@ -232,7 +239,7 @@ impl Activity {
     /// Parse a single "detail" string argument
     fn parse_detail_arg(
         args: Option<HashMap<Box<str>, json::Value>>,
-    ) -> Result<Box<str>, ArgParseError> {
+    ) -> Result<Box<str>, ActivityArgumentError> {
         if let Some(args) = args {
             let mut args_iter = args.into_iter();
             let collect_bad_args = |args_iter, (k, v)| {
@@ -242,35 +249,41 @@ impl Activity {
                 remainder
             };
             if let Some((k, v)) = args_iter.next() {
-                if &*k != "detail" {
-                    return Err(ArgParseError::UnexpectedKeys(collect_bad_args(
+                if &*k == "detail" {
+                    if let json::Value::String(s) = v {
+                        let s = s.into();
+                        if let Some(kv) = args_iter.next() {
+                            Err(ArgParseError::UnexpectedKeys(collect_bad_args(
+                                args_iter, kv,
+                            )))
+                        } else {
+                            Ok(s)
+                        }
+                    } else {
+                        Err(ArgParseError::UnexpectedValue("detail", v))
+                    }
+                } else {
+                    Err(ArgParseError::UnexpectedKeys(collect_bad_args(
                         args_iter,
                         (k, v),
-                    )));
+                    )))
                 }
-                let s = if let json::Value::String(s) = v {
-                    s.into()
-                } else {
-                    return Err(ArgParseError::UnexpectedValue("detail", v));
-                };
-                if let Some(kv) = args_iter.next() {
-                    return Err(ArgParseError::UnexpectedKeys(collect_bad_args(
-                        args_iter, kv,
-                    )));
-                }
-                Ok(s)
             } else {
                 Err(ArgParseError::MissingKey("detail"))
             }
         } else {
             Err(ArgParseError::MissingKey("detail"))
         }
+        .map_err(ActivityArgumentError::from)
     }
 
     /// Parse a "detail" argument payload that contains a C++ entity name
-    fn parse_entity(s: &str, parser: &mut EntityParser) -> Result<EntityKey, ActivityParseError> {
+    fn parse_entity(
+        s: &str,
+        parser: &mut EntityParser,
+    ) -> Result<EntityKey, ActivityArgumentError> {
         parser.parse_entity(s).map_err(|e| {
-            ActivityParseError::from(nom::error::Error::new(Box::<str>::from(e.input), e.code))
+            ActivityArgumentError::from(nom::error::Error::new(Box::<str>::from(e.input), e.code))
         })
     }
 
@@ -279,7 +292,7 @@ impl Activity {
         symbol: Box<str>,
         parser: &mut EntityParser,
         demangling_buf: &mut String,
-    ) -> Result<MangledSymbol, ActivityParseError> {
+    ) -> Result<MangledSymbol, ActivityArgumentError> {
         let mut parse_demangled = |entity: Box<str>| -> MangledSymbol {
             if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
                 MangledSymbol::Parsed(parsed)
@@ -323,11 +336,11 @@ impl Activity {
     }
 
     /// Handling of the "<unnamed loop>" constant argument
-    fn parse_unnamed_loop(loop_name: Box<str>) -> Result<(), ActivityParseError> {
+    fn parse_unnamed_loop(loop_name: Box<str>) -> Result<(), ActivityArgumentError> {
         if &*loop_name == "<unnamed loop>" {
             Ok(())
         } else {
-            Err(ActivityParseError::UnexpectedLoopName(loop_name))
+            Err(ActivityArgumentError::UnexpectedLoopName(loop_name))
         }
     }
 }
@@ -338,7 +351,7 @@ impl Activity {
 macro_rules! generate_activities {
     ($($string:literal => ($enum:ident, $arg:ident)),* $(,)?) => {
         /// Clang activity identifier
-        #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, strum::IntoStaticStr)]
+        #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, strum::IntoStaticStr, strum::Display)]
         pub enum ActivityId {
             $(
                 #[doc = $string]
@@ -516,11 +529,17 @@ pub enum ActivityParseError {
     #[error("encountered unknown activity {0:?} with arguments {1:?}")]
     UnknownActivity(Box<str>, Option<HashMap<Box<str>, json::Value>>),
 
-    // FIXME: Specify the ActivityId in the errors below
-    //
+    /// Failed to parse activity arguments
+    #[error("failed to process arguments of activity {0} ({1})")]
+    BadArguments(ActivityId, ActivityArgumentError),
+}
+
+/// What can go wrong while parsing an Activity's argument
+#[derive(Error, Debug, PartialEq)]
+pub enum ActivityArgumentError {
     /// Failed to parse activity arguments
     #[error("failed to parse activity arguments ({0})")]
-    BadArguments(#[from] ArgParseError),
+    BadParse(#[from] ArgParseError),
 
     /// Encountered an unexpected activity file path
     #[error("failed to parse activity file path ({0})")]
@@ -715,7 +734,8 @@ mod tests {
                         &mut demangling_buf,
                     ),
                     Err(ActivityParseError::BadArguments(
-                        ArgParseError::UnexpectedKeys(args)
+                        id,
+                        ActivityArgumentError::BadParse(ArgParseError::UnexpectedKeys(args))
                     ))
                 );
             }
@@ -740,14 +760,15 @@ mod tests {
         test_valid_activity(Some(good_args.clone()), &expected, &mut parser);
 
         // Try not providing the requested argument
-        let name = <Box<str>>::from(<&str>::from(expected.id()));
+        let name = <Box<str>>::from(expected.name());
         let mut demangling_buf = String::new();
         if let Some(activity_wo_args) = expected_wo_args {
             test_valid_activity(None, &activity_wo_args, &mut parser);
             test_valid_activity(Some(HashMap::new()), &activity_wo_args, &mut parser);
         } else {
             let missing_arg_error = Err(ActivityParseError::BadArguments(
-                ArgParseError::MissingKey("detail"),
+                expected.id(),
+                ActivityArgumentError::BadParse(ArgParseError::MissingKey("detail")),
             ));
             assert_eq!(
                 Activity::parse(name.clone(), None, &mut parser, &mut demangling_buf),
@@ -775,7 +796,10 @@ mod tests {
                 &mut demangling_buf
             ),
             Err(ActivityParseError::BadArguments(
-                ArgParseError::UnexpectedValue("detail", bad_value)
+                expected.id(),
+                ActivityArgumentError::BadParse(ArgParseError::UnexpectedValue(
+                    "detail", bad_value
+                ))
             ))
         );
 
@@ -790,7 +814,10 @@ mod tests {
                 &mut demangling_buf
             ),
             Err(ActivityParseError::BadArguments(
-                ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
+                expected.id(),
+                ActivityArgumentError::BadParse(ArgParseError::UnexpectedKeys(
+                    maplit::hashmap! { "wat".into() => json::json!("") }
+                ))
             ))
         );
     }
@@ -944,7 +971,10 @@ mod tests {
                     &mut EntityParser::new(),
                     &mut demangling_buf,
                 ),
-                Err(ActivityParseError::UnexpectedLoopName(bad_name))
+                Err(ActivityParseError::BadArguments(
+                    id,
+                    ActivityArgumentError::UnexpectedLoopName(bad_name)
+                ))
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
