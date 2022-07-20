@@ -419,7 +419,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     #[test]
-    fn good_trace() {
+    fn good_trace_clang10() {
         // Build the trace
         let trace = ClangTrace::from_str(
             r#"{
@@ -500,7 +500,7 @@ mod tests {
             "cat": "",
             "name": "process_name",
             "args": {
-                "name": "clang-14.0.0"
+                "name": "clang-10.0.0"
             }
         }
     ]
@@ -509,7 +509,7 @@ mod tests {
         .expect("This is a known-good parse which should not fail");
 
         // Check global metadata
-        assert_eq!(trace.process_name(), "clang-14.0.0");
+        assert_eq!(trace.process_name(), "clang-10.0.0");
         assert_eq!(
             trace.global_stats(),
             &maplit::hashmap! {
@@ -518,6 +518,9 @@ mod tests {
                 "Backend".into() => GlobalStat::new(5555.0, 1),
             }
         );
+        assert_eq!(trace.pid(), None);
+        assert_eq!(trace.beginning_of_time(), None);
+        assert_eq!(trace.thread_name(), None);
 
         // Check flat activity list
         let expected_activities = [
