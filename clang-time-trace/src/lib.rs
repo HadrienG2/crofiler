@@ -552,6 +552,152 @@ mod tests {
         assert_eq!(root_iter.next(), None);
     }
 
+    #[test]
+    fn good_trace_clang14() {
+        // Build the trace
+        let trace = ClangTrace::from_str(
+            r#"{
+    "beginningOfTime": 42.0,
+    "traceEvents": [
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 42,
+            "ts": 1.3,
+            "dur": 6787.7,
+            "name": "Frontend"
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 42,
+            "ts": 6789.3,
+            "dur": 5554.2,
+            "name": "CodeGenPasses"
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 42,
+            "ts": 6789.1,
+            "dur": 5554.5,
+            "name": "Backend"
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 42,
+            "ts": 1.1,
+            "dur": 12343.8,
+            "name": "ExecuteCompiler"
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 43,
+            "ts": 0,
+            "dur": 12345,
+            "name": "Total ExecuteCompiler",
+            "args": {
+                "count": 1,
+                "avg ms": 12345
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 44,
+            "ts": 0,
+            "dur": 6789,
+            "name": "Total Frontend",
+            "args": {
+                "count": 1,
+                "avg ms": 6789
+            }
+        },
+        {
+            "ph": "X",
+            "pid": 42,
+            "tid": 45,
+            "ts": 0,
+            "dur": 5555,
+            "name": "Total Backend",
+            "args": {
+                "count": 1,
+                "avg ms": 5555
+            }
+        },
+        {
+            "ph":"M",
+            "pid": 42,
+            "tid": 42,
+            "ts": 0,
+            "cat": "",
+            "name": "process_name",
+            "args": {
+                "name": "clang-14.0.0"
+            }
+        },
+        {
+            "ph":"M",
+            "pid": 42,
+            "tid": 42,
+            "ts": 0,
+            "cat": "",
+            "name": "thread_name",
+            "args": {
+                "name": "clang"
+            }
+        }
+    ]
+}"#,
+        )
+        .expect("This is a known-good parse which should not fail");
+
+        // Check global metadata
+        assert_eq!(trace.process_name(), "clang-14.0.0");
+        assert_eq!(
+            trace.global_stats(),
+            &maplit::hashmap! {
+                "ExecuteCompiler".into() => GlobalStat::new(12345.0, 1),
+                "Frontend".into() => GlobalStat::new(6789.0, 1),
+                "Backend".into() => GlobalStat::new(5555.0, 1),
+            }
+        );
+        assert_eq!(trace.pid(), Some(42));
+        assert_eq!(trace.beginning_of_time(), Some(42.0));
+        assert_eq!(trace.thread_name(), Some("clang"));
+
+        // Check flat activity list
+        let expected_activities = [
+            (ActivityId::Frontend, 1.3, 6787.7),
+            (ActivityId::CodeGenPasses, 6789.3, 5554.2),
+            (ActivityId::Backend, 6789.1, 5554.5),
+            (ActivityId::ExecuteCompiler, 1.1, 12343.8),
+        ];
+        for (trace, (expected_activity, expected_start, expected_duration)) in trace
+            .all_activities()
+            .zip(expected_activities.iter().cloned())
+        {
+            assert_eq!(trace.activity().id(), expected_activity);
+            assert_eq!(trace.activity().argument(), &ActivityArgument::Nothing);
+            assert_eq!(trace.start(), expected_start);
+            assert_eq!(trace.duration(), expected_duration);
+        }
+
+        // Check root node list
+        let mut root_iter = trace.root_activities();
+        let (root_activity, root_start, root_duration) = expected_activities
+            .last()
+            .expect("Already checked there is >1 activity");
+        assert_matches!(root_iter.next(), Some(root) => {
+            assert_eq!(root.activity().id(), *root_activity);
+            assert_eq!(root.start(), *root_start);
+            assert_eq!(root.duration(), *root_duration);
+        });
+        assert_eq!(root_iter.next(), None);
+    }
+
     macro_rules! expect_err {
         ($e:expr) => {
             if let Err(error) = $e {
