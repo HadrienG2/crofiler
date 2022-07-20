@@ -572,6 +572,17 @@ mod tests {
     }
 
     #[test]
+    fn invalid_beginning_of_time() {
+        assert_matches!(
+            // Expecting nothing but traceEvents
+            expect_err!(ClangTrace::from_str(r#"{"traceEvents": [], "beginningOfTime": "lolnope"}"#)),
+            ClangTraceParseError::InvalidBeginningOfTime(value) => {
+                assert_eq!(value, serde_json::json!("lolnope"));
+            }
+        )
+    }
+
+    #[test]
     fn unexpected_metadata() {
         assert_matches!(
             // Expecting nothing but traceEvents
