@@ -146,14 +146,12 @@ impl ClangTrace {
     }
 
     /// Access a file path using a PathKey
-    // FIXME: Make pub(crate)
-    pub fn file_path(&self, key: PathKey) -> InternedPath {
+    pub(crate) fn file_path(&self, key: PathKey) -> InternedPath {
         self.entities.path(key)
     }
 
     /// Access a parsed C++ entity using an EntityKey
-    // FIXME: Make pub(crate)
-    pub fn entity(&self, key: EntityKey) -> EntityView {
+    pub(crate) fn entity(&self, key: EntityKey) -> EntityView {
         self.entities.entity(key)
     }
 }
