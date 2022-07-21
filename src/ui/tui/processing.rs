@@ -120,13 +120,13 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
 
     /// Get the list of root nodes
     pub fn get_root_activities(&self) -> Box<[ActivityInfo]> {
-        self.query(Instruction::GetRootActivities);
+        self.request(Instruction::GetRootActivities);
         Self::fetch(&self.activities_receiver)
     }
 
     /// Get the list of a node's children
     pub fn get_direct_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
-        self.query(Instruction::GetDirectChildren(id));
+        self.request(Instruction::GetDirectChildren(id));
         Self::fetch(&self.activities_receiver)
     }
 
@@ -136,7 +136,7 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
         activities: Box<[ActivityTraceId]>,
         max_cols: u16,
     ) -> Box<[Box<str>]> {
-        self.query(Instruction::DescribeActivities {
+        self.request(Instruction::DescribeActivities {
             activities,
             max_cols,
         });
@@ -145,7 +145,7 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
 
     /// The processing thread should keep listening to instructions as long as
     /// the main thread is active, otherwise it's strongly indicative of a crash
-    fn query(&self, instruction: Instruction) {
+    fn request(&self, instruction: Instruction) {
         self.instruction_sender
             .send(instruction)
             .expect("Processing thread has likely crashed")
