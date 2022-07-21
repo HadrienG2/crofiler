@@ -8,7 +8,7 @@ use super::display::{
     metadata::metadata,
 };
 use crate::CliArgs;
-use clang_time_trace::{ActivityStatId, ActivityTrace, ClangTrace, ClangTraceLoadError, Duration};
+use clang_time_trace::{ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration};
 use cursive::{
     event::{Event, Key},
     view::{Nameable, Resizable},
@@ -294,7 +294,7 @@ enum HierarchicalColumn {
 #[derive(Clone, Debug)]
 struct HierarchicalData {
     /// Activity identifier
-    id: ActivityStatId,
+    id: ActivityTraceId,
 
     /// Time spent processing this activity or one of its callees
     duration: Duration,

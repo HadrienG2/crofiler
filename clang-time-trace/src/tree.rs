@@ -72,7 +72,7 @@ impl ActivityTree {
     }
 
     /// Get an activity using its activity ID
-    pub fn activity(&self, id: ActivityStatId) -> ActivityTrace {
+    pub fn activity(&self, id: ActivityTraceId) -> ActivityTrace {
         ActivityTrace {
             tree: self,
             activity: &self.activities[id],
@@ -96,7 +96,7 @@ pub struct ActivityTrace<'a> {
 //
 impl ActivityTrace<'_> {
     /// Identifier that can be used to refer to this ActivityTrace
-    pub fn id(&self) -> ActivityStatId {
+    pub fn id(&self) -> ActivityTraceId {
         self.activity_idx
     }
 
@@ -176,7 +176,7 @@ impl Debug for ActivityTrace<'_> {
 }
 
 /// Identifier that can be used to refer to an ActivityTrace
-pub type ActivityStatId = usize;
+pub type ActivityTraceId = usize;
 
 /// Individual clang activity within the activity tree
 #[derive(Debug, PartialEq)]

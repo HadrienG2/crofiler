@@ -37,7 +37,7 @@ pub use self::{
         global::{GlobalStat, GlobalStatParseError},
         ArgParseError,
     },
-    tree::{ActivityStatId, ActivityTrace, ActivityTreeError},
+    tree::{ActivityTrace, ActivityTraceId, ActivityTreeError},
 };
 pub use cpparser::{
     asylum::path::{InternedComponent, PathError},
@@ -103,7 +103,7 @@ impl ClangTrace {
     }
 
     /// Retrieve an activity by a previously acquired identifier
-    pub fn activity(&self, id: ActivityStatId) -> ActivityTrace {
+    pub fn activity(&self, id: ActivityTraceId) -> ActivityTrace {
         self.activities.activity(id)
     }
 
