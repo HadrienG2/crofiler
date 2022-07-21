@@ -200,7 +200,7 @@ fn worker(
     strings: Sender<Box<[Box<str>]>>,
 ) {
     // Process instructions until the main thread hangs up
-    while let Ok(instruction) = instructions.recv() {
+    for instruction in instructions.iter() {
         match instruction {
             // Get the list of root nodes
             Instruction::GetRootActivities => {
