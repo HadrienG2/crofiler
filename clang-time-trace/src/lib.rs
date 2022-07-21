@@ -42,9 +42,12 @@ pub use self::{
 pub use cpparser::{
     asylum::path::{InternedComponent, PathError},
     display::CustomDisplay,
-    InternedPath, PathComponentKey, PathKey,
+    PathComponentKey, PathKey,
 };
 pub use json::Error as CtfParseError;
+
+/// Interned path
+pub type InternedPath<'interner> = cpparser::InternedPath<'interner>;
 
 /// Simplified -ftime-trace profile from a clang execution
 pub struct ClangTrace {
@@ -143,11 +146,13 @@ impl ClangTrace {
     }
 
     /// Access a file path using a PathKey
+    // FIXME: Make pub(crate)
     pub fn file_path(&self, key: PathKey) -> InternedPath {
         self.entities.path(key)
     }
 
     /// Access a parsed C++ entity using an EntityKey
+    // FIXME: Make pub(crate)
     pub fn entity(&self, key: EntityKey) -> EntityView {
         self.entities.entity(key)
     }
@@ -535,14 +540,14 @@ mod tests {
             (ActivityId::Backend, 6789.1, 5554.5),
             (ActivityId::ExecuteCompiler, 1.1, 12343.8),
         ];
-        for (trace, (expected_activity, expected_start, expected_duration)) in trace
+        for (activity_trace, (expected_activity, expected_start, expected_duration)) in trace
             .all_activities()
             .zip(expected_activities.iter().cloned())
         {
-            assert_eq!(trace.activity().id(), expected_activity);
-            assert_eq!(trace.activity().argument(), &ActivityArgument::Nothing);
-            assert_eq!(trace.start(), expected_start);
-            assert_eq!(trace.duration(), expected_duration);
+            assert_eq!(activity_trace.activity().id(), expected_activity);
+            assert!(activity_trace.activity().argument(&trace) == ActivityArgument::Nothing);
+            assert_eq!(activity_trace.start(), expected_start);
+            assert_eq!(activity_trace.duration(), expected_duration);
         }
 
         // Check root node list
@@ -681,14 +686,14 @@ mod tests {
             (ActivityId::Backend, 6789.1, 5554.5),
             (ActivityId::ExecuteCompiler, 1.1, 12343.8),
         ];
-        for (trace, (expected_activity, expected_start, expected_duration)) in trace
+        for (activity_trace, (expected_activity, expected_start, expected_duration)) in trace
             .all_activities()
             .zip(expected_activities.iter().cloned())
         {
-            assert_eq!(trace.activity().id(), expected_activity);
-            assert_eq!(trace.activity().argument(), &ActivityArgument::Nothing);
-            assert_eq!(trace.start(), expected_start);
-            assert_eq!(trace.duration(), expected_duration);
+            assert_eq!(activity_trace.activity().id(), expected_activity);
+            assert!(activity_trace.activity().argument(&trace) == ActivityArgument::Nothing);
+            assert_eq!(activity_trace.start(), expected_start);
+            assert_eq!(activity_trace.duration(), expected_duration);
         }
 
         // Check root node list

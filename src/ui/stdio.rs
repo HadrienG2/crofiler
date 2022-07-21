@@ -6,7 +6,7 @@ use super::display::{
     metadata::metadata,
 };
 use crate::{profile, CliArgs};
-use clang_time_trace::{ActivityTrace, ClangTrace, Duration};
+use clang_time_trace::{ActivityArgument, ActivityId, ActivityTrace, ClangTrace, Duration};
 use std::io;
 use termtree::{GlyphPalette, Tree};
 use unicode_width::UnicodeWidthStr;
@@ -88,8 +88,8 @@ fn print_flat_profile(
         print!("- ");
         display_activity(
             std::io::stdout(),
-            &trace,
-            activity_trace,
+            activity_trace.activity().id(),
+            &activity_trace.activity().argument(trace),
             max_cols - 2,
             duration,
             duration_norm,
@@ -153,8 +153,8 @@ fn hierarchical_profile_tree(
     let mut root_display = Vec::<u8>::new();
     display_activity(
         &mut root_display,
-        trace,
-        &root,
+        root.activity().id(),
+        &root.activity().argument(trace),
         max_cols,
         root.duration(),
         duration_norm,
@@ -215,8 +215,8 @@ fn hierarchical_profile_tree(
 /// Display an activity trace, ideally with associated profiling information
 fn display_activity(
     mut output: impl io::Write,
-    trace: &ClangTrace,
-    activity_trace: &ActivityTrace,
+    activity_id: ActivityId,
+    activity_arg: &ActivityArgument,
     max_cols: u16,
     duration: Duration,
     duration_norm: Duration,
@@ -232,14 +232,14 @@ fn display_activity(
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
     // Try to display both the activity id and the profiling numbers
-    match activity::display_activity_id(&mut output, trace, activity_trace, other_cols) {
+    match activity::display_activity(&mut output, activity_id, activity_arg, other_cols) {
         Ok(()) => {
             // Success, can just print out the profiling numbers
             write!(output, "{trailer}")
         }
         Err(ActivityIdError::NotEnoughCols(_)) => {
             // Not enough space for both, try to display activity ID alone
-            match activity::display_activity_id(&mut output, trace, activity_trace, max_cols) {
+            match activity::display_activity(&mut output, activity_id, activity_arg, max_cols) {
                 Ok(()) => Ok(()),
                 Err(ActivityIdError::IoError(e)) => Err(e),
                 Err(ActivityIdError::NotEnoughCols(_)) => {

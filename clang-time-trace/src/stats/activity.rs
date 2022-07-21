@@ -4,10 +4,10 @@
 use super::ArgParseError;
 use crate::{
     ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent},
-    PathError, PathKey,
+    ClangTrace, InternedPath, PathError, PathKey,
 };
 use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
-use cpparser::{nom, EntityKey, EntityParser};
+use cpparser::{nom, EntityKey, EntityParser, EntityView};
 use log::trace;
 use phf::phf_map;
 use serde_json as json;
@@ -114,7 +114,7 @@ pub struct Activity {
     pub(crate) id: ActivityId,
 
     /// Supplementary data received as an argument, if any
-    pub(crate) arg: ActivityArgument,
+    pub(crate) arg: ActivityArgumentData,
 }
 //
 impl Activity {
@@ -129,8 +129,8 @@ impl Activity {
     }
 
     /// Parsed argument of the activity
-    pub fn argument(&self) -> &ActivityArgument {
-        &self.arg
+    pub fn argument<'a>(&'a self, trace: &'a ClangTrace) -> ActivityArgument<'a> {
+        self.arg.view(trace)
     }
 
     /// Parse from useful bits of Duration events
@@ -159,7 +159,7 @@ impl Activity {
         };
         //
         let mut mangled_arg =
-            |parser: &mut EntityParser| -> Result<MangledSymbol, ActivityArgumentError> {
+            |parser: &mut EntityParser| -> Result<MangledSymbolData, ActivityArgumentError> {
                 Self::parse_mangled_symbol(detail_arg()?, parser, demangling_buf)
             };
         //
@@ -167,45 +167,44 @@ impl Activity {
             || -> Result<(), ActivityArgumentError> { Self::parse_unnamed_loop(detail_arg()?) };
         //
         let arg_result = match *arg_parser {
-            ActivityArgumentParser::Nothing => {
-                Self::parse_empty_args(args.borrow_mut().take()).map(|()| ActivityArgument::Nothing)
-            }
+            ActivityArgumentParser::Nothing => Self::parse_empty_args(args.borrow_mut().take())
+                .map(|()| ActivityArgumentData::Nothing),
 
-            ActivityArgumentParser::String => detail_arg().map(ActivityArgument::String),
+            ActivityArgumentParser::String => detail_arg().map(ActivityArgumentData::String),
 
             ActivityArgumentParser::FilePath => match detail_arg() {
-                Ok(path) => Ok(ActivityArgument::FilePath(parser.intern_path(&path))),
+                Ok(path) => Ok(ActivityArgumentData::FilePath(parser.intern_path(&path))),
                 Err(e) => Err(e),
             },
 
             ActivityArgumentParser::CppEntity => match detail_arg() {
                 Ok(entity) => match Self::parse_entity(&entity, parser) {
-                    Ok(entity) => Ok(ActivityArgument::CppEntity(entity)),
+                    Ok(entity) => Ok(ActivityArgumentData::CppEntity(entity)),
                     Err(e) => Err(e),
                 },
                 Err(e) => Err(e),
             },
 
             ActivityArgumentParser::MangledSymbol => {
-                mangled_arg(parser).map(ActivityArgument::MangledSymbol)
+                mangled_arg(parser).map(ActivityArgumentData::MangledSymbol)
             }
 
             ActivityArgumentParser::MangledSymbolOpt => match mangled_arg(parser) {
-                Ok(sym) => Ok(ActivityArgument::MangledSymbol(sym)),
+                Ok(sym) => Ok(ActivityArgumentData::MangledSymbol(sym)),
                 Err(ActivityArgumentError::BadParse(ArgParseError::MissingKey("detail"))) => {
-                    Ok(ActivityArgument::Nothing)
+                    Ok(ActivityArgumentData::Nothing)
                 }
                 Err(e) => Err(e),
             },
 
             ActivityArgumentParser::UnnamedLoop => {
-                parse_unnamed_loop_arg().map(|()| ActivityArgument::UnnamedLoop)
+                parse_unnamed_loop_arg().map(|()| ActivityArgumentData::UnnamedLoop)
             }
 
             ActivityArgumentParser::UnnamedLoopOpt => match parse_unnamed_loop_arg() {
-                Ok(()) => Ok(ActivityArgument::UnnamedLoop),
+                Ok(()) => Ok(ActivityArgumentData::UnnamedLoop),
                 Err(ActivityArgumentError::BadParse(ArgParseError::MissingKey("detail"))) => {
-                    Ok(ActivityArgument::Nothing)
+                    Ok(ActivityArgumentData::Nothing)
                 }
                 Err(e) => Err(e),
             },
@@ -292,12 +291,12 @@ impl Activity {
         symbol: Box<str>,
         parser: &mut EntityParser,
         demangling_buf: &mut String,
-    ) -> Result<MangledSymbol, ActivityArgumentError> {
-        let mut parse_demangled = |entity: Box<str>| -> MangledSymbol {
+    ) -> Result<MangledSymbolData, ActivityArgumentError> {
+        let mut parse_demangled = |entity: Box<str>| -> MangledSymbolData {
             if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
-                MangledSymbol::Parsed(parsed)
+                MangledSymbolData::Parsed(parsed)
             } else {
-                MangledSymbol::Demangled(entity)
+                MangledSymbolData::Demangled(entity)
             }
         };
 
@@ -322,14 +321,14 @@ impl Activity {
             // should not reject but actually does reject before giving up
             Ok(Err(_)) | Err(_) => match &*symbol {
                 "main" | "__clang_call_terminate" => parse_demangled(symbol),
-                _ => MangledSymbol::Mangled(symbol),
+                _ => MangledSymbolData::Mangled(symbol),
             },
         };
 
         match &demangling_result {
-            MangledSymbol::Parsed(_) => {}
-            MangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
-            MangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+            MangledSymbolData::Parsed(_) => {}
+            MangledSymbolData::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
+            MangledSymbolData::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
         }
 
         Ok(demangling_result)
@@ -448,7 +447,7 @@ generate_activities! {
     "LCSSAPass" => (LCSSAPass, MangledSymbol),
     "LoopDeletionPass" => (LoopDeletionPass, UnnamedLoop),
 }
-//
+
 /// Empirically observed activity argument parsing logics for time-trace entries
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ActivityArgumentParser {
@@ -476,10 +475,10 @@ enum ActivityArgumentParser {
     /// Either the "<unnamed loop>" constant string or nothing
     UnnamedLoopOpt,
 }
-//
-/// Concrete things that an activity can take as an argument
+
+/// Stored data about an activity's argument
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ActivityArgument {
+pub(crate) enum ActivityArgumentData {
     /// No argument
     Nothing,
 
@@ -493,17 +492,82 @@ pub enum ActivityArgument {
     CppEntity(EntityKey),
 
     /// A C++ mangled symbol
-    MangledSymbol(MangledSymbol),
+    MangledSymbol(MangledSymbolData),
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
 }
 //
-/// A mangled C++ symbol that we tried to demangle and parse
+impl ActivityArgumentData {
+    /// Resolve associated ActivityArgumentView
+    fn view<'a>(&'a self, trace: &'a ClangTrace) -> ActivityArgument<'a> {
+        match self {
+            ActivityArgumentData::Nothing => ActivityArgument::Nothing,
+            ActivityArgumentData::String(s) => ActivityArgument::String(&*s),
+            ActivityArgumentData::FilePath(p) => ActivityArgument::FilePath(trace.file_path(*p)),
+            ActivityArgumentData::CppEntity(e) => ActivityArgument::CppEntity(trace.entity(*e)),
+            ActivityArgumentData::MangledSymbol(m) => {
+                ActivityArgument::MangledSymbol(m.view(trace))
+            }
+            ActivityArgumentData::UnnamedLoop => ActivityArgument::UnnamedLoop,
+        }
+    }
+}
+//
+/// Concrete things that an activity can take as an argument
+#[derive(PartialEq)]
+pub enum ActivityArgument<'trace> {
+    /// No argument
+    Nothing,
+
+    /// An arbitrary string
+    String(&'trace str),
+
+    /// An interned file path
+    FilePath(InternedPath<'trace>),
+
+    /// A C++ entity (class, function, ...)
+    CppEntity(EntityView<'trace>),
+
+    /// A C++ mangled symbol
+    MangledSymbol(MangledSymbol<'trace>),
+
+    /// The "<unnamed loop>" constant string (loops can't be named in C++)
+    UnnamedLoop,
+}
+
+/// Stored data about a mangled C++ symbol that we tried to demangle and parse
+///
+/// See MangledSymbolView for more documentation
+///
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MangledSymbol {
+pub(crate) enum MangledSymbolData {
     /// Symbol was successfully mangled and interned
     Parsed(EntityKey),
+
+    /// The symbol was demangled, but could not be parsed into an AST
+    Demangled(Box<str>),
+
+    /// Demangling failed and the symbol was kept in its original form.
+    Mangled(Box<str>),
+}
+//
+impl MangledSymbolData {
+    /// Resolve associated MangledSymbolView
+    fn view<'a>(&'a self, trace: &'a ClangTrace) -> MangledSymbol<'a> {
+        match self {
+            MangledSymbolData::Parsed(key) => MangledSymbol::Parsed(trace.entity(*key)),
+            MangledSymbolData::Demangled(s) => MangledSymbol::Demangled(&*s),
+            MangledSymbolData::Mangled(s) => MangledSymbol::Mangled(&*s),
+        }
+    }
+}
+//
+/// A mangled C++ symbol that we tried to demangle and parse
+#[derive(PartialEq)]
+pub enum MangledSymbol<'trace> {
+    /// Symbol was successfully mangled and interned
+    Parsed(EntityView<'trace>),
 
     /// The symbol was demangled, but could not be parsed into an AST
     ///
@@ -511,7 +575,7 @@ pub enum MangledSymbol {
     /// as `SomeTemplate<int, && >` or `()...`. If you find reasonable output
     /// which we do not parse, please submit it as a bug.
     ///
-    Demangled(Box<str>),
+    Demangled(&'trace str),
 
     /// Demangling failed and the symbol was kept in its original form.
     ///
@@ -519,7 +583,7 @@ pub enum MangledSymbol {
     /// - __cxx_global_var_init(.<number>)?
     /// - _GLOBAL__sub_I_<source file>
     ///
-    Mangled(Box<str>),
+    Mangled(&'trace str),
 }
 
 /// What can go wrong while parsing an Activity
@@ -567,7 +631,7 @@ mod tests {
         let stat = ActivityStat {
             activity: Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             start: 12.3,
             duration: 45.6,
@@ -714,7 +778,7 @@ mod tests {
             let name = <&str>::from(id);
             let activity = Activity {
                 id,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             };
 
             // Test two different ways of passing no arguments
@@ -830,7 +894,7 @@ mod tests {
                 mock_arg,
                 Activity {
                     id,
-                    arg: ActivityArgument::String(mock_arg.into()),
+                    arg: ActivityArgumentData::String(mock_arg.into()),
                 },
                 EntityParser::new(),
                 None,
@@ -853,7 +917,7 @@ mod tests {
                 mock_path,
                 Activity {
                     id,
-                    arg: ActivityArgument::FilePath(path_key),
+                    arg: ActivityArgumentData::FilePath(path_key),
                 },
                 parser,
                 None,
@@ -878,7 +942,7 @@ mod tests {
                 mock_entity,
                 Activity {
                     id,
-                    arg: ActivityArgument::CppEntity(key),
+                    arg: ActivityArgumentData::CppEntity(key),
                 },
                 parser,
                 None,
@@ -905,12 +969,12 @@ mod tests {
                 VALID,
                 Activity {
                     id,
-                    arg: ActivityArgument::MangledSymbol(MangledSymbol::Parsed(key)),
+                    arg: ActivityArgumentData::MangledSymbol(MangledSymbolData::Parsed(key)),
                 },
                 parser,
                 optional.then_some(Activity {
                     id,
-                    arg: ActivityArgument::Nothing,
+                    arg: ActivityArgumentData::Nothing,
                 }),
             );
 
@@ -920,12 +984,14 @@ mod tests {
                 INVALID,
                 Activity {
                     id,
-                    arg: ActivityArgument::MangledSymbol(MangledSymbol::Mangled(INVALID.into())),
+                    arg: ActivityArgumentData::MangledSymbol(MangledSymbolData::Mangled(
+                        INVALID.into(),
+                    )),
                 },
                 EntityParser::new(),
                 optional.then_some(Activity {
                     id,
-                    arg: ActivityArgument::Nothing,
+                    arg: ActivityArgumentData::Nothing,
                 }),
             );
         };
@@ -950,12 +1016,12 @@ mod tests {
                 "<unnamed loop>",
                 Activity {
                     id,
-                    arg: ActivityArgument::UnnamedLoop,
+                    arg: ActivityArgumentData::UnnamedLoop,
                 },
                 EntityParser::new(),
                 optional.then_some(Activity {
                     id,
-                    arg: ActivityArgument::Nothing,
+                    arg: ActivityArgumentData::Nothing,
                 }),
             );
 

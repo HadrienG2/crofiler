@@ -354,7 +354,7 @@ pub enum ActivityTreeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stats::activity::{ActivityArgument, ActivityId};
+    use crate::stats::activity::{ActivityArgumentData, ActivityId};
     use more_asserts::*;
     use pretty_assertions::assert_eq;
 
@@ -458,7 +458,7 @@ mod tests {
         let activity_stat = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             0.1,
             4.2,
@@ -495,7 +495,7 @@ mod tests {
         let root = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             0.1,
             4.2e6,
@@ -503,7 +503,7 @@ mod tests {
         let child1 = ActivityStat::new(
             Activity {
                 id: ActivityId::Frontend,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             0.2,
             3.2e6,
@@ -511,7 +511,7 @@ mod tests {
         let subchild1 = ActivityStat::new(
             Activity {
                 id: ActivityId::PerformPendingInstantiations,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             0.3,
             3.0e6,
@@ -519,7 +519,7 @@ mod tests {
         let child2 = ActivityStat::new(
             Activity {
                 id: ActivityId::Backend,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             3.5e6,
             0.6e6,
@@ -527,7 +527,7 @@ mod tests {
         let subchild2 = ActivityStat::new(
             Activity {
                 id: ActivityId::CodeGenPasses,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             3.6e6,
             0.4e6,
@@ -598,7 +598,7 @@ mod tests {
         let activity1 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             4.6,
             6.4,
@@ -609,7 +609,7 @@ mod tests {
         let activity2 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             0.1,
             4.2,
@@ -629,7 +629,7 @@ mod tests {
         let activity1 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             1.2,
             3.4,
@@ -640,7 +640,7 @@ mod tests {
         let activity2 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgument::Nothing,
+                arg: ActivityArgumentData::Nothing,
             },
             2.3,
             5.6,

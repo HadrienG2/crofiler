@@ -87,7 +87,7 @@ impl<ComponentKey: Key, PK: InternerKey<ImplKey = Range<usize>>> PathResolver
 }
 
 /// Accessor to an interned path
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct InternedPath<'parent, Parent: PathResolver + ?Sized> {
     #[cfg(not(feature = "reffers"))]
     /// Parent from which this path comes
@@ -141,6 +141,12 @@ impl<'parent, Parent: PathResolver + ?Sized> InternedPath<'parent, Parent> {
             path_buf.push(component);
         }
         path_buf.into_boxed_path()
+    }
+}
+//
+impl<'parent, Parent: PathResolver + ?Sized> PartialEq for InternedPath<'parent, Parent> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key && (&*self.parent as *const _ == &*other.parent as *const _)
     }
 }
 //

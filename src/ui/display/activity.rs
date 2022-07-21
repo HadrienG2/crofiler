@@ -1,6 +1,6 @@
 //! Utilities for displaying clang activities
 
-use clang_time_trace::{ActivityArgument, ActivityTrace, ClangTrace, CustomDisplay, MangledSymbol};
+use clang_time_trace::{ActivityArgument, ActivityId, ActivityTrace, CustomDisplay, MangledSymbol};
 use std::io;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
@@ -11,14 +11,13 @@ use unicode_width::UnicodeWidthStr;
 /// space. You may want to retry after eliminating other display elements if
 /// they are deemed less important, or just display "…".
 ///
-pub fn display_activity_id(
+pub fn display_activity(
     mut output: impl io::Write,
-    trace: &ClangTrace,
-    activity_trace: &ActivityTrace,
+    activity_id: ActivityId,
+    activity_arg: &ActivityArgument,
     mut max_cols: u16,
 ) -> Result<(), ActivityIdError> {
-    let activity_name = activity_trace.activity().name();
-    let activity_arg = activity_trace.activity().argument();
+    let activity_name: &str = activity_id.into();
     let has_argument = *activity_arg != ActivityArgument::Nothing;
 
     // Can we display at least ActivityName + (…) if there are parameters?
@@ -48,15 +47,11 @@ pub fn display_activity_id(
             super::display_string(&mut output, s, max_cols)?;
         }
         ActivityArgument::FilePath(p) => {
-            write!(
-                output,
-                "{}",
-                super::path::truncate_path(&trace.file_path(*p), max_cols)
-            )?;
+            write!(output, "{}", super::path::truncate_path(&p, max_cols))?;
         }
         ActivityArgument::CppEntity(e)
         | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
-            write!(output, "{}", trace.entity(*e).bounded_display(max_cols))?;
+            write!(output, "{}", e.bounded_display(max_cols))?;
         }
         ActivityArgument::Nothing => unreachable!(),
     }
@@ -87,9 +82,16 @@ mod tests {
     fn display_activity_id() {
         let mut display = Vec::new();
         let trace = TEST_TRACE.lock().unwrap();
-        let mut check_display = |activity: &ActivityTrace, max_cols, expected_display: &str| {
+        let mut check_display = |activity_trace: &ActivityTrace,
+                                 max_cols,
+                                 expected_display: &str| {
             display.clear();
-            let result = super::display_activity_id(&mut display, &trace, activity, max_cols);
+            let result = super::display_activity(
+                &mut display,
+                activity_trace.activity().id(),
+                &activity_trace.activity().argument(&trace),
+                max_cols,
+            );
             if expected_display.is_empty() {
                 assert_eq!(
                     display,
@@ -125,7 +127,10 @@ mod tests {
             let first_string_arg = trace
                 .all_activities()
                 .find(|activity| {
-                    matches!(*activity.activity().argument(), ActivityArgument::String(_))
+                    matches!(
+                        activity.activity().argument(&trace),
+                        ActivityArgument::String(_)
+                    )
                 })
                 .unwrap();
             check_display(&first_string_arg, 9, "");
@@ -139,7 +144,7 @@ mod tests {
                 .all_activities()
                 .find(|activity| {
                     matches!(
-                        *activity.activity().argument(),
+                        activity.activity().argument(&trace),
                         ActivityArgument::MangledSymbol(MangledSymbol::Demangled(_))
                     )
                 })
@@ -155,7 +160,7 @@ mod tests {
                 .all_activities()
                 .find(|activity| {
                     matches!(
-                        *activity.activity().argument(),
+                        activity.activity().argument(&trace),
                         ActivityArgument::MangledSymbol(MangledSymbol::Mangled(_))
                     )
                 })
@@ -171,7 +176,7 @@ mod tests {
                 .all_activities()
                 .find(|activity| {
                     matches!(
-                        *activity.activity().argument(),
+                        activity.activity().argument(&trace),
                         ActivityArgument::FilePath(_)
                     )
                 })
@@ -194,7 +199,7 @@ mod tests {
                 .all_activities()
                 .find(|activity| {
                     matches!(
-                        *activity.activity().argument(),
+                        activity.activity().argument(&trace),
                         ActivityArgument::CppEntity(_)
                     )
                 })
@@ -212,7 +217,7 @@ mod tests {
                 .all_activities()
                 .find(|activity| {
                     matches!(
-                        *activity.activity().argument(),
+                        activity.activity().argument(&trace),
                         ActivityArgument::MangledSymbol(MangledSymbol::Parsed(_))
                     )
                 })
