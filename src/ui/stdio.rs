@@ -1,7 +1,7 @@
 //! Display facilities which are specific to the non-interactive stdio display
 
 use super::display::{
-    activity::{self, ActivityIdError},
+    activity::{self, ActivityDescError},
     duration::display_duration,
     metadata::metadata,
 };
@@ -232,23 +232,24 @@ fn display_activity(
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
     // Try to display both the activity id and the profiling numbers
-    match activity::display_activity(&mut output, activity_id, activity_arg, other_cols) {
+    match activity::display_activity_desc(&mut output, activity_id, activity_arg, other_cols) {
         Ok(()) => {
             // Success, can just print out the profiling numbers
             write!(output, "{trailer}")
         }
-        Err(ActivityIdError::NotEnoughCols(_)) => {
+        Err(ActivityDescError::NotEnoughCols(_)) => {
             // Not enough space for both, try to display activity ID alone
-            match activity::display_activity(&mut output, activity_id, activity_arg, max_cols) {
+            match activity::display_activity_desc(&mut output, activity_id, activity_arg, max_cols)
+            {
                 Ok(()) => Ok(()),
-                Err(ActivityIdError::IoError(e)) => Err(e),
-                Err(ActivityIdError::NotEnoughCols(_)) => {
+                Err(ActivityDescError::IoError(e)) => Err(e),
+                Err(ActivityDescError::NotEnoughCols(_)) => {
                     // Seems the best we can do is an ellipsis placeholder...
                     write!(output, "…")
                 }
             }
         }
-        Err(ActivityIdError::IoError(e)) => Err(e),
+        Err(ActivityDescError::IoError(e)) => Err(e),
     }
 }
 

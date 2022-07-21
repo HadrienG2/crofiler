@@ -11,19 +11,19 @@ use unicode_width::UnicodeWidthStr;
 /// space. You may want to retry after eliminating other display elements if
 /// they are deemed less important, or just display "…".
 ///
-pub fn display_activity(
+pub fn display_activity_desc(
     mut output: impl io::Write,
     activity_id: ActivityId,
     activity_arg: &ActivityArgument,
     mut max_cols: u16,
-) -> Result<(), ActivityIdError> {
+) -> Result<(), ActivityDescError> {
     let activity_name: &str = activity_id.into();
     let has_argument = *activity_arg != ActivityArgument::Nothing;
 
     // Can we display at least ActivityName + (…) if there are parameters?
     if usize::from(max_cols) < activity_name.width() + 3 * (has_argument as usize) {
         // If not, error out
-        return Err(ActivityIdError::NotEnoughCols(max_cols));
+        return Err(ActivityDescError::NotEnoughCols(max_cols));
     } else {
         // If so, display the activity name...
         write!(output, "{activity_name}")?;
@@ -61,7 +61,7 @@ pub fn display_activity(
 //
 /// Error that is emitted when an activity id cannot be displayed
 #[derive(Debug, Error)]
-pub enum ActivityIdError {
+pub enum ActivityDescError {
     /// Not enough space to display activity name
     #[error("cannot display activity name in {0} terminal column(s)")]
     NotEnoughCols(u16),
@@ -86,7 +86,7 @@ mod tests {
                                  max_cols,
                                  expected_display: &str| {
             display.clear();
-            let result = super::display_activity(
+            let result = super::display_activity_desc(
                 &mut display,
                 activity_trace.activity().id(),
                 &activity_trace.activity().argument(&trace),
@@ -100,7 +100,7 @@ mod tests {
                     std::str::from_utf8(&display),
                     std::str::from_utf8(&display).map(|s| s.width())
                 );
-                assert_matches!(result, Err(ActivityIdError::NotEnoughCols(cols)) => assert_eq!(cols, max_cols));
+                assert_matches!(result, Err(ActivityDescError::NotEnoughCols(cols)) => assert_eq!(cols, max_cols));
             } else {
                 assert_eq!(
                     display,

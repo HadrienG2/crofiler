@@ -3,7 +3,7 @@
 mod processing;
 
 use super::display::{
-    activity::{display_activity, ActivityIdError},
+    activity::{display_activity_desc, ActivityDescError},
     duration::display_duration,
     metadata::metadata,
 };
@@ -200,17 +200,17 @@ fn show_hierarchical_profile<'a>(
             } else {
                 buf.push(b' ');
             }
-            match display_activity(
+            match display_activity_desc(
                 &mut buf,
                 activity_trace.activity().id(),
                 &activity_trace.activity().argument(trace),
                 activity_width as u16,
             ) {
                 Ok(()) => {}
-                Err(ActivityIdError::NotEnoughCols(_)) => {
+                Err(ActivityDescError::NotEnoughCols(_)) => {
                     write!(&mut buf, "…").expect("Writing to a buffer should succeed")
                 }
-                e @ Err(ActivityIdError::IoError(_)) => {
+                e @ Err(ActivityDescError::IoError(_)) => {
                     e.expect("Writing to a buffer should succeed")
                 }
             }

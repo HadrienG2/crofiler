@@ -1,8 +1,10 @@
 //! Processing thread of the TUI interface (owns the ClangTrace and takes care
 //! of all the expensive rendering operations to allow good responsiveness).
 
+use crate::ui::display::activity::{display_activity_desc, ActivityDescError};
 use clang_time_trace::{ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration};
 use std::{
+    io::Write,
     path::Path,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -25,6 +27,9 @@ pub struct ProcessingThread<Metadata: Send + Sync + 'static> {
 
     /// Channel to receive lists of activities from the processing thread
     activities_receiver: Receiver<Box<[ActivityInfo]>>,
+
+    /// Channel to receive lists of strings from the processing thread
+    strings_receiver: Receiver<Box<[Box<str>]>>,
 }
 //
 impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
@@ -39,6 +44,7 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
         let metadata2 = metadata.clone();
         let (instruction_sender, instruction_receiver) = mpsc::channel();
         let (activities_sender, activities_receiver) = mpsc::channel();
+        let (strings_sender, strings_receiver) = mpsc::channel();
 
         // Spawn the processing thread
         let handle = thread::spawn(move || {
@@ -58,7 +64,12 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
             };
 
             // Process instructions until the main thread hangs up
-            worker(trace, instruction_receiver, activities_sender);
+            worker(
+                trace,
+                instruction_receiver,
+                activities_sender,
+                strings_sender,
+            );
         });
 
         // Wait for the thread to start processing the ClangTrace (as indicated
@@ -75,6 +86,7 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
             metadata,
             instruction_sender,
             activities_receiver,
+            strings_receiver,
         }
     }
 
@@ -107,15 +119,28 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
     //       the reply to one query from that to another query.
 
     /// Get the list of root nodes
-    pub fn root_activities(&self) -> Box<[ActivityInfo]> {
-        self.query(Instruction::GetRootNodes);
+    pub fn get_root_activities(&self) -> Box<[ActivityInfo]> {
+        self.query(Instruction::GetRootActivities);
         Self::fetch(&self.activities_receiver)
     }
 
     /// Get the list of a node's children
-    pub fn direct_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
-        self.query(Instruction::GetChildren(id));
+    pub fn get_direct_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
+        self.query(Instruction::GetDirectChildren(id));
         Self::fetch(&self.activities_receiver)
+    }
+
+    /// Describe a set of activities
+    pub fn describe_activities(
+        &self,
+        activities: Box<[ActivityTraceId]>,
+        max_cols: u16,
+    ) -> Box<[Box<str>]> {
+        self.query(Instruction::DescribeActivities {
+            activities,
+            max_cols,
+        });
+        Self::fetch(&self.strings_receiver)
     }
 
     /// The processing thread should keep listening to instructions as long as
@@ -155,10 +180,16 @@ pub struct ActivityInfo {
 /// Instructions that can be sent to the processing thread
 enum Instruction {
     /// Get the list of root nodes (reply via activities channel)
-    GetRootNodes,
+    GetRootActivities,
 
     /// Get the list of a node's children (reply via activities channel)
-    GetChildren(ActivityTraceId),
+    GetDirectChildren(ActivityTraceId),
+
+    /// Display a set of activity descriptions
+    DescribeActivities {
+        activities: Box<[ActivityTraceId]>,
+        max_cols: u16,
+    },
 }
 
 /// Processing thread worker
@@ -166,18 +197,27 @@ fn worker(
     trace: ClangTrace,
     instructions: Receiver<Instruction>,
     activities: Sender<Box<[ActivityInfo]>>,
+    strings: Sender<Box<[Box<str>]>>,
 ) {
     // Process instructions until the main thread hangs up
     while let Ok(instruction) = instructions.recv() {
         match instruction {
             // Get the list of root nodes
-            Instruction::GetRootNodes => reply(&activities, activity_list(trace.root_activities())),
+            Instruction::GetRootActivities => {
+                reply(&activities, activity_list(trace.root_activities()))
+            }
 
             // Get the list of a node's children
-            Instruction::GetChildren(id) => reply(
+            Instruction::GetDirectChildren(id) => reply(
                 &activities,
                 activity_list(trace.activity(id).direct_children()),
             ),
+
+            // Describe a set of activities
+            Instruction::DescribeActivities {
+                activities,
+                max_cols,
+            } => reply(&strings, describe_activities(&trace, activities, max_cols)),
         }
     }
 }
@@ -195,6 +235,39 @@ fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> Box<[
             id: activity_trace.id(),
             duration: activity_trace.duration(),
             self_duration: activity_trace.self_duration(),
+        })
+        .collect()
+}
+
+/// Describe a list of activities
+fn describe_activities(
+    trace: &ClangTrace,
+    activities: Box<[ActivityTraceId]>,
+    max_cols: u16,
+) -> Box<[Box<str>]> {
+    activities
+        .into_vec()
+        .into_iter()
+        .map(|id| {
+            let activity_trace = trace.activity(id);
+            let mut output = Vec::new();
+            match display_activity_desc(
+                &mut output,
+                activity_trace.activity().id(),
+                &activity_trace.activity().argument(&trace),
+                max_cols,
+            ) {
+                Ok(()) => {}
+                Err(ActivityDescError::NotEnoughCols(_)) => {
+                    write!(output, "…").expect("IO to a buffer shouldn't fail");
+                }
+                Err(ActivityDescError::IoError(e)) => {
+                    unreachable!("IO to a buffer shouldn't fail, but failed with error {e}");
+                }
+            }
+            String::from_utf8(output)
+                .expect("Activity descriptions should be UTF-8")
+                .into()
         })
         .collect()
 }
