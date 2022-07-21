@@ -1,5 +1,7 @@
 //! Interactive textual user interface
 
+mod processing;
+
 use super::display::{
     activity::{display_activity_id, ActivityIdError},
     duration::display_duration,
