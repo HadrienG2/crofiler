@@ -1,6 +1,6 @@
 //! Utilities for displaying clang activities
 
-use clang_time_trace::{ActivityArgument, ActivityId, ActivityTrace, CustomDisplay, MangledSymbol};
+use clang_time_trace::{ActivityArgument, ActivityId, CustomDisplay, MangledSymbol};
 use std::io;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
@@ -75,6 +75,7 @@ pub enum ActivityDescError {
 mod tests {
     use crate::tests::TEST_TRACE;
     use assert_matches::assert_matches;
+    use clang_time_trace::ActivityTrace;
 
     use super::*;
 

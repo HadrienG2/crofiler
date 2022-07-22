@@ -1,7 +1,10 @@
 //! Processing thread of the TUI interface (owns the ClangTrace and takes care
 //! of all the expensive rendering operations to allow good responsiveness).
 
-use crate::ui::display::activity::{display_activity_desc, ActivityDescError};
+use crate::ui::display::{
+    activity::{display_activity_desc, ActivityDescError},
+    metadata::metadata,
+};
 use clang_time_trace::{ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration};
 use std::{
     io::Write,
@@ -15,34 +18,35 @@ use std::{
 };
 
 /// Encapsulation of the processing thread
-pub struct ProcessingThread<Metadata: Send + Sync + 'static> {
+pub struct ProcessingThread {
     /// JoinHandle of the processing thread
-    handle: JoinHandle<()>,
+    _handle: JoinHandle<()>,
 
-    /// ClangTrace metadata (if already available and not yet fetched)
-    metadata: Arc<Mutex<Option<Result<Metadata, ClangTraceLoadError>>>>,
+    /// Result of loading the trace
+    load_result: Arc<Mutex<Option<Result<(), ClangTraceLoadError>>>>,
 
     /// Channel to send instructions to the processing thread
     instruction_sender: Sender<Instruction>,
 
+    /// Channel to receive individual mutable Strings from the processing thread
+    string_receiver: Receiver<String>,
+
     /// Channel to receive lists of activities from the processing thread
     activities_receiver: Receiver<Box<[ActivityInfo]>>,
 
-    /// Channel to receive lists of strings from the processing thread
+    /// Channel to receive lists of immutable strings from the processing thread
     strings_receiver: Receiver<Box<[Box<str>]>>,
 }
 //
-impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
-    /// Set up the processing thread, indicating how metadata should be produced
-    pub fn new(
-        path: &Path,
-        generate_metadata: impl Send + FnOnce(&ClangTrace) -> Metadata + 'static,
-    ) -> Self {
+impl ProcessingThread {
+    /// Start the processing thread
+    pub fn start(path: &Path) -> Self {
         // Set up processing thread state and communication channels
         let path = path.to_path_buf();
-        let metadata = Arc::new(Mutex::new(None));
-        let metadata2 = metadata.clone();
+        let load_result = Arc::new(Mutex::new(None));
+        let load_result_2 = load_result.clone();
         let (instruction_sender, instruction_receiver) = mpsc::channel();
+        let (string_sender, string_receiver) = mpsc::channel();
         let (activities_sender, activities_receiver) = mpsc::channel();
         let (strings_sender, strings_receiver) = mpsc::channel();
 
@@ -50,14 +54,14 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
         let handle = thread::spawn(move || {
             // Load the ClangTrace and generate user-specified metadata
             let trace = {
-                let mut metadata_lock = metadata2.lock().expect("Main thread has crashed");
+                let mut result_lock = load_result_2.lock().expect("Main thread has crashed");
                 match ClangTrace::from_file(path) {
                     Ok(trace) => {
-                        *metadata_lock = Some(Ok(generate_metadata(&trace)));
+                        *result_lock = Some(Ok(()));
                         trace
                     }
                     Err(e) => {
-                        *metadata_lock = Some(Err(e));
+                        *result_lock = Some(Err(e));
                         panic!("Failed to load ClangTrace")
                     }
                 }
@@ -67,44 +71,46 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
             worker(
                 trace,
                 instruction_receiver,
+                string_sender,
                 activities_sender,
                 strings_sender,
             );
         });
 
         // Wait for the thread to start processing the ClangTrace (as indicated
-        // by acquisition of the metadata lock or emission of metadata)
-        while metadata
-            .try_lock()
-            .expect("Processing thread has crashed")
-            .is_none()
-        {
+        // by acquisition of the result lock or emission of a result)
+        while match load_result.try_lock() {
+            Ok(guard) => guard.is_none(),
+            Err(TryLockError::WouldBlock) => false,
+            Err(TryLockError::Poisoned(e)) => panic!("Processing thread has crashed: {e}"),
+        } {
             thread::sleep(time::Duration::new(0, 10_000));
         }
         Self {
-            handle,
-            metadata,
+            _handle: handle,
+            load_result,
             instruction_sender,
+            string_receiver,
             activities_receiver,
             strings_receiver,
         }
     }
 
-    /// Extract the previously requested ClangTrace metadata, if available
+    /// Query the outcome of loading the ClangTrace
     ///
     /// May return...
-    /// - None if the ClangTrace is still being processed
-    /// - Some(Ok(metadata)) if the processing thread is ready
-    /// - Some(Err(error)) if the processing thread failed to load the ClangTrace
+    /// - None if the ClangTrace is still being loaded
+    /// - Some(Ok(())) if the trace was successfully loaded
+    /// - Some(Err(error)) if the ClangTrace could not be loaded
     ///
-    /// Will panic if the processing thread has panicked or the ClangTrace
-    /// metadata has already been extracted through a call to this function
+    /// Will panic if the processing thread has panicked or the result has
+    /// already been extracted through a call to this function
     ///
-    pub fn try_extract_metadata(&mut self) -> Option<Result<Metadata, ClangTraceLoadError>> {
-        match self.metadata.try_lock() {
+    pub fn try_extract_load_result(&mut self) -> Option<Result<(), ClangTraceLoadError>> {
+        match self.load_result.try_lock() {
             Ok(mut guard) => match guard.take() {
                 opt @ Some(_) => opt,
-                None => panic!("Metadata has already been extracted"),
+                None => panic!("Load result has already been extracted"),
             },
             Err(TryLockError::WouldBlock) => None,
             Err(TryLockError::Poisoned(e)) => {
@@ -117,6 +123,12 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
     //       UI responsiveness once basic functionality is achieved. This will
     //       require attaching a counter to replies which allows telling apart
     //       the reply to one query from that to another query.
+
+    /// Describe the trace for a certain terminal width
+    pub fn describe_trace(&self, max_cols: u16) -> String {
+        self.request(Instruction::DescribeTrace(max_cols));
+        Self::fetch(&self.string_receiver)
+    }
 
     /// Get the list of root nodes
     pub fn get_root_activities(&self) -> Box<[ActivityInfo]> {
@@ -162,9 +174,10 @@ impl<Metadata: Send + Sync + 'static> ProcessingThread<Metadata> {
 
 /// Basic activity data as emitted by the processing thread
 ///
-/// This is meant to provide enough info to allow for pruning based on the
-/// desired minimal duration criteria (e.g. self_duration > 0.5% total), before
-/// querying for the name info which is more expensive to render.
+/// This query provides easily accessible info. The caller may decide to
+/// eliminate activities based on the desired minimal duration criterion (e.g.
+/// self_duration > 0.5% total) before requesting activity descriptions, which
+/// are more expensive to render.
 ///
 pub struct ActivityInfo {
     /// Identifier that can be used to refer to the activity in later requests
@@ -175,10 +188,16 @@ pub struct ActivityInfo {
 
     /// Time spent specificially processing this activity
     pub self_duration: Duration,
+
+    /// Truth that this activity has children
+    pub has_children: bool,
 }
 
 /// Instructions that can be sent to the processing thread
 enum Instruction {
+    /// Render trace-wide metadata for a certain terminal width
+    DescribeTrace(u16),
+
     /// Get the list of root nodes (reply via activities channel)
     GetRootActivities,
 
@@ -196,12 +215,16 @@ enum Instruction {
 fn worker(
     trace: ClangTrace,
     instructions: Receiver<Instruction>,
+    string: Sender<String>,
     activities: Sender<Box<[ActivityInfo]>>,
     strings: Sender<Box<[Box<str>]>>,
 ) {
     // Process instructions until the main thread hangs up
     for instruction in instructions.iter() {
         match instruction {
+            // Describe the trace
+            Instruction::DescribeTrace(max_cols) => reply(&string, metadata(&trace, max_cols)),
+
             // Get the list of root nodes
             Instruction::GetRootActivities => {
                 reply(&activities, activity_list(trace.root_activities()))
@@ -235,6 +258,7 @@ fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> Box<[
             id: activity_trace.id(),
             duration: activity_trace.duration(),
             self_duration: activity_trace.self_duration(),
+            has_children: activity_trace.direct_children().next() != None,
         })
         .collect()
 }
