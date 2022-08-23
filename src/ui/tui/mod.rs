@@ -154,17 +154,18 @@ fn show_hierarchical_profile<'a>(
         .iter()
         .zip(activity_descs.into_vec().into_iter())
         .map(|(activity_info, description)| {
-            let mut buf = Vec::<u8>::new();
+            let mut buf = String::new();
             if activity_info.has_children {
-                buf.push(b'+');
+                buf.push('+');
             } else {
-                buf.push(b' ');
+                buf.push(' ');
             }
+            buf.push_str(&description);
             HierarchicalData {
                 id: activity_info.id,
                 duration: activity_info.duration,
                 self_duration: activity_info.self_duration,
-                description,
+                description: buf.into_boxed_str(),
             }
         })
         .collect();

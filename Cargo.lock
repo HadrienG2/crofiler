@@ -276,6 +276,7 @@ dependencies = [
  "cursive",
  "cursive_table_view",
  "env_logger",
+ "log",
  "once_cell",
  "termion",
  "termtree",

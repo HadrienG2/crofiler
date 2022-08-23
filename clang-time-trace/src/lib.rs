@@ -31,8 +31,11 @@ pub use self::{
     metadata::NameParseError,
     stats::{
         activity::{
-            Activity, ActivityArgument, ActivityId, ActivityParseError, ActivityStatParseError,
-            MangledSymbol,
+            argument::{
+                ActivityArgument, ActivityArgumentError, ActivityArgumentType, MangledSymbol,
+                ParsedActivityArgument, ParsedMangledSymbol, RawActivityArgument,
+            },
+            Activity, ActivityId, ActivityParseError, ActivityStatParseError,
         },
         global::{GlobalStat, GlobalStatParseError},
         ArgParseError,
@@ -56,6 +59,9 @@ pub struct ClangTrace {
 
     /// Interned C++ entities and file paths within activities
     entities: EntityParser,
+
+    /// Buffer used for symbol demangling
+    demangling_buf: String,
 
     /// Global statistics
     global_stats: HashMap<Box<str>, GlobalStat>,
@@ -106,8 +112,8 @@ impl ClangTrace {
     }
 
     /// Retrieve an activity by a previously acquired identifier
-    pub fn activity(&self, id: ActivityTraceId) -> ActivityTrace {
-        self.activities.activity(id)
+    pub fn activity_trace(&self, id: ActivityTraceId) -> ActivityTrace {
+        self.activities.activity_trace(id)
     }
 
     /// Global statistics on clang activities
@@ -145,6 +151,11 @@ impl ClangTrace {
         self.beginning_of_time
     }
 
+    /// Access the entity parser and symbol demangling buffer
+    pub(crate) fn parser_and_demangling_buf(&mut self) -> (&mut EntityParser, &mut String) {
+        (&mut self.entities, &mut self.demangling_buf)
+    }
+
     /// Access a file path using a PathKey
     pub(crate) fn file_path(&self, key: PathKey) -> InternedPath {
         self.entities.path(key)
@@ -153,6 +164,57 @@ impl ClangTrace {
     /// Access a parsed C++ entity using an EntityKey
     pub(crate) fn entity(&self, key: EntityKey) -> EntityView {
         self.entities.entity(key)
+    }
+
+    /// Log how the entity parser was used so far
+    ///
+    /// This is internally used in EntityParser development to adjust tuning
+    /// parameters like interner key sizes based on real world workloads. What
+    /// will be logged by this function is unspecified and subjected to change
+    /// without advance notice!
+    ///
+    pub fn log_parser_usage(&self) {
+        let parser = &self.entities;
+        debug!("EntityParser interner usage statistics:");
+        debug!("- Identifiers: {}", parser.num_identifiers());
+        debug!(
+            "- Paths: {} interned components, {} total components, max {} components/path",
+            parser.num_unique_path_components(),
+            parser.num_path_components(),
+            parser.max_path_len().unwrap_or(0)
+        );
+        debug!("- Types: {}", parser.num_types());
+        debug!("- Values: {}", parser.num_values());
+        debug!(
+            "- Template parameters: {} total parameters, max {} parameters/set",
+            parser.num_template_parameters(),
+            parser.max_template_parameter_set_len().unwrap_or(0)
+        );
+        debug!(
+            "- Value trailers: {} total AfterValue, max {} AfterValue/set",
+            parser.num_after_value(),
+            parser.max_value_trailer_len().unwrap_or(0)
+        );
+        debug!(
+            "- Function calls: {} total arguments, max {} arguments/set",
+            parser.num_function_arguments(),
+            parser.max_function_arguments_len().unwrap_or(0)
+        );
+        debug!(
+            "- Function parameters: {} total parameters, max {} parameters/set",
+            parser.num_function_parameters(),
+            parser.max_function_parameters_len().unwrap_or(0)
+        );
+        debug!(
+            "- Scopes: {} total Scopes, max {} Scopes/set",
+            parser.num_scopes(),
+            parser.max_scope_sequence_len().unwrap_or(0)
+        );
+        debug!(
+            "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
+            parser.num_decl_operators(),
+            parser.max_declarator_len().unwrap_or(0)
+        );
     }
 }
 //
@@ -191,8 +253,6 @@ impl FromStr for ClangTrace {
 
         // Process the trace events
         let mut activities = ActivityTreeBuilder::with_capacity(profile_ctf.traceEvents.len() - 1);
-        let mut entities = EntityParser::new();
-        let mut demangling_buf = String::new();
         let mut global_stats = HashMap::new();
         let mut process_name = None;
         let mut thread_name = None;
@@ -213,11 +273,7 @@ impl FromStr for ClangTrace {
                     // Parse activity statistics and insert the new activity
                     // into the activity tree
                     merge_pid(&mut clang_pid, duration_event.pid)?;
-                    activities.insert(ActivityStat::parse(
-                        event,
-                        &mut entities,
-                        &mut demangling_buf,
-                    )?)?;
+                    activities.insert(ActivityStat::parse(event)?)?;
                 }
 
                 // Durations associated with a lower timestamp (typically 100ns) are global stats
@@ -276,14 +332,12 @@ impl FromStr for ClangTrace {
         // Ignore blatantly wrong PIDs reported by older clang
         let pid = clang_pid.filter(|&pid| pid > 1);
 
-        // Display entity parser usage statistics
-        log_entity_parser_usage(&entities);
-
         // Build the final ClangTrace
         if let Some(process_name) = process_name {
             Ok(Self {
                 activities: activities.build(),
-                entities,
+                entities: EntityParser::new(),
+                demangling_buf: String::new(),
                 global_stats,
                 process_name,
                 thread_name,
@@ -294,50 +348,6 @@ impl FromStr for ClangTrace {
             Err(ClangTraceParseError::NoProcessName)
         }
     }
-}
-
-/// Log how the entity parser was used, to ease interner key choices
-fn log_entity_parser_usage(parser: &EntityParser) {
-    debug!("EntityParser interner usage statistics:");
-    debug!("- Identifiers: {}", parser.num_identifiers());
-    debug!(
-        "- Paths: {} interned components, {} total components, max {} components/path",
-        parser.num_unique_path_components(),
-        parser.num_path_components(),
-        parser.max_path_len().unwrap_or(0)
-    );
-    debug!("- Types: {}", parser.num_types());
-    debug!("- Values: {}", parser.num_values());
-    debug!(
-        "- Template parameters: {} total parameters, max {} parameters/set",
-        parser.num_template_parameters(),
-        parser.max_template_parameter_set_len().unwrap_or(0)
-    );
-    debug!(
-        "- Value trailers: {} total AfterValue, max {} AfterValue/set",
-        parser.num_after_value(),
-        parser.max_value_trailer_len().unwrap_or(0)
-    );
-    debug!(
-        "- Function calls: {} total arguments, max {} arguments/set",
-        parser.num_function_arguments(),
-        parser.max_function_arguments_len().unwrap_or(0)
-    );
-    debug!(
-        "- Function parameters: {} total parameters, max {} parameters/set",
-        parser.num_function_parameters(),
-        parser.max_function_parameters_len().unwrap_or(0)
-    );
-    debug!(
-        "- Scopes: {} total Scopes, max {} Scopes/set",
-        parser.num_scopes(),
-        parser.max_scope_sequence_len().unwrap_or(0)
-    );
-    debug!(
-        "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
-        parser.num_decl_operators(),
-        parser.max_declarator_len().unwrap_or(0)
-    );
 }
 
 /// What can go wrong while loading clang's -ftime-trace data from a file
@@ -415,7 +425,8 @@ pub enum ClangTraceParseError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
+    use super::*;
+    use crate::{
         ctf::{
             events::{
                 duration::DurationEvent,
@@ -423,7 +434,7 @@ mod tests {
             },
             DisplayTimeUnit, EventCategories,
         },
-        *,
+        stats::activity::argument::ActivityArgumentType,
     };
     use assert_matches::assert_matches;
 
@@ -543,9 +554,12 @@ mod tests {
             .zip(expected_activities.iter().cloned())
         {
             assert_eq!(activity_trace.activity().id(), expected_activity);
-            assert!(activity_trace.activity().argument(&trace) == ActivityArgument::Nothing);
             assert_eq!(activity_trace.start(), expected_start);
             assert_eq!(activity_trace.duration(), expected_duration);
+            assert!(
+                activity_trace.activity().raw_argument()
+                    == &RawActivityArgument::new(ActivityArgumentType::Nothing, None)
+            );
         }
 
         // Check root node list
@@ -689,7 +703,10 @@ mod tests {
             .zip(expected_activities.iter().cloned())
         {
             assert_eq!(activity_trace.activity().id(), expected_activity);
-            assert!(activity_trace.activity().argument(&trace) == ActivityArgument::Nothing);
+            assert!(
+                activity_trace.activity().raw_argument()
+                    == &RawActivityArgument::new(ActivityArgumentType::Nothing, None)
+            );
             assert_eq!(activity_trace.start(), expected_start);
             assert_eq!(activity_trace.duration(), expected_duration);
         }

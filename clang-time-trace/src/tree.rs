@@ -72,7 +72,7 @@ impl ActivityTree {
     }
 
     /// Get an activity using its activity ID
-    pub fn activity(&self, id: ActivityTraceId) -> ActivityTrace {
+    pub fn activity_trace(&self, id: ActivityTraceId) -> ActivityTrace {
         ActivityTrace {
             tree: self,
             activity: &self.activities[id],
@@ -262,8 +262,8 @@ impl ActivityTreeBuilder {
                     break;
                 } else {
                     return Err(ActivityTreeError::PartialActivityOverlap {
-                        prev: candidate.stat.clone(),
-                        current: activity,
+                        prev_desc: format!("{:?}", candidate.stat.clone()).into(),
+                        current_desc: format!("{activity:?}").into(),
                     });
                 }
             }
@@ -341,20 +341,23 @@ pub enum ActivityTreeError {
     },
 
     /// Activities do not properly nest, as mandated by the CTF format
-    #[error("activities do not nest ({prev:?} partially overlaps {current:?})")]
+    #[error("activities do not nest ({prev_desc} partially overlaps {current_desc})")]
     PartialActivityOverlap {
         /// This activity...
-        prev: ActivityStat,
+        prev_desc: Box<str>,
 
         /// ...partially overlaps with this activity
-        current: ActivityStat,
+        current_desc: Box<str>,
     },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stats::activity::{ActivityArgumentData, ActivityId};
+    use crate::stats::activity::{
+        argument::{ActivityArgumentType, RawActivityArgument},
+        ActivityId,
+    };
     use more_asserts::*;
     use pretty_assertions::assert_eq;
 
@@ -458,7 +461,7 @@ mod tests {
         let activity_stat = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             0.1,
             4.2,
@@ -495,7 +498,7 @@ mod tests {
         let root = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             0.1,
             4.2e6,
@@ -503,7 +506,7 @@ mod tests {
         let child1 = ActivityStat::new(
             Activity {
                 id: ActivityId::Frontend,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             0.2,
             3.2e6,
@@ -511,7 +514,7 @@ mod tests {
         let subchild1 = ActivityStat::new(
             Activity {
                 id: ActivityId::PerformPendingInstantiations,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             0.3,
             3.0e6,
@@ -519,7 +522,7 @@ mod tests {
         let child2 = ActivityStat::new(
             Activity {
                 id: ActivityId::Backend,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             3.5e6,
             0.6e6,
@@ -527,7 +530,7 @@ mod tests {
         let subchild2 = ActivityStat::new(
             Activity {
                 id: ActivityId::CodeGenPasses,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             3.6e6,
             0.4e6,
@@ -598,7 +601,7 @@ mod tests {
         let activity1 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             4.6,
             6.4,
@@ -609,7 +612,7 @@ mod tests {
         let activity2 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             0.1,
             4.2,
@@ -629,7 +632,7 @@ mod tests {
         let activity1 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             1.2,
             3.4,
@@ -640,7 +643,7 @@ mod tests {
         let activity2 = ActivityStat::new(
             Activity {
                 id: ActivityId::ExecuteCompiler,
-                arg: ActivityArgumentData::Nothing,
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             },
             2.3,
             5.6,
@@ -648,8 +651,8 @@ mod tests {
         assert_eq!(
             builder.insert(activity2.clone()),
             Err(ActivityTreeError::PartialActivityOverlap {
-                prev: activity1.clone(),
-                current: activity2.clone()
+                prev_desc: format!("{activity1:?}").into(),
+                current_desc: format!("{activity2:?}").into()
             })
         );
     }

@@ -67,44 +67,46 @@ mod tests {
 
     #[test]
     fn metadata() {
-        let trace = TEST_TRACE.lock().unwrap();
-        assert_eq!(super::metadata(&trace, 89), "Data from clang-14.0.5, pid 5884, thread \"clang++\", recorded 2022-06-29T13:18:22.311015Z.");
-        assert_eq!(super::metadata(&trace, 88), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
-        assert_eq!(super::metadata(&trace, 51), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
-        assert_eq!(super::metadata(&trace, 50), "Data from clang-14.0.5, pid 5884,\nthread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
-        assert_eq!(super::metadata(&trace, 37), "Data from clang-14.0.5, pid 5884,\nthread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
-        assert_eq!(
-            super::metadata(&trace, 36),
-            "Data from clang-14.0.5, pid 5884,\nthread \"clang++\", …."
-        );
-        assert_eq!(
-            super::metadata(&trace, 33),
-            "Data from clang-14.0.5, pid 5884,\nthread \"clang++\", …."
-        );
-        assert_eq!(
-            super::metadata(&trace, 32),
-            "Data from clang-14.0.5,\npid 5884, thread \"clang++\", …."
-        );
-        assert_eq!(
-            super::metadata(&trace, 30),
-            "Data from clang-14.0.5,\npid 5884, thread \"clang++\", …."
-        );
-        assert_eq!(
-            super::metadata(&trace, 29),
-            "Data from clang-14.0.5,\npid 5884, thread \"clang++\",\n…."
-        );
-        assert_eq!(
-            super::metadata(&trace, 27),
-            "Data from clang-14.0.5,\npid 5884, thread \"clang++\",\n…."
-        );
-        assert_eq!(
-            super::metadata(&trace, 26),
-            "Data from clang-14.0.5,\npid 5884,\nthread \"clang++\", …."
-        );
-        assert_eq!(
-            super::metadata(&trace, 23),
-            "Data from clang-14.0.5,\npid 5884,\nthread \"clang++\", …."
-        );
-        assert_eq!(super::metadata(&trace, 22), "…");
+        TEST_TRACE.with(|trace| {
+            let trace = trace.borrow();
+            assert_eq!(super::metadata(&trace, 89), "Data from clang-14.0.5, pid 5884, thread \"clang++\", recorded 2022-06-29T13:18:22.311015Z.");
+            assert_eq!(super::metadata(&trace, 88), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
+            assert_eq!(super::metadata(&trace, 51), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
+            assert_eq!(super::metadata(&trace, 50), "Data from clang-14.0.5, pid 5884,\nthread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
+            assert_eq!(super::metadata(&trace, 37), "Data from clang-14.0.5, pid 5884,\nthread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
+            assert_eq!(
+                super::metadata(&trace, 36),
+                "Data from clang-14.0.5, pid 5884,\nthread \"clang++\", …."
+            );
+            assert_eq!(
+                super::metadata(&trace, 33),
+                "Data from clang-14.0.5, pid 5884,\nthread \"clang++\", …."
+            );
+            assert_eq!(
+                super::metadata(&trace, 32),
+                "Data from clang-14.0.5,\npid 5884, thread \"clang++\", …."
+            );
+            assert_eq!(
+                super::metadata(&trace, 30),
+                "Data from clang-14.0.5,\npid 5884, thread \"clang++\", …."
+            );
+            assert_eq!(
+                super::metadata(&trace, 29),
+                "Data from clang-14.0.5,\npid 5884, thread \"clang++\",\n…."
+            );
+            assert_eq!(
+                super::metadata(&trace, 27),
+                "Data from clang-14.0.5,\npid 5884, thread \"clang++\",\n…."
+            );
+            assert_eq!(
+                super::metadata(&trace, 26),
+                "Data from clang-14.0.5,\npid 5884,\nthread \"clang++\", …."
+            );
+            assert_eq!(
+                super::metadata(&trace, 23),
+                "Data from clang-14.0.5,\npid 5884,\nthread \"clang++\", …."
+            );
+            assert_eq!(super::metadata(&trace, 22), "…");
+        });
     }
 }

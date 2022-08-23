@@ -58,10 +58,13 @@ mod tests {
 
     #[test]
     fn duration_norm() {
-        assert_close(
-            super::duration_norm(TEST_TRACE.lock().unwrap().root_activities()),
-            1.0 / (3.77 * SECOND),
-        );
+        TEST_TRACE.with(|trace| {
+            let trace = trace.borrow();
+            assert_close(
+                super::duration_norm(trace.root_activities()),
+                1.0 / (3.77 * SECOND),
+            );
+        });
     }
 
     #[test]
@@ -119,14 +122,16 @@ mod tests {
             ("DeadArgumentEliminationPass", 546.0 * MICROSECOND),
             ("PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>", 531.0 * MICROSECOND),
         ];
-        let trace = TEST_TRACE.lock().unwrap();
-        let actual = super::activity_type_breakdown(&*&trace);
-        for ((expected_name, expected_duration), (actual_name, actual_duration)) in
-            expected.iter().zip(actual.iter())
-        {
-            assert_eq!(actual_name, expected_name);
-            assert_close(*actual_duration, *expected_duration);
-        }
+        TEST_TRACE.with(|trace| {
+            let trace = trace.borrow();
+            let actual = super::activity_type_breakdown(&*&trace);
+            for ((expected_name, expected_duration), (actual_name, actual_duration)) in
+                expected.iter().zip(actual.iter())
+            {
+                assert_eq!(actual_name, expected_name);
+                assert_close(*actual_duration, *expected_duration);
+            }
+        });
     }
 
     #[test]
@@ -144,17 +149,19 @@ mod tests {
             ("JumpThreadingPass", 20.21 * MILLISECOND),
             ("InlinerPass", 17.24 * MILLISECOND),
         ];
-        let trace = TEST_TRACE.lock().unwrap();
-        let actual = super::hottest_activities(
-            trace.all_activities(),
-            |activity| activity.self_duration(),
-            17.20 * MILLISECOND,
-        );
-        for ((expected_name, expected_duration), actual_activity) in
-            expected.iter().zip(actual.iter())
-        {
-            assert_eq!(actual_activity.activity().name(), *expected_name);
-            assert_close(actual_activity.self_duration(), *expected_duration);
-        }
+        TEST_TRACE.with(|trace| {
+            let trace = trace.borrow();
+            let actual = super::hottest_activities(
+                trace.all_activities(),
+                |activity| activity.self_duration(),
+                17.20 * MILLISECOND,
+            );
+            for ((expected_name, expected_duration), actual_activity) in
+                expected.iter().zip(actual.iter())
+            {
+                assert_eq!(actual_activity.activity().name(), *expected_name);
+                assert_close(actual_activity.self_duration(), *expected_duration);
+            }
+        });
     }
 }

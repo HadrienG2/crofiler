@@ -76,11 +76,13 @@ fn main() {
 #[cfg(test)]
 pub(crate) mod tests {
     use clang_time_trace::ClangTrace;
-    use once_cell::sync::Lazy;
-    use std::{str::FromStr, sync::Mutex};
+    use once_cell::unsync::Lazy;
+    use std::{cell::RefCell, str::FromStr};
 
     // Reference ClangTrace used by all tests which need one
-    pub static TEST_TRACE: Lazy<Mutex<ClangTrace>> = Lazy::new(|| {
-        Mutex::new(ClangTrace::from_str(include_str!("../tests/7-GMSTests_main.json")).unwrap())
-    });
+    thread_local! {
+        pub static TEST_TRACE: RefCell<Lazy<ClangTrace>> = RefCell::new(Lazy::new(|| {
+            ClangTrace::from_str(include_str!("../tests/7-GMSTests_main.json")).unwrap()
+        }));
+    }
 }

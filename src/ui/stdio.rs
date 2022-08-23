@@ -6,7 +6,9 @@ use super::display::{
     metadata::metadata,
 };
 use crate::{profile, CliArgs};
-use clang_time_trace::{ActivityArgument, ActivityId, ActivityTrace, ClangTrace, Duration};
+use clang_time_trace::{
+    ActivityArgument, ActivityId, ActivityTrace, ActivityTraceId, ClangTrace, Duration,
+};
 use std::io;
 use termtree::{GlyphPalette, Tree};
 use unicode_width::UnicodeWidthStr;
@@ -20,7 +22,7 @@ pub fn run(args: CliArgs) {
 
     // Load the clang trace
     eprintln!("Processing input data...");
-    let trace = match ClangTrace::from_file(args.input) {
+    let mut trace = match ClangTrace::from_file(args.input) {
         Ok(trace) => trace,
         Err(e) => {
             return eprintln!("Failed to process input: {e}");
@@ -38,11 +40,11 @@ pub fn run(args: CliArgs) {
     print_activity_type_profile(&trace, duration_norm, self_threshold);
 
     // Flat activity profile by self-duration
-    print_flat_profile(&trace, duration_norm, self_threshold, max_cols);
+    print_flat_profile(&mut trace, duration_norm, self_threshold, max_cols);
 
     // Display hierarchical profile
     print_hierarchical_profile(
-        &trace,
+        &mut trace,
         duration_norm,
         args.hierarchical_threshold as Duration / 100.0,
         max_cols,
@@ -71,7 +73,7 @@ fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration, thre
 
 /// Display the hottest activities by the self_duration metric
 fn print_flat_profile(
-    trace: &ClangTrace,
+    trace: &mut ClangTrace,
     duration_norm: Duration,
     threshold: Duration,
     max_cols: u16,
@@ -82,14 +84,20 @@ fn print_flat_profile(
         |a| a.self_duration() * duration_norm,
         threshold,
     );
-    let num_hottest = hottest.len();
-    for activity_trace in hottest.iter() {
+    let hottest_ids = hottest.iter().map(ActivityTrace::id).collect::<Vec<_>>();
+    let num_hottest = hottest_ids.len();
+    for id in hottest_ids.into_iter() {
+        // Parse activity argument
+        let parsed_arg = crate::ui::force_parse_arg(trace, id);
+        let activity_trace = &trace.activity_trace(id);
+
+        // Display activity
         let duration = activity_trace.self_duration();
         print!("- ");
         display_activity(
             std::io::stdout(),
             activity_trace.activity().id(),
-            &activity_trace.activity().argument(trace),
+            &parsed_arg.resolve(trace),
             max_cols - 2,
             duration,
             duration_norm,
@@ -109,7 +117,7 @@ fn print_flat_profile(
 
 /// Display a hierarchical profile
 fn print_hierarchical_profile(
-    trace: &ClangTrace,
+    trace: &mut ClangTrace,
     duration_norm: Duration,
     threshold: Duration,
     max_cols: u16,
@@ -124,37 +132,36 @@ fn print_hierarchical_profile(
     };
     println!("\nHierarchical profile:");
     assert_eq!(trace.root_activities().count(), 1);
+    let root_id = trace
+        .root_activities()
+        .next()
+        .expect("There should be one ExecuteCompiler root activity")
+        .id();
     println!(
         "{}",
-        hierarchical_profile_tree(
-            &trace,
-            palette,
-            trace
-                .root_activities()
-                .next()
-                .expect("There should be one ExecuteCompiler root activity"),
-            duration_norm,
-            threshold,
-            max_cols
-        )
+        hierarchical_profile_tree(trace, palette, root_id, duration_norm, threshold, max_cols)
     );
 }
 
 /// Make a tree display of the hierarchical profile of some build
 fn hierarchical_profile_tree(
-    trace: &ClangTrace,
+    trace: &mut ClangTrace,
     palette: GlyphPalette,
-    root: ActivityTrace,
+    root_id: ActivityTraceId,
     duration_norm: Duration,
     threshold: Duration,
     max_cols: u16,
 ) -> Tree<Box<str>> {
+    // Parse root node argument
+    let root_parsed_arg = crate::ui::force_parse_arg(trace, root_id);
+    let root = trace.activity_trace(root_id);
+
     // Render root node
     let mut root_display = Vec::<u8>::new();
     display_activity(
         &mut root_display,
         root.activity().id(),
-        &root.activity().argument(trace),
+        &root_parsed_arg.resolve(trace),
         max_cols,
         root.duration(),
         duration_norm,
@@ -180,14 +187,25 @@ fn hierarchical_profile_tree(
         |a| a.duration() * duration_norm,
         threshold,
     );
-    let num_hottest = hottest_children.len();
+    let hottest_ids = hottest_children
+        .iter()
+        .map(ActivityTrace::id)
+        .collect::<Vec<_>>();
+    let num_hottest = hottest_ids.len();
 
     // Render hottest children
-    let make_child_tree = |child| {
-        hierarchical_profile_tree(trace, palette, child, duration_norm, threshold, child_cols)
+    let make_child_tree = |child_id| {
+        hierarchical_profile_tree(
+            trace,
+            palette,
+            child_id,
+            duration_norm,
+            threshold,
+            child_cols,
+        )
     };
     tree = if num_hottest == num_children {
-        tree.with_leaves(hottest_children.into_vec().into_iter().map(make_child_tree))
+        tree.with_leaves(hottest_ids.into_iter().map(make_child_tree))
     } else {
         // If there are more children, warn about it
         let mut terminator = format!(
@@ -200,8 +218,7 @@ fn hierarchical_profile_tree(
             terminator.push('…');
         }
         tree.with_leaves(
-            hottest_children
-                .into_vec()
+            hottest_ids
                 .into_iter()
                 .map(make_child_tree)
                 .chain(std::iter::once(

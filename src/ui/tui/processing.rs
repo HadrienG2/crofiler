@@ -5,8 +5,12 @@ use crate::ui::display::{
     activity::{display_activity_desc, ActivityDescError},
     metadata::metadata,
 };
-use clang_time_trace::{ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration};
+use clang_time_trace::{
+    ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration,
+    ParsedActivityArgument,
+};
 use std::{
+    collections::HashMap,
     io::Write,
     path::Path,
     sync::{
@@ -35,7 +39,7 @@ pub struct ProcessingThread {
     activities_receiver: Receiver<Box<[ActivityInfo]>>,
 
     /// Channel to receive lists of immutable strings from the processing thread
-    strings_receiver: Receiver<Box<[Box<str>]>>,
+    strings_receiver: Receiver<Box<[Arc<str>]>>,
 }
 //
 impl ProcessingThread {
@@ -147,7 +151,7 @@ impl ProcessingThread {
         &self,
         activities: Box<[ActivityTraceId]>,
         max_cols: u16,
-    ) -> Box<[Box<str>]> {
+    ) -> Box<[Arc<str>]> {
         self.request(Instruction::DescribeActivities {
             activities,
             max_cols,
@@ -213,12 +217,17 @@ enum Instruction {
 
 /// Processing thread worker
 fn worker(
-    trace: ClangTrace,
+    mut trace: ClangTrace,
     instructions: Receiver<Instruction>,
     string: Sender<String>,
     activities: Sender<Box<[ActivityInfo]>>,
-    strings: Sender<Box<[Box<str>]>>,
+    strings: Sender<Box<[Arc<str>]>>,
 ) {
+    // Set up caches for activity parsing and rendering, which are costly
+    let mut parsed_arg_cache = HashMap::new();
+    let mut description_cache = HashMap::new();
+    let mut last_max_cols = 0;
+
     // Process instructions until the main thread hangs up
     for instruction in instructions.iter() {
         match instruction {
@@ -233,14 +242,32 @@ fn worker(
             // Get the list of a node's children
             Instruction::GetDirectChildren(id) => reply(
                 &activities,
-                activity_list(trace.activity(id).direct_children()),
+                activity_list(trace.activity_trace(id).direct_children()),
             ),
 
             // Describe a set of activities
             Instruction::DescribeActivities {
                 activities,
                 max_cols,
-            } => reply(&strings, describe_activities(&trace, activities, max_cols)),
+            } => {
+                // A screen width change invalidates the description cache
+                if max_cols != last_max_cols {
+                    description_cache.clear();
+                    last_max_cols = max_cols;
+                }
+
+                // Describe the requested activities
+                reply(
+                    &strings,
+                    describe_activities(
+                        &mut trace,
+                        &mut parsed_arg_cache,
+                        &mut description_cache,
+                        activities,
+                        max_cols,
+                    ),
+                )
+            }
         }
     }
 }
@@ -265,33 +292,49 @@ fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> Box<[
 
 /// Describe a list of activities
 fn describe_activities(
-    trace: &ClangTrace,
+    trace: &mut ClangTrace,
+    parsed_arg_cache: &mut HashMap<ActivityTraceId, ParsedActivityArgument>,
+    description_cache: &mut HashMap<ActivityTraceId, Arc<str>>,
     activities: Box<[ActivityTraceId]>,
     max_cols: u16,
-) -> Box<[Box<str>]> {
+) -> Box<[Arc<str>]> {
     activities
         .into_vec()
         .into_iter()
         .map(|id| {
-            let activity_trace = trace.activity(id);
-            let mut output = Vec::new();
-            match display_activity_desc(
-                &mut output,
-                activity_trace.activity().id(),
-                &activity_trace.activity().argument(&trace),
-                max_cols,
-            ) {
-                Ok(()) => {}
-                Err(ActivityDescError::NotEnoughCols(_)) => {
-                    write!(output, "…").expect("IO to a buffer shouldn't fail");
-                }
-                Err(ActivityDescError::IoError(e)) => {
-                    unreachable!("IO to a buffer shouldn't fail, but failed with error {e}");
-                }
-            }
-            String::from_utf8(output)
-                .expect("Activity descriptions should be UTF-8")
-                .into()
+            // Have we rendered that activity's description previously ?
+            description_cache
+                .entry(id)
+                .or_insert_with(|| {
+                    // Have we parsed that activity's argument previously ?
+                    let parsed_arg = parsed_arg_cache
+                        .entry(id)
+                        .or_insert_with(|| crate::ui::force_parse_arg(trace, id));
+
+                    // Render the activity description
+                    let activity_trace = trace.activity_trace(id);
+                    let mut output = Vec::new();
+                    match display_activity_desc(
+                        &mut output,
+                        activity_trace.activity().id(),
+                        &parsed_arg.resolve(&trace),
+                        max_cols,
+                    ) {
+                        Ok(()) => {}
+                        Err(ActivityDescError::NotEnoughCols(_)) => {
+                            write!(output, "…").expect("IO to a buffer shouldn't fail");
+                        }
+                        Err(ActivityDescError::IoError(e)) => {
+                            unreachable!(
+                                "IO to a buffer shouldn't fail, but failed with error {e}"
+                            );
+                        }
+                    }
+                    let output = std::str::from_utf8(&output[..])
+                        .expect("Activity descriptions should be UTF-8");
+                    Arc::<str>::from(output)
+                })
+                .clone()
         })
         .collect()
 }
