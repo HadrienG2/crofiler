@@ -15,6 +15,9 @@ use unicode_width::UnicodeWidthStr;
 
 /// Run the analysis using the stdio display
 pub fn run(args: CliArgs) {
+    // Set up logging using env_logger
+    env_logger::init();
+
     // Determine column budget
     let max_cols = termion::terminal_size()
         .map(|(width, _height)| width.min(args.max_cols))
@@ -49,6 +52,9 @@ pub fn run(args: CliArgs) {
         args.hierarchical_threshold as Duration / 100.0,
         max_cols,
     );
+
+    // Conclude on parser/interner usage during this session
+    trace.log_parser_usage();
 }
 
 /// Display the amount of time spent on various activity types

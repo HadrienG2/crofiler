@@ -3,7 +3,7 @@
 use crate::{ClangTrace, InternedPath, PathError, PathKey};
 use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
 use cpparser::{nom, EntityKey, EntityParser, EntityView};
-use log::trace;
+use log::{info, warn};
 use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
@@ -167,8 +167,19 @@ impl RawActivityArgument {
 
         match &demangling_result {
             ParsedMangledSymbol::Parsed(_) => {}
-            ParsedMangledSymbol::Demangled(d) => trace!("Failed to parse demangled symbol {d:?}"),
-            ParsedMangledSymbol::Mangled(m) => trace!("Failed to demangle symbol {m:?}"),
+
+            // Clang unfortunately occasionally emits mangled symbols that are
+            // ill-formed (e.g. function parameters without types). cpp_demangle
+            // will usually survive these, but produce output that we cannot
+            // parse. Since this is a "normal" situation, an error is excessive,
+            // but a warning seems warranted.
+            ParsedMangledSymbol::Demangled(d) => warn!("Failed to parse demangled symbol {d:?}"),
+
+            // Some of the symbols emitted by clang are not mangled
+            // (e.g. __cxx_global_var_init.1), and this is fine and expected, so
+            // we don't want to flag these as warnings. But clang may also emit
+            // ill-formed mangled symbols, so this event is still worth logging.
+            ParsedMangledSymbol::Mangled(m) => info!("Failed to demangle symbol {m:?}"),
         }
 
         Ok(demangling_result)

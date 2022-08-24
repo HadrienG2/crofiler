@@ -14,7 +14,7 @@ use self::{
     tree::{ActivityTree, ActivityTreeBuilder},
 };
 use cpparser::{EntityKey, EntityParser, EntityView};
-use log::debug;
+use log::info;
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -175,42 +175,42 @@ impl ClangTrace {
     ///
     pub fn log_parser_usage(&self) {
         let parser = &self.entities;
-        debug!("EntityParser interner usage statistics:");
-        debug!("- Identifiers: {}", parser.num_identifiers());
-        debug!(
+        info!("EntityParser interner usage statistics:");
+        info!("- Identifiers: {}", parser.num_identifiers());
+        info!(
             "- Paths: {} interned components, {} total components, max {} components/path",
             parser.num_unique_path_components(),
             parser.num_path_components(),
             parser.max_path_len().unwrap_or(0)
         );
-        debug!("- Types: {}", parser.num_types());
-        debug!("- Values: {}", parser.num_values());
-        debug!(
+        info!("- Types: {}", parser.num_types());
+        info!("- Values: {}", parser.num_values());
+        info!(
             "- Template parameters: {} total parameters, max {} parameters/set",
             parser.num_template_parameters(),
             parser.max_template_parameter_set_len().unwrap_or(0)
         );
-        debug!(
+        info!(
             "- Value trailers: {} total AfterValue, max {} AfterValue/set",
             parser.num_after_value(),
             parser.max_value_trailer_len().unwrap_or(0)
         );
-        debug!(
+        info!(
             "- Function calls: {} total arguments, max {} arguments/set",
             parser.num_function_arguments(),
             parser.max_function_arguments_len().unwrap_or(0)
         );
-        debug!(
+        info!(
             "- Function parameters: {} total parameters, max {} parameters/set",
             parser.num_function_parameters(),
             parser.max_function_parameters_len().unwrap_or(0)
         );
-        debug!(
+        info!(
             "- Scopes: {} total Scopes, max {} Scopes/set",
             parser.num_scopes(),
             parser.max_scope_sequence_len().unwrap_or(0)
         );
-        debug!(
+        info!(
             "- Declarators: {} total DeclOperators, max {} DeclOperators/set",
             parser.num_decl_operators(),
             parser.max_declarator_len().unwrap_or(0)

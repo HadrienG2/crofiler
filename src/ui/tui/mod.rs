@@ -14,12 +14,14 @@ use cursive::{
     Cursive, CursiveRunnable,
 };
 use cursive_table_view::{TableView, TableViewItem};
+use log::LevelFilter;
 use std::{
     cmp::Ordering,
     path::Path,
     rc::Rc,
     sync::atomic::{self, AtomicUsize},
 };
+use syslog::Facility;
 use unicode_width::UnicodeWidthStr;
 
 /// Run the analysis using the textual user interface
@@ -54,6 +56,9 @@ pub fn run(args: CliArgs) {
 fn setup_cursive() -> CursiveRunnable {
     let mut cursive = cursive::default();
 
+    // Set up logging using syslog
+    syslog::init(Facility::LOG_USER, LevelFilter::Info, None).expect("Failed to initialize syslog");
+
     // Confirm before quitting
     let quit_callback = |cursive: &mut Cursive| {
         cursive.add_layer(
@@ -79,7 +84,9 @@ fn setup_cursive() -> CursiveRunnable {
         - Return zooms on an activity's callees\n\
         - Left/Right + Return adjusts sort\n\
         - Esc goes back to previous view\n\
-        - Q quits this program",
+        - Q quits this program\n\
+        \n\
+        Logs are sent to syslog to avoid display issues",
         ))
     });
     cursive

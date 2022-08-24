@@ -298,7 +298,8 @@ fn describe_activities(
     activities: Box<[ActivityTraceId]>,
     max_cols: u16,
 ) -> Box<[Arc<str>]> {
-    activities
+    // Describe activities
+    let result = activities
         .into_vec()
         .into_iter()
         .map(|id| {
@@ -336,7 +337,13 @@ fn describe_activities(
                 })
                 .clone()
         })
-        .collect()
+        .collect();
+
+    // Conclude on new parser/interner usage after this transaction
+    trace.log_parser_usage();
+
+    // Emit results
+    result
 }
 
 // FIXME: Add tests

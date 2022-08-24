@@ -58,7 +58,6 @@ pub enum UI {
 
 fn main() {
     // Set up infrastructure and process CLI arguments
-    env_logger::init();
     let args = CliArgs::parse();
     match args.ui {
         UI::Auto => {
