@@ -18,7 +18,6 @@ use log::LevelFilter;
 use std::{
     cmp::Ordering,
     path::Path,
-    rc::Rc,
     sync::atomic::{self, AtomicUsize},
 };
 use syslog::Facility;
@@ -31,22 +30,26 @@ pub fn run(args: CliArgs) {
 
     // Load the clang time trace
     let processing_thread = match load_input(&mut cursive, &args.input) {
-        Ok(trace) => Rc::new(trace),
+        Ok(trace) => trace,
         Err(error) => {
             cursive.add_layer(
                 Dialog::text(format!("Failed to process input: {error}"))
-                    .button("Quit", |cursive| cursive.quit()),
+                    .button("Quit", Cursive::quit),
             );
             cursive.run();
             return;
         }
     };
 
+    // Query the list of root activities, then make the processing thread handle
+    // available from the cursive entry point.
+    let root_activities = processing_thread.get_root_activities();
+    cursive.set_user_data(processing_thread);
+
     // TODO: Add activity summary on S
 
     // Display the hierarchical profile
-    let root_activities = processing_thread.get_root_activities();
-    show_hierarchical_profile(&mut cursive, processing_thread, root_activities);
+    show_hierarchical_profile(&mut cursive, root_activities);
 
     // Start the cursive event loop
     cursive.run();
@@ -63,7 +66,7 @@ fn setup_cursive() -> CursiveRunnable {
     let quit_callback = |cursive: &mut Cursive| {
         cursive.add_layer(
             Dialog::text("Ready to quit?")
-                .button("Yes", |cursive| cursive.quit())
+                .button("Yes", Cursive::quit)
                 .dismiss_button("No"),
         );
     };
@@ -129,11 +132,7 @@ fn load_input(
 static HIERARCHICAL_RECURSION_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
 /// Display a hierarchical profile
-fn show_hierarchical_profile<'a>(
-    cursive: &mut Cursive,
-    processing_thread: Rc<ProcessingThread>,
-    activity_infos: Box<[ActivityInfo]>,
-) {
+fn show_hierarchical_profile<'a>(cursive: &mut Cursive, activity_infos: Box<[ActivityInfo]>) {
     // Set up the children activity table
     let (terminal_width, terminal_height) =
         termion::terminal_size().expect("Could not read terminal configuration");
@@ -153,10 +152,14 @@ fn show_hierarchical_profile<'a>(
 
     // Collect children activities into the table
     // FIXME: Honor thresholds
-    let activity_descs = processing_thread.describe_activities(
-        activity_infos.iter().map(|info| info.id).collect(),
-        activity_width,
-    );
+    let activity_descs = cursive
+        .with_user_data(|processing_thread: &mut ProcessingThread| {
+            processing_thread.describe_activities(
+                activity_infos.iter().map(|info| info.id).collect(),
+                activity_width,
+            )
+        })
+        .expect("Failed to access the processing thread");
     let items = activity_infos
         .iter()
         .zip(activity_descs.into_vec().into_iter())
@@ -182,7 +185,6 @@ fn show_hierarchical_profile<'a>(
     // Recurse into an activity's children when an activity is selected
     let recursion_depth = HIERARCHICAL_RECURSION_DEPTH.fetch_add(1, atomic::Ordering::Relaxed);
     let profile_name = format!("hierarchical_profile{}", recursion_depth);
-    let processing_thread_2 = processing_thread.clone();
     let profile_name2 = profile_name.clone();
     table.set_on_submit(move |cursive, _row, index| {
         let activity_trace_id = cursive
@@ -192,9 +194,13 @@ fn show_hierarchical_profile<'a>(
                     .id
             })
             .expect("Failed to retrieve cursive layer");
-        let activity_children = processing_thread_2.get_direct_children(activity_trace_id);
+        let activity_children = cursive
+            .with_user_data(|processing_thread: &mut ProcessingThread| {
+                processing_thread.get_direct_children(activity_trace_id)
+            })
+            .expect("Failed to access the processing thread");
         if !activity_children.is_empty() {
-            show_hierarchical_profile(cursive, processing_thread_2.clone(), activity_children)
+            show_hierarchical_profile(cursive, activity_children)
         }
     });
     let table = table.with_name(profile_name);
@@ -210,7 +216,11 @@ fn show_hierarchical_profile<'a>(
     // TODO: Add F shortcut for flat profile
 
     // Set up a footer with metadata and help instructions
-    let mut footer = processing_thread.describe_trace(terminal_width);
+    let mut footer = cursive
+        .with_user_data(|processing_thread: &mut ProcessingThread| {
+            processing_thread.describe_trace(terminal_width)
+        })
+        .expect("Failed to access the processing thread");
     {
         let last_line = footer
             .lines()
