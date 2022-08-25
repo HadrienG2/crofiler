@@ -249,7 +249,7 @@ fn show_hierarchical_profile<'a>(
         with_state(cursive, |state| {
             // Reuse the display configuration used by previous profiling layers, or
             // set up the default configuration if this is the first layer
-            let duration_display = state
+            let mut duration_display = state
                 .duration_display
                 .get_or_insert_with(|| {
                     // Load the global percentage norm
@@ -261,6 +261,14 @@ fn show_hierarchical_profile<'a>(
                     DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
                 })
                 .clone();
+
+            // In "relative to parent" duration display mode, set the percent
+            // normalization factor that is appropriate for the active layer
+            if let DurationDisplay::Percentage(ref mut norm, PercentageReference::Parent) =
+                &mut duration_display
+            {
+                *norm = parent_percent_norm;
+            }
 
             // Generate activity descriptions of the right width
             let activity_descs = state.processing_thread.describe_activities(
