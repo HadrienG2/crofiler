@@ -320,6 +320,7 @@ fn show_hierarchical_profile<'a>(
     let mut table = OnEventView::new(table).on_event(Key::Esc, move |cursive| {
         if !is_bottom_layer {
             cursive.pop_layer();
+            with_state(cursive, |state| state.profile_stack.pop());
         }
     });
 
