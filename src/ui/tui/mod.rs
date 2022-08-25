@@ -8,16 +8,22 @@ use super::display::duration::display_duration;
 use crate::CliArgs;
 use clang_time_trace::{ActivityTraceId, ClangTraceLoadError, Duration};
 use cursive::{
-    event::{Event, Key},
+    event::{Event, EventResult, Key},
     view::{Nameable, Resizable},
     views::{Dialog, LinearLayout, OnEventView, SelectView, TextView},
     Cursive, CursiveRunnable,
 };
 use cursive_table_view::{TableView, TableViewItem};
+use decorum::Finite;
 use log::LevelFilter;
-use std::cmp::Ordering;
+use std::{cell::Cell, cmp::Ordering};
 use syslog::Facility;
 use unicode_width::UnicodeWidthStr;
+
+/// Compute the percentage norm associated with a set of activities
+fn percent_norm<'a>(total_duration: Duration) -> Finite<Duration> {
+    Finite::<Duration>::from_inner(100.0 / total_duration)
+}
 
 /// Run the analysis using the textual user interface
 pub fn run(args: CliArgs) {
@@ -39,16 +45,29 @@ pub fn run(args: CliArgs) {
         return;
     }
 
-    // Query the list of root activities, then make the processing thread handle
-    // available from the cursive entry point.
+    // Query the list of root activities
     let root_activities = with_state(&mut cursive, |state| {
         state.processing_thread.get_root_activities()
     });
 
+    // Compute the global percentage norm
+    let global_percent_norm = percent_norm(
+        root_activities
+            .iter()
+            .map(|activity| activity.duration)
+            .sum::<Duration>(),
+    );
+
     // TODO: Add activity summary on S
 
     // Display the hierarchical profile
-    show_hierarchical_profile(&mut cursive, "<profile root>".into(), root_activities);
+    show_hierarchical_profile(
+        &mut cursive,
+        global_percent_norm,
+        "<profile root>".into(),
+        global_percent_norm,
+        root_activities,
+    );
 
     // Start the cursive event loop
     cursive.run();
@@ -153,6 +172,7 @@ fn setup_cursive(state: State) -> CursiveRunnable {
         - Return zooms on an activity's callees\n\
         - Left/Right + Return adjusts sort\n\
         - Esc goes back to previous view\n\
+        - U switches between duration units\n\
         - B shows the backtrace to the current activity\n\
         - Q quits this program\n\
         \n\
@@ -202,32 +222,40 @@ fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadErr
 /// Display a hierarchical profile
 fn show_hierarchical_profile<'a>(
     cursive: &mut Cursive,
+    global_percent_norm: Finite<Duration>,
     parent_name: Box<str>,
+    parent_percent_norm: Finite<Duration>,
     activity_infos: Box<[ActivityInfo]>,
 ) {
     // Set up the children activity table
     let (terminal_width, terminal_height) =
         termion::terminal_size().expect("Could not read terminal configuration");
-    let activity_width = terminal_width - 2 * (12 + 3) - 3;
+    let duration_width = 12;
+    let activity_width = terminal_width as usize - 2 * (duration_width + 3) - 3;
     type HierarchicalView = TableView<HierarchicalData, HierarchicalColumn>;
+    let duration_display =
+        DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global);
+    let total_duration_col = HierarchicalColumn::Duration(DurationKind::Total, duration_display);
     let mut table = HierarchicalView::new()
-        .column(HierarchicalColumn::Duration, "Duration", |c| {
-            c.width(12).ordering(Ordering::Greater)
+        .column(total_duration_col, "%Total", |c| {
+            c.width(duration_width).ordering(Ordering::Greater)
         })
-        .column(HierarchicalColumn::SelfDuration, "Self", |c| {
-            c.width(12).ordering(Ordering::Greater)
-        })
+        .column(
+            HierarchicalColumn::Duration(DurationKind::Myself, duration_display),
+            "Self",
+            |c| c.width(duration_width).ordering(Ordering::Greater),
+        )
         .column(HierarchicalColumn::Description, "Activity", |c| {
             c.width(activity_width.into()).ordering(Ordering::Less)
         })
-        .default_column(HierarchicalColumn::Duration);
+        .default_column(total_duration_col);
 
     // Collect children activities into the table
     // FIXME: Honor thresholds
     let activity_descs = with_state(cursive, |state| {
         state.processing_thread.describe_activities(
             activity_infos.iter().map(|info| info.id).collect(),
-            activity_width,
+            activity_width as u16,
         )
     });
     let items = activity_infos
@@ -255,12 +283,13 @@ fn show_hierarchical_profile<'a>(
     // Recurse into an activity's children when an activity is selected
     let parent_name2 = parent_name.clone();
     table.set_on_submit(move |cursive, _row, index| {
-        let (activity_trace_id, activity_name) = cursive
-            .call_on_name(&parent_name2, |view: &mut HierarchicalView| {
+        let (activity_trace_id, activity_desc, activity_duration) = cursive
+            .call_on_name(&parent_name2, |view: &mut OnEventView<HierarchicalView>| {
                 let activity = view
+                    .get_inner_mut()
                     .borrow_item(index)
                     .expect("Callback shouldn't be called with an invalid index");
-                (activity.id, activity.description.clone())
+                (activity.id, activity.description.clone(), activity.duration)
             })
             .expect("Failed to retrieve cursive layer");
         let activity_children = with_state(cursive, |state| {
@@ -269,25 +298,88 @@ fn show_hierarchical_profile<'a>(
                 .get_direct_children(activity_trace_id)
         });
         if !activity_children.is_empty() {
-            show_hierarchical_profile(cursive, activity_name, activity_children)
+            show_hierarchical_profile(
+                cursive,
+                global_percent_norm,
+                activity_desc,
+                percent_norm(activity_duration),
+                activity_children,
+            )
         }
     });
-    let table = table.with_name(parent_name.clone());
 
     // Register the profile into our profile stack, and note if it is the first
     // layer of the stack
     let is_bottom_layer = with_state(cursive, |state| {
         let is_bottom_layer = state.profile_stack.is_empty();
-        state.profile_stack.push(parent_name);
+        state.profile_stack.push(parent_name.clone());
         is_bottom_layer
     });
 
     // Make the Escape key attempt to undo the last layer of recursion
-    let table = OnEventView::new(table).on_event(Key::Esc, move |cursive| {
+    let mut table = OnEventView::new(table).on_event(Key::Esc, move |cursive| {
         if !is_bottom_layer {
             cursive.pop_layer();
         }
     });
+
+    // Make the U key switch units
+    let duration_display = Cell::new(duration_display);
+    table.set_on_event_inner('u', move |table, _event| {
+        // Check the initial duration sort order, if any
+        let (old_sort_key, old_sort_order) = table.order().expect("Table should be sorted");
+        let duration_sort_order = if let HierarchicalColumn::Duration(_, _) = old_sort_key {
+            old_sort_order
+        } else {
+            Ordering::Greater
+        };
+
+        // Switch to the next duration display
+        let (new_duration_display, new_title) = match duration_display.get() {
+            DurationDisplay::Percentage(_, PercentageReference::Global) => (
+                DurationDisplay::Percentage(parent_percent_norm, PercentageReference::Parent),
+                "Parent%",
+            ),
+            DurationDisplay::Percentage(_, PercentageReference::Parent) => {
+                (DurationDisplay::Time, "Duration")
+            }
+            DurationDisplay::Time => (
+                DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global),
+                "Total%",
+            ),
+        };
+        duration_display.set(new_duration_display);
+
+        // Recreate the duration columns accordingly
+        table.remove_column(1);
+        table.remove_column(0);
+        let total_duration_col =
+            HierarchicalColumn::Duration(DurationKind::Total, new_duration_display);
+        let self_duration_col =
+            HierarchicalColumn::Duration(DurationKind::Myself, new_duration_display);
+        table.insert_column(0, total_duration_col, new_title, |c| {
+            c.width(duration_width).ordering(duration_sort_order)
+        });
+        table.insert_column(1, self_duration_col, "Self", |c| {
+            c.width(duration_width).ordering(duration_sort_order)
+        });
+
+        // Re-select a new duration column if its former self was selected
+        match old_sort_key {
+            HierarchicalColumn::Duration(DurationKind::Total, _) => {
+                table.set_default_column(total_duration_col);
+            }
+            HierarchicalColumn::Duration(DurationKind::Myself, _) => {
+                table.set_default_column(self_duration_col);
+            }
+            HierarchicalColumn::Description => {}
+        }
+
+        // Mark the event as consumed
+        Some(EventResult::Consumed(None))
+    });
+    let table = table.with_name(parent_name);
+
     // TODO: Add F shortcut for flat profile
 
     // Set up a footer with metadata and help instructions
@@ -318,16 +410,47 @@ fn show_hierarchical_profile<'a>(
 }
 
 /// Hierarchical profile column identifier
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 enum HierarchicalColumn {
-    /// Time spent processing this activity or one of its callees
-    Duration,
-
-    /// Time spent specificially processing this activity
-    SelfDuration,
+    /// Time spent doing something
+    Duration(DurationKind, DurationDisplay),
 
     /// Activity description
     Description,
+}
+//
+/// Kind of duration to be displayed
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum DurationKind {
+    /// Total time spent processing this activity and its callees
+    Total,
+
+    /// Time spent processing this activity specifically, excluding callees
+    Myself,
+}
+//
+/// Kind of display to be used for a Duration column
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum DurationDisplay {
+    /// Absolute time elapsed processing this activity
+    Time,
+
+    /// Relative time as a percentage of another activity's execution time
+    ///
+    /// The parameter to this enum is a norm that can be multiplied by the
+    /// absolute duration to get a percentage for display.
+    ///
+    Percentage(Finite<Duration>, PercentageReference),
+}
+//
+/// Reference durations with respect to which percentages can be computed
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum PercentageReference {
+    /// Total time spent running clang
+    Global,
+
+    /// Time spent running the parent activity
+    Parent,
 }
 //
 /// Row of hierarchical profile data
@@ -354,10 +477,18 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
             String::from_utf8(buffer).expect("display_duration should produce UTF-8 data")
         };
         match column {
-            // FIXME: Add a way to switch to percentage display, which will
-            //        likely require use of a global variable. Default to %total
-            HierarchicalColumn::Duration => format_duration(self.duration),
-            HierarchicalColumn::SelfDuration => format_duration(self.self_duration),
+            HierarchicalColumn::Duration(kind, display) => {
+                let data = match kind {
+                    DurationKind::Total => self.duration,
+                    DurationKind::Myself => self.self_duration,
+                };
+                match display {
+                    DurationDisplay::Time => format_duration(data),
+                    DurationDisplay::Percentage(norm, _reference) => {
+                        format!("{:.2}%", data * norm.into_inner())
+                    }
+                }
+            }
             HierarchicalColumn::Description => self.description.clone().into(),
         }
     }
@@ -370,8 +501,10 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
             d1.partial_cmp(&d2).expect("time-trace shouldn't emit NaNs")
         };
         match column {
-            HierarchicalColumn::Duration => cmp_duration(self.duration, other.duration),
-            HierarchicalColumn::SelfDuration => {
+            HierarchicalColumn::Duration(DurationKind::Total, _) => {
+                cmp_duration(self.duration, other.duration)
+            }
+            HierarchicalColumn::Duration(DurationKind::Myself, _) => {
                 cmp_duration(self.self_duration, other.self_duration)
             }
             HierarchicalColumn::Description => self.description.cmp(&other.description),
