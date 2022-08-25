@@ -326,7 +326,6 @@ fn show_hierarchical_profile<'a>(
     }
 
     // Collect children activities into the table
-    // FIXME: Honor thresholds
     let items = activity_infos
         .iter()
         .zip(activity_descs.into_vec().into_iter())
