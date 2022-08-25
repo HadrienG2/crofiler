@@ -43,7 +43,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, TypeKey> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::{delimited, tuple},
         };
@@ -59,8 +59,8 @@ impl EntityParser {
 
         // Then come the type specifier and declarator
         tuple((
-            attributes.terminated(space0),
-            (|s| self.parse_type_specifier_imut(s)).terminated(space0),
+            attributes.terminated(multispace0),
+            (|s| self.parse_type_specifier_imut(s)).terminated(multispace0),
             |s| self.parse_declarator_imut(s),
         ))
         .map(|(attributes, type_specifier, declarator)| {

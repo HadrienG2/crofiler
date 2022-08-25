@@ -74,10 +74,10 @@ impl EntityParser {
         allow_comma: bool,
         allow_greater: bool,
     ) -> IResult<'source, ValueKey> {
-        use nom::{character::complete::space0, multi::fold_many0, sequence::preceded};
+        use nom::{character::complete::multispace0, multi::fold_many0, sequence::preceded};
 
         let value_trailer = fold_many0(
-            preceded(space0, |s| {
+            preceded(multispace0, |s| {
                 self.parse_after_value_imut(s, allow_comma, allow_greater)
             }),
             || self.value_trailers.entry(),
@@ -126,7 +126,7 @@ impl EntityParser {
         allow_greater: bool,
     ) -> IResult<'source, ValueHeader> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             sequence::{delimited, separated_pair},
         };
         use nom_supreme::tag::complete::tag;
@@ -135,16 +135,16 @@ impl EntityParser {
 
         let parenthesized_value_like = |s| self.parse_value_like_imut(s, true, true);
         let parenthesized = delimited(
-            char('(').and(space0),
+            char('(').and(multispace0),
             parenthesized_value_like,
-            space0.and(char(')')),
+            multispace0.and(char(')')),
         )
         .map(ValueHeader::Parenthesized);
 
         let curr_value_like = |s| self.parse_value_like_imut(s, allow_comma, allow_greater);
         let unary_op = separated_pair(
             |s| self.parse_unary_expr_prefix_imut(s),
-            space0,
+            multispace0,
             curr_value_like,
         )
         .map(|(op, expr)| ValueHeader::UnaryOp(op, expr));
@@ -183,7 +183,7 @@ impl EntityParser {
         allow_greater: bool,
     ) -> IResult<'source, AfterValue> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             sequence::{delimited, preceded, separated_pair},
         };
         use nom_supreme::tag::complete::tag;
@@ -192,16 +192,16 @@ impl EntityParser {
 
         let binary_op = separated_pair(
             |s| Self::parse_binary_expr_middle(s, allow_comma, allow_greater),
-            space0,
+            multispace0,
             &curr_value_like,
         )
         .map(|(op, value)| AfterValue::BinaryOp(op, value));
 
         let mut ternary_op = preceded(
-            char('?').and(space0),
+            char('?').and(multispace0),
             separated_pair(
                 &curr_value_like,
-                space0.and(char(':')).and(space0),
+                multispace0.and(char(':')).and(multispace0),
                 &curr_value_like,
             ),
         )
@@ -209,17 +209,19 @@ impl EntityParser {
 
         let value_like_index = |s| self.parse_value_like_imut(s, false, true);
         let mut array_index = delimited(
-            char('[').and(space0),
+            char('[').and(multispace0),
             value_like_index,
-            space0.and(char(']')),
+            multispace0.and(char(']')),
         )
         .map(AfterValue::ArrayIndex);
 
         let mut function_call =
             (|s| self.parse_function_call_imut(s)).map(AfterValue::FunctionCall);
 
-        let member_access = preceded(char('.').and(space0), |s| self.parse_unqualified_id_imut(s))
-            .map(AfterValue::MemberAccess);
+        let member_access = preceded(char('.').and(multispace0), |s| {
+            self.parse_unqualified_id_imut(s)
+        })
+        .map(AfterValue::MemberAccess);
 
         let postfix_op = Self::parse_increment_decrement.map(AfterValue::PostfixOp);
 

@@ -46,17 +46,17 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, TemplateParameters> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             sequence::preceded,
         };
         use nom_supreme::{multi::parse_separated_terminated, tag::complete::tag};
 
-        let arguments_header = char('<').and(space0);
+        let arguments_header = char('<').and(multispace0);
 
         let non_empty_arguments = parse_separated_terminated(
             |s| self.parse_template_parameter_imut(s),
-            space0.and(char(',')).and(space0),
-            space0.and(char('>')),
+            multispace0.and(char(',')).and(multispace0),
+            multispace0.and(char('>')),
             || self.template_parameter_lists.entry(),
             |mut entry, item| {
                 entry.push(item);
@@ -118,15 +118,15 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, TemplateParameter> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::peek,
         };
         let type_like = (|s| self.parse_type_like_imut(s))
             .map(TemplateParameter::TypeLike)
-            .terminated(space0.and(peek(char(',').or(char('>')))));
+            .terminated(multispace0.and(peek(char(',').or(char('>')))));
         let value_like = (|s| self.parse_value_like_imut(s, false, false))
             .map(TemplateParameter::ValueLike)
-            .terminated(space0.and(peek(char(',').or(char('>')))));
+            .terminated(multispace0.and(peek(char(',').or(char('>')))));
         type_like.or(value_like).parse(s)
     }
 

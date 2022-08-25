@@ -169,7 +169,7 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, ScopeOrUnqualifiedId> {
-        use nom::{character::complete::space0, combinator::opt, multi::many0_count};
+        use nom::{character::complete::multispace0, combinator::opt, multi::many0_count};
         use nom_supreme::tag::complete::tag;
         // Parse the initial UnqualifiedId
         match self.parse_unqualified_id_imut(s) {
@@ -185,7 +185,7 @@ impl EntityParser {
                     //   a parenthesized declarator won't make sense either.
                     .terminated(
                         many0_count(
-                            space0.and(
+                            multispace0.and(
                                 (Self::parse_cv
                                     .verify(|&cv| cv != ConstVolatile::default())
                                     .value(()))

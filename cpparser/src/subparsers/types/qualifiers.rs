@@ -11,13 +11,13 @@ impl EntityParser {
     /// Parser recognizing CV qualifiers
     #[inline]
     pub fn parse_cv(s: &str) -> IResult<ConstVolatile> {
-        use nom::{character::complete::space0, multi::fold_many0};
+        use nom::{character::complete::multispace0, multi::fold_many0};
         let keyword = Self::keywords_parser([
             ("const", ConstVolatile::CONST),
             ("volatile", ConstVolatile::VOLATILE),
         ]);
         fold_many0(
-            keyword.terminated(space0),
+            keyword.terminated(multispace0),
             ConstVolatile::default,
             |acc, cv| acc | cv,
         )(s)

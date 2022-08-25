@@ -44,7 +44,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, Operator> {
         use nom::{
-            character::complete::{char, space0, space1},
+            character::complete::{char, multispace0, multispace1},
             sequence::delimited,
         };
         use Symbol::*;
@@ -54,15 +54,15 @@ impl EntityParser {
             .map(Operator::from);
 
         let cast = delimited(
-            char('(').and(space0),
+            char('(').and(multispace0),
             |s| self.parse_type_like_imut(s),
-            space0.and(char(')')),
+            multispace0.and(char(')')),
         )
         .map(Operator::Conversion);
 
         // Must parse inc/dec before unary_symbol to prevent under-parsing
-        ((cast.or(Self::parse_increment_decrement).or(unary_symbol)).terminated(space0))
-            .or((super::delete.or(super::co_await)).terminated(space1))
+        ((cast.or(Self::parse_increment_decrement).or(unary_symbol)).terminated(multispace0))
+            .or((super::delete.or(super::co_await)).terminated(multispace1))
             .parse(s)
     }
 
@@ -139,7 +139,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, NewExpression> {
         use nom::{
-            character::complete::space0,
+            character::complete::multispace0,
             combinator::opt,
             sequence::{separated_pair, tuple},
         };
@@ -147,10 +147,10 @@ impl EntityParser {
         let rooted = opt(tag("::")).map(|o| o.is_some());
         separated_pair(
             rooted,
-            tag("new").and(space0),
+            tag("new").and(multispace0),
             tuple((
-                opt(|s| self.parse_function_call_imut(s)).terminated(space0),
-                (|s| self.parse_type_like_imut(s)).terminated(space0),
+                opt(|s| self.parse_function_call_imut(s)).terminated(multispace0),
+                (|s| self.parse_type_like_imut(s)).terminated(multispace0),
                 opt(|s| self.parse_function_call_imut(s)),
             )),
         )

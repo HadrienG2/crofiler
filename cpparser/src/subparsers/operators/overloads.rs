@@ -24,7 +24,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::preceded,
         };
@@ -45,7 +45,7 @@ impl EntityParser {
                     .or((|s| self.parse_type_like_imut(s)).map(Operator::Conversion)),
             ))
             .and(preceded(
-                space0,
+                multispace0,
                 opt(|s| self.parse_template_parameters_imut(s)),
             ));
 
@@ -71,7 +71,7 @@ impl EntityParser {
         len: usize,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
         use nom::{
-            character::complete::space0,
+            character::complete::multispace0,
             combinator::{map_opt, opt, peek},
             sequence::{preceded, tuple},
         };
@@ -84,7 +84,7 @@ impl EntityParser {
         map_opt(
             tuple((
                 arithmetic_or_comparison,
-                preceded(space0, opt(|s| self.parse_template_parameters_imut(s))),
+                preceded(multispace0, opt(|s| self.parse_template_parameters_imut(s))),
                 peek(opt(super::symbol)),
             )),
             |(operator, parameters_opt, symbol)| {
@@ -99,11 +99,13 @@ impl EntityParser {
 
     /// Parse custom literal
     fn parse_custom_literal_imut<'source>(&self, s: &'source str) -> IResult<'source, Operator> {
-        use nom::{character::complete::space0, sequence::preceded};
+        use nom::{character::complete::multispace0, sequence::preceded};
         use nom_supreme::tag::complete::tag;
-        preceded(tag("\"\"").and(space0), |s| self.parse_identifier_imut(s))
-            .map(Operator::CustomLiteral)
-            .parse(s)
+        preceded(tag("\"\"").and(multispace0), |s| {
+            self.parse_identifier_imut(s)
+        })
+        .map(Operator::CustomLiteral)
+        .parse(s)
     }
 }
 

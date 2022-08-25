@@ -24,7 +24,7 @@ impl EntityParser {
 ///
 #[inline(always)]
 pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
-    use nom::{character::complete::space0, multi::fold_many1};
+    use nom::{character::complete::multispace0, multi::fold_many1};
 
     // Parser for keywords that can appear in legacy names
     let keyword = EntityParser::keywords_parser([
@@ -89,7 +89,7 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     // Parser for legacy names based on those keywords
     move |s| {
         fold_many1(
-            (&keyword).terminated(space0),
+            (&keyword).terminated(multispace0),
             LegacyNameBuilder::default,
             |mut acc, item| {
                 assert!(

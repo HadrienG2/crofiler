@@ -47,9 +47,9 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, DeclaratorKey> {
-        use nom::{character::complete::space0, multi::fold_many0};
+        use nom::{character::complete::multispace0, multi::fold_many0};
         fold_many0(
-            (|s| self.parse_decl_operator_imut(s)).terminated(space0),
+            (|s| self.parse_decl_operator_imut(s)).terminated(multispace0),
             || self.declarators.entry(),
             |mut acc, item| {
                 acc.push(item);
@@ -85,7 +85,7 @@ impl EntityParser {
     #[inline]
     fn parse_decl_operator_imut<'source>(&self, s: &'source str) -> IResult<'source, DeclOperator> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::{delimited, preceded, separated_pair},
         };
@@ -101,7 +101,7 @@ impl EntityParser {
 
         // Basic pointer declarator
         let mut basic_pointer =
-            preceded(char('*').and(space0), Self::parse_cv).map(|cv| DeclOperator::Pointer {
+            preceded(char('*').and(multispace0), Self::parse_cv).map(|cv| DeclOperator::Pointer {
                 path: self.scope_sequences.entry().intern().into(),
                 cv,
             });
@@ -109,14 +109,14 @@ impl EntityParser {
         // The member pointer declarator is very exotic (2/1M parses) and harder to
         // parse so we don't unify it with basic_pointer.
         let nested_star = (|s| self.parse_nested_name_specifier_imut(s)).terminated(char('*'));
-        let mut member_pointer = separated_pair(nested_star, space0, Self::parse_cv)
+        let mut member_pointer = separated_pair(nested_star, multispace0, Self::parse_cv)
             .map(|(path, cv)| DeclOperator::Pointer { path, cv });
 
         // Array declarator
         let array = delimited(
-            char('[').and(space0),
+            char('[').and(multispace0),
             opt(|s| self.parse_value_like_imut(s, false, true)),
-            space0.and(char(']')),
+            multispace0.and(char(']')),
         )
         .map(DeclOperator::Array);
 
@@ -125,9 +125,9 @@ impl EntityParser {
 
         // Parenthesized declarator (to override operator priorities)
         let parenthesized = delimited(
-            char('(').and(space0),
+            char('(').and(multispace0),
             (|s| self.parse_declarator_imut(s)).verify(|d| d != &self.declarators.entry().intern()),
-            space0.and(char(')')),
+            multispace0.and(char(')')),
         )
         .map(DeclOperator::Parenthesized);
 

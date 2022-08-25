@@ -32,8 +32,8 @@ impl EntityParser {
         &self,
         s: &'source str,
     ) -> IResult<'source, TypeSpecifier> {
-        use nom::character::complete::space0;
-        (Self::parse_cv.terminated(space0))
+        use nom::character::complete::multispace0;
+        (Self::parse_cv.terminated(multispace0))
             .and(|s| self.parse_simple_type_imut(s))
             .map(|(cv, simple_type)| TypeSpecifier { cv, simple_type })
             .parse(s)
@@ -48,7 +48,7 @@ impl EntityParser {
     #[inline]
     fn parse_simple_type_imut<'source>(&self, s: &'source str) -> IResult<'source, SimpleType> {
         use nom::{
-            character::complete::{space1, u32},
+            character::complete::{multispace1, u32},
             combinator::opt,
             sequence::preceded,
         };
@@ -58,7 +58,8 @@ impl EntityParser {
         // keywords in obscure circumstances...)
         let id_header =
             opt(
-                Self::keywords_parser(["typename", "class", "struct", "enum", "union"]).and(space1),
+                Self::keywords_parser(["typename", "class", "struct", "enum", "union"])
+                    .and(multispace1),
             );
         let id_expression = preceded(
             id_header,

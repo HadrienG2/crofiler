@@ -29,7 +29,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, UnqualifiedId> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::{delimited, preceded},
         };
@@ -38,7 +38,7 @@ impl EntityParser {
         // Sometimes, demangler will output cv-qualified tempalte names like
         // "T const<...>". This is meaningless. const T cannot have different
         // templating behavior than T. So we ignore this syntax.
-        let named_template_parameters = preceded(opt(space0.and(Self::parse_cv)), |s| {
+        let named_template_parameters = preceded(opt(multispace0.and(Self::parse_cv)), |s| {
             self.parse_template_parameters_imut(s)
         });
 
@@ -64,9 +64,9 @@ impl EntityParser {
 
         // A decltype expression
         let decltype = delimited(
-            tag("decltype(").and(space0),
+            tag("decltype(").and(multispace0),
             |s| self.parse_value_like_imut(s, false, true),
-            space0.and(char(')')),
+            multispace0.and(char(')')),
         )
         .map(UnqualifiedId::Decltype);
 

@@ -67,17 +67,17 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, FunctionArgumentsKey> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             sequence::preceded,
         };
         use nom_supreme::multi::parse_separated_terminated;
 
-        let arguments_header = char('(').and(space0);
+        let arguments_header = char('(').and(multispace0);
 
         let non_empty_parameters = parse_separated_terminated(
             |s| self.parse_value_like_imut(s, false, true),
-            space0.and(char(',')).and(space0),
-            space0.and(char(')')),
+            multispace0.and(char(',')).and(multispace0),
+            multispace0.and(char(')')),
             || self.function_arguments.entry(),
             |mut entry, item| {
                 entry.push(item);
@@ -126,7 +126,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, FunctionSignature> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::{delimited, preceded, tuple},
         };
@@ -136,14 +136,14 @@ impl EntityParser {
         let abi = delimited(tag("[abi:"), |s| self.parse_identifier_imut(s), char(']'));
 
         let type_like = |s| self.parse_type_like_imut(s);
-        let trailing_return = preceded(tag("->").and(space0), &type_like);
+        let trailing_return = preceded(tag("->").and(multispace0), &type_like);
 
         let mut tuple = tuple((
             opt(abi),
-            (|s| self.parse_function_parameter_set_imut(s)).terminated(space0),
-            Self::parse_cv.terminated(space0),
-            Self::parse_reference.terminated(space0),
-            opt((|s| self.parse_noexcept_imut(s)).terminated(space0)),
+            (|s| self.parse_function_parameter_set_imut(s)).terminated(multispace0),
+            Self::parse_cv.terminated(multispace0),
+            Self::parse_reference.terminated(multispace0),
+            opt((|s| self.parse_noexcept_imut(s)).terminated(multispace0)),
             opt(trailing_return),
         ))
         .map(
@@ -171,12 +171,12 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, FunctionParameterSet> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             sequence::preceded,
         };
         use nom_supreme::{multi::parse_separated_terminated, tag::complete::tag};
 
-        let arguments_header = char('(').and(space0);
+        let arguments_header = char('(').and(multispace0);
 
         let parameter_or_ellipsis = ((|s| self.parse_type_like_imut(s))
             .map(ParameterOrEllipsis::Parameter))
@@ -184,8 +184,8 @@ impl EntityParser {
 
         let non_empty_parameters = parse_separated_terminated(
             parameter_or_ellipsis,
-            space0.and(char(',')).and(space0),
-            space0.and(char(')')),
+            multispace0.and(char(',')).and(multispace0),
+            multispace0.and(char(')')),
             || (self.function_parameters.entry(), false, false),
             |(mut entry, mut variadic, bad), item| {
                 // A variadism ellipsis is only allowed in trailing position, so
@@ -239,16 +239,16 @@ impl EntityParser {
     /// Parser recognizing the noexcept qualifier and its optional argument
     fn parse_noexcept_imut<'source>(&self, s: &'source str) -> IResult<'source, Option<ValueKey>> {
         use nom::{
-            character::complete::{char, space0},
+            character::complete::{char, multispace0},
             combinator::opt,
             sequence::{delimited, preceded},
         };
         preceded(
             Self::keyword_parser("noexcept"),
             opt(delimited(
-                char('(').and(space0),
+                char('(').and(multispace0),
                 |s| self.parse_value_like_imut(s, false, true),
-                space0.and(char(')')),
+                multispace0.and(char(')')),
             )),
         )
         .parse(s)

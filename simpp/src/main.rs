@@ -24,7 +24,7 @@ fn main() {
 
     // Get C++ entity name from either CLI or stdin
     let mut stdin = String::new();
-    let mut entity = args
+    let entity = args
         .entity
         .take()
         .or_else(|| {
@@ -38,11 +38,6 @@ fn main() {
             }
         })
         .expect("Please provide a C++ entity name via either CLI or stdin");
-
-    // Pre-process entity name to get rid of line feeds from pretty-printing or
-    // other kinds of preprocessing.
-    let entity_lines = entity.lines().collect::<Vec<_>>();
-    entity = entity_lines.join(" ");
 
     // Parse C++ entity name
     let mut entities = EntityParser::new();
