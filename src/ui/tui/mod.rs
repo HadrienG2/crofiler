@@ -58,7 +58,7 @@ pub fn run(args: CliArgs) {
             .sum::<Duration>(),
     );
 
-    // TODO: Add activity summary on S
+    // TODO: Show activity summary on S
 
     // Display the hierarchical profile
     show_hierarchical_profile(
@@ -97,6 +97,19 @@ fn setup_cursive(state: State) -> CursiveRunnable {
     // Set up user state
     cursive.set_user_data(state);
 
+    // Esc always exits the current layer if there's another underneath
+    cursive.set_global_callback(Key::Esc, move |cursive| {
+        let num_layers = cursive.screen().len();
+        if num_layers > 1 {
+            with_state(cursive, |state| {
+                if num_layers == state.profile_stack.len() {
+                    state.profile_stack.pop();
+                }
+            });
+            cursive.pop_layer();
+        }
+    });
+
     // All global dialogs have the same name, to avoid spawning multiple ones on
     // top of each other, which is jarring and has no current known use case
     fn set_global_dialog_callback(
@@ -117,7 +130,7 @@ fn setup_cursive(state: State) -> CursiveRunnable {
         });
     }
 
-    // Confirm before quitting
+    // Q and Ctrl+C quit, after confirming that this is wanted
     fn quit_dialog_factory(_: &mut Cursive) -> Dialog {
         Dialog::text("Ready to quit?")
             .button("Yes", Cursive::quit)
@@ -126,7 +139,7 @@ fn setup_cursive(state: State) -> CursiveRunnable {
     set_global_dialog_callback(&mut cursive, 'q', quit_dialog_factory);
     set_global_dialog_callback(&mut cursive, Event::CtrlChar('c'), quit_dialog_factory);
 
-    // Hierarchical profile backtrace (for information + faster navigation)
+    // B displays an interactive backtrace
     set_global_dialog_callback(&mut cursive, 'b', |cursive| {
         let mut select = SelectView::new();
         with_state(cursive, |state| {
@@ -171,7 +184,7 @@ fn setup_cursive(state: State) -> CursiveRunnable {
         - Up/Down selects an activity\n\
         - Return zooms on an activity's callees\n\
         - Left/Right + Return adjusts sort\n\
-        - Esc goes back to previous view\n\
+        - Esc exits dialogs and goes up the backtrace\n\
         - U switches between duration units\n\
         - B shows the backtrace to the current activity\n\
         - Q quits this program\n\
@@ -310,23 +323,14 @@ fn show_hierarchical_profile<'a>(
 
     // Register the profile into our profile stack, and note if it is the first
     // layer of the stack
-    let is_bottom_layer = with_state(cursive, |state| {
-        let is_bottom_layer = state.profile_stack.is_empty();
-        state.profile_stack.push(parent_name.clone());
-        is_bottom_layer
-    });
-
-    // Make the Escape key attempt to undo the last layer of recursion
-    let mut table = OnEventView::new(table).on_event(Key::Esc, move |cursive| {
-        if !is_bottom_layer {
-            cursive.pop_layer();
-            with_state(cursive, |state| state.profile_stack.pop());
-        }
+    with_state(cursive, |state| {
+        state.profile_stack.push(parent_name.clone())
     });
 
     // Make the U key switch units
+    // FIXME: Do this for all profiles in the stack
     let duration_display = Cell::new(duration_display);
-    table.set_on_event_inner('u', move |table, _event| {
+    let table = OnEventView::new(table).on_event_inner('u', move |table, _event| {
         // Check the initial duration sort order, if any
         let (old_sort_key, old_sort_order) = table.order().expect("Table should be sorted");
         let duration_sort_order = if let HierarchicalColumn::Duration(_, _) = old_sort_key {
