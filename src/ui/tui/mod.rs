@@ -162,8 +162,8 @@ fn setup_cursive(state: State) -> CursiveRunnable {
     // TODO: Update as the feature set increases
     set_global_dialog_callback(&mut cursive, 'h', |_| {
         Dialog::info(
-            "Duration is the total time spent on an activity\n\
-        Self is Duration minus time spent on callees\n\
+            "The first column is the time spent on an activity\n\
+        Self is that minus the time spent on callees\n\
         Activity is what clang was doing\n\
         + means an activity triggered other activities\n\
         \n\
