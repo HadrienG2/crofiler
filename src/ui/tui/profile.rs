@@ -10,16 +10,23 @@ use cursive::{
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::cmp::Ordering;
+use std::{cmp::Ordering, rc::Rc};
 use unicode_width::UnicodeWidthStr;
 
-/// Profiling layer name and percentage norm
-pub type ProfileLayer = (Box<str>, Finite<Duration>);
+/// Information about a layer of the cursive TUI stack that contains a profile
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileLayer {
+    /// Name of the profile data TableView = name of the parent entity
+    pub table_name: Rc<str>,
+
+    /// Norm used to compute percentages with respect to this profile's parent.
+    pub parent_percent_norm: Finite<Duration>,
+}
 
 /// Display a hierarchical profile
 pub fn show_hierarchical_profile(
     cursive: &mut Cursive,
-    parent_name: Box<str>,
+    parent_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: Box<[ActivityInfo]>,
 ) {
@@ -59,9 +66,10 @@ pub fn show_hierarchical_profile(
             );
 
             // Register this new layer in the profile stack
-            state
-                .profile_stack
-                .push((parent_name.clone(), parent_percent_norm));
+            state.profile_stack.push(ProfileLayer {
+                table_name: parent_name.clone(),
+                parent_percent_norm,
+            });
 
             // Set up the basic trace description footer
             let footer = state.processing_thread.describe_trace(terminal_width);
@@ -192,6 +200,7 @@ pub fn show_hierarchical_profile(
             duration_display,
             |mut table, table_duration_display| {
                 // Apply new sort
+                // FIXME: Adapt for flat profiles
                 let column = column_name.into_column(table_duration_display);
                 table.sort_by(column, order);
             },
@@ -199,7 +208,8 @@ pub fn show_hierarchical_profile(
     });
 
     // Name the table to allow retrieving it for further edits
-    let table = table.with_name(parent_name);
+    let parent_name_str: &str = &parent_name;
+    let table = table.with_name(String::from(parent_name_str));
 
     // TODO: Add F shortcut for flat profile
 
@@ -271,6 +281,7 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
         &profile_stack,
         new_duration_display,
         |mut table, table_duration_display| {
+            // FIXME: Adapt for flat profiles
             // Recreate the duration columns with the new configuration
             table.remove_column(1);
             table.remove_column(0);
@@ -302,26 +313,26 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
     );
 }
 
-/// Iterate over profile layers
+/// Iterate over profile layers and their display configurations
 fn for_each_profile_layer(
     cursive: &mut Cursive,
     layers: &[ProfileLayer],
     mut duration_display: DurationDisplay,
     mut operation: impl FnMut(ViewRef<HierarchicalView>, DurationDisplay),
 ) {
-    for (table_name, parent_percent_norm) in layers {
+    for profile_layer in layers {
         // In "relative to parent" duration display mode, set the norm
         // factor that is appropriate for the active layer
         if let DurationDisplay::Percentage(ref mut norm, PercentageReference::Parent) =
             &mut duration_display
         {
-            *norm = *parent_percent_norm;
+            *norm = profile_layer.parent_percent_norm;
         }
 
         // Access the target table
         operation(
             cursive
-                .find_name::<HierarchicalView>(&table_name)
+                .find_name::<HierarchicalView>(&profile_layer.table_name)
                 .expect("Every registered profile should exist"),
             duration_display,
         );
@@ -348,7 +359,7 @@ fn total_column_name(duration_display: DurationDisplay) -> &'static str {
     }
 }
 
-/// Hierarchical profile column identifier
+/// Hierarchical profile column
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 enum HierarchicalColumn {
     /// Time spent doing something
@@ -403,7 +414,7 @@ pub enum PercentageReference {
     Parent,
 }
 //
-/// Simplified version of HierarchicalColumn to be used when identifying columns
+/// Hierarchical profile column identifier
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum HierarchicalColumnName {
     TotalDuration = 0,
@@ -425,7 +436,7 @@ impl HierarchicalColumnName {
         }
     }
 }
-//
+
 /// Row of hierarchical profile data
 #[derive(Clone, Debug)]
 struct HierarchicalData {
@@ -484,6 +495,6 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
         }
     }
 }
-//
+
 /// TableView using the setup above
 type HierarchicalView = TableView<HierarchicalData, HierarchicalColumn>;

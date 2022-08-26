@@ -112,7 +112,7 @@ fn help_dialog(_: &mut Cursive) -> Dialog {
         "The first column is the time spent on an activity\n\
         Self is that minus the time spent on callees\n\
         Activity is what clang was doing\n\
-        + means an activity triggered other activities\n\
+        + means that there are callees to zoom on\n\
         \n\
         Available commands:\n\
         - Up/Down selects an activity\n\
