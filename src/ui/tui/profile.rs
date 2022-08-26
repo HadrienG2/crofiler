@@ -26,13 +26,14 @@ pub struct ProfileLayer {
 /// Display a hierarchical profile
 pub fn show_hierarchical_profile(
     cursive: &mut Cursive,
-    parent_name: Rc<str>,
+    table_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: Box<[ActivityInfo]>,
 ) {
     // Compute basic children table layout
     let (terminal_width, terminal_height) =
         termion::terminal_size().expect("Could not read terminal configuration");
+    // FIXME: Adapt for flat profiles
     let activity_width = terminal_width as usize - 2 * (DURATION_WIDTH + 3) - 3;
 
     // Update the TUI state and load required data from it
@@ -67,7 +68,7 @@ pub fn show_hierarchical_profile(
 
             // Register this new layer in the profile stack
             state.profile_stack.push(ProfileLayer {
-                table_name: parent_name.clone(),
+                table_name: table_name.clone(),
                 parent_percent_norm,
             });
 
@@ -78,11 +79,9 @@ pub fn show_hierarchical_profile(
             (state.sort_config, duration_display, activity_descs, footer)
         });
 
-    // Query the configuration of the previous top layer, if any, or just use a
-    // sensible default configuration if we're the first
-    let total_duration_col = HierarchicalColumn::Duration(DurationKind::Total, duration_display);
-
     // Set up the children activity table
+    // FIXME: Adapt for flat profiles
+    let total_duration_col = HierarchicalColumn::Duration(DurationKind::Total, duration_display);
     let self_duration_col = HierarchicalColumn::Duration(DurationKind::Myself, duration_display);
     let mut table = HierarchicalView::new()
         .column(
@@ -116,6 +115,7 @@ pub fn show_hierarchical_profile(
         .map(|(activity_info, description)| {
             let mut buf = String::new();
             if activity_info.has_children {
+                // FIXME: Adapt for flat profiles
                 buf.push('+');
             } else {
                 buf.push(' ');
@@ -132,84 +132,15 @@ pub fn show_hierarchical_profile(
     table.set_items(items);
     table.set_selected_row(0);
 
-    // Recurse into an activity's children when an activity is selected
-    let parent_name2 = parent_name.clone();
-    table.set_on_submit(move |cursive, _row, index| {
-        let (activity_trace_id, activity_desc, activity_duration) = cursive
-            .call_on_name(&parent_name2, |view: &mut HierarchicalView| {
-                let activity = view
-                    .borrow_item(index)
-                    .expect("Callback shouldn't be called with an invalid index");
-                let activity_desc_str: &str = &activity.description;
-                let activity_desc = if let Some(stripped_desc) = activity_desc_str.strip_prefix('+')
-                {
-                    stripped_desc.into()
-                } else {
-                    activity_desc_str.into()
-                };
-                (activity.id, activity_desc, activity.duration)
-            })
-            .expect("Failed to retrieve cursive layer");
-        let activity_children = super::with_state(cursive, |state| {
-            state
-                .processing_thread
-                .get_direct_children(activity_trace_id)
-        });
-        if !activity_children.is_empty() {
-            show_hierarchical_profile(
-                cursive,
-                activity_desc,
-                percent_norm(activity_duration),
-                activity_children,
-            )
-        }
-    });
+    // Recurse into an activity's children when asked to do so
+    table.set_on_submit(zoom(table_name.clone()));
 
     // Propagate sort order changes to past and future profile views
-    table.set_on_sort(|cursive, column, order| {
-        // Update TUI state and extract required info from it
-        let column_name = column.name();
-        let (past_views, duration_display) = super::with_state(cursive, |state| {
-            // Update sort config for future views
-            let (sort_order, sort_key) = &mut state.sort_config;
-            sort_order[column_name as usize] = order;
-            *sort_key = column_name;
+    table.set_on_sort(sort_other_profiles);
 
-            // Get a list of past views
-            let num_past_views = state.profile_stack.len() - 1;
-            let past_views = state
-                .profile_stack
-                .iter()
-                .cloned()
-                .take(num_past_views)
-                .collect::<Vec<_>>();
-
-            // Get the duration display configuration
-            let duration_display = state
-                .duration_display
-                .expect("Duration display configuration should be set by now");
-
-            // Extract useful state
-            (past_views, duration_display)
-        });
-
-        // Update sort order in past views
-        for_each_profile_layer(
-            cursive,
-            &past_views,
-            duration_display,
-            |mut table, table_duration_display| {
-                // Apply new sort
-                // FIXME: Adapt for flat profiles
-                let column = column_name.into_column(table_duration_display);
-                table.sort_by(column, order);
-            },
-        );
-    });
-
-    // Name the table to allow retrieving it for further edits
-    let parent_name_str: &str = &parent_name;
-    let table = table.with_name(String::from(parent_name_str));
+    // Name the table to allow accessing it later on
+    let table_name_str: &str = &table_name;
+    let table = table.with_name(String::from(table_name_str));
 
     // TODO: Add F shortcut for flat profile
 
@@ -244,7 +175,7 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
     let (new_duration_display, profile_stack, (sort_order, sort_key)) =
         match super::with_state(cursive, |state| {
             // Determine the next duration display or return None if no profile
-            // is being displayed (data is still being loaded)
+            // is being displayed (it means clang data is still being loaded)
             let new_duration_display = match state.duration_display? {
                 DurationDisplay::Percentage(_, PercentageReference::Global) => {
                     DurationDisplay::Percentage(
@@ -257,7 +188,7 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
                 }
                 DurationDisplay::Time => DurationDisplay::Percentage(
                     state.global_percent_norm.expect(
-                        "Global percent norm should be initialized before duration display",
+                        "Global percent norm should be initialized before duration display is",
                     ),
                     PercentageReference::Global,
                 ),
@@ -309,6 +240,95 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
                 }
                 _ => {}
             }
+        },
+    );
+}
+
+/// on_submit callback for hierarchical profiles that recursively spawns another
+/// hierarchical profile lookint at the selected activity's children
+fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
+    move |cursive, _row, index| {
+        // Access the hierarchical profile's table to check the selected
+        // activity and whether it has children / can be zoomed on.
+        let (activity_trace_id, entity_name, activity_duration) = match cursive
+            .call_on_name(&table_name, |view: &mut HierarchicalView| {
+                // Access the activity's HierarchicalData
+                let activity = view
+                    .borrow_item(index)
+                    .expect("Callback shouldn't be called with an invalid index");
+
+                // The activity description should start with a '+', that we
+                // will want to strip. If it does not start with a '+', then
+                // this activity has no children and cannot be zoomed on.
+                let entity_name = activity.description.strip_prefix('+')?;
+                Some((activity.id, entity_name.into(), activity.duration))
+            })
+            .expect("Failed to retrieve cursive layer")
+        {
+            Some(tuple) => tuple,
+            None => return,
+        };
+
+        // Query the activity's direct children
+        let activity_children = super::with_state(cursive, |state| {
+            state
+                .processing_thread
+                .get_direct_children(activity_trace_id)
+        });
+        assert!(
+            !activity_children.is_empty(),
+            "If the activity had no children, early exit should have occured"
+        );
+
+        // Show a hierarchical profile of this activity
+        show_hierarchical_profile(
+            cursive,
+            entity_name,
+            percent_norm(activity_duration),
+            activity_children,
+        )
+    }
+}
+
+/// on_sort callback for profiles that propagates the sorting configuration
+/// change to all past and future profiles
+fn sort_other_profiles(cursive: &mut Cursive, column: HierarchicalColumn, order: Ordering) {
+    // Update TUI state and extract required info from it
+    let column_name = column.name();
+    let (past_views, duration_display) = super::with_state(cursive, |state| {
+        // Update sort config for future views
+        let (sort_order, sort_key) = &mut state.sort_config;
+        sort_order[column_name as usize] = order;
+        *sort_key = column_name;
+
+        // Get a list of past views
+        let num_past_views = state.profile_stack.len() - 1;
+        let past_views = state
+            .profile_stack
+            .iter()
+            .cloned()
+            .take(num_past_views)
+            .collect::<Vec<_>>();
+
+        // Get the duration display configuration
+        let duration_display = state
+            .duration_display
+            .expect("Duration display configuration should be set by now");
+
+        // Extract useful state
+        (past_views, duration_display)
+    });
+
+    // Update sort order in past views
+    for_each_profile_layer(
+        cursive,
+        &past_views,
+        duration_display,
+        |mut table, table_duration_display| {
+            // Apply new sort
+            // FIXME: Adapt for flat profiles
+            let column = column_name.into_column(table_duration_display);
+            table.sort_by(column, order);
         },
     );
 }
