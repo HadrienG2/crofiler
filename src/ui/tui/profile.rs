@@ -425,7 +425,9 @@ fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
             stripped_description,
             percent_norm(activity_duration),
             activity_children,
-            Box::new(move |state| state.processing_thread.get_all_children(activity_trace_id)),
+            Box::new(move |state: &mut State| {
+                state.processing_thread.get_all_children(activity_trace_id)
+            }),
         )
     }
 }
