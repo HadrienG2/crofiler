@@ -54,7 +54,7 @@ pub fn run(args: CliArgs) {
         return;
     }
 
-    // Query the list of root activities and compute the global percentage norm
+    // Query the list of root activities and deduce the global percentage norm
     let (root_activities, global_percent_norm) = with_state(&mut cursive, |state| {
         let root_activities = state.processing_thread.get_root_activities();
         let global_percent_norm = percent_norm(
@@ -63,7 +63,6 @@ pub fn run(args: CliArgs) {
                 .map(|activity| activity.duration)
                 .sum::<Duration>(),
         );
-        state.global_percent_norm = Some(global_percent_norm);
         (root_activities, global_percent_norm)
     });
 
@@ -249,18 +248,16 @@ fn show_hierarchical_profile<'a>(
         with_state(cursive, |state| {
             // Reuse the display configuration used by previous profiling layers, or
             // set up the default configuration if this is the first layer
-            let mut duration_display = state
-                .duration_display
-                .get_or_insert_with(|| {
-                    // Load the global percentage norm
-                    let global_percent_norm = state.global_percent_norm.expect(
-                        "Global percentage norm should have been initialized at this point",
-                    );
+            let mut duration_display = *state.duration_display.get_or_insert_with(|| {
+                // Check out the global percentage norm. If it's not been
+                // initialized yet, it means we are the first (toplevel)
+                // profile, and thus our local norm is the global norm.
+                let global_percent_norm =
+                    *state.global_percent_norm.get_or_insert(parent_percent_norm);
 
-                    // Default to a percentage of the clang execution time
-                    DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
-                })
-                .clone();
+                // Default to a percentage of the clang execution time
+                DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
+            });
 
             // In "relative to parent" duration display mode, set the percent
             // normalization factor that is appropriate for the active layer
