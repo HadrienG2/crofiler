@@ -11,7 +11,7 @@ use clang_time_trace::{ActivityTraceId, ClangTraceLoadError, Duration};
 use cursive::{
     event::{Event, Key},
     view::{Nameable, Resizable},
-    views::{Dialog, LinearLayout, SelectView, TextView},
+    views::{Dialog, LinearLayout, SelectView, TextView, ViewRef},
     Cursive, CursiveRunnable,
 };
 use cursive_table_view::{TableView, TableViewItem};
@@ -42,6 +42,10 @@ pub fn run(args: CliArgs) {
         processing_thread: ProcessingThread::start(&args.input),
         global_percent_norm: None,
         profile_stack: Vec::new(),
+        sort_config: (
+            [Ordering::Greater, Ordering::Greater, Ordering::Less],
+            HierarchicalColumnName::TotalDuration,
+        ),
         duration_display: None,
     });
 
@@ -87,18 +91,19 @@ struct State {
 
     /// Norm to compute percentages of the full clang execution time
     ///
-    /// Will be set after the trace has been loaded.
+    /// Will be set when the first layer of hierarchical profiling is displayed.
     ///
     global_percent_norm: Option<Finite<Duration>>,
 
     /// Current stack of profiling UI layers
+    profile_stack: Vec<ProfileLayer>,
+
+    /// Current column sorting configuration
     ///
-    /// For each layer, we provide the name under which it's registered to
-    /// cursive (which conveniently happens to also be a display-ready name of
-    /// the parent activity) and the norm to be used when computing percentages
-    /// of the parent's execution time in that layer.
+    /// Tells the ordering to be used for each column and default column
+    /// (toplevel sort key).
     ///
-    profile_stack: Vec<(Box<str>, Finite<Duration>)>,
+    sort_config: ([Ordering; 3], HierarchicalColumnName),
 
     /// Current duration display configuration
     ///
@@ -106,6 +111,9 @@ struct State {
     ///
     duration_display: Option<DurationDisplay>,
 }
+//
+/// Profiling layer name and percentage norm
+type ProfileLayer = (Box<str>, Finite<Duration>);
 
 /// Run a closure on the UI state
 fn with_state<R>(cursive: &mut Cursive, f: impl FnOnce(&mut State) -> R) -> R {
@@ -244,7 +252,7 @@ fn show_hierarchical_profile(
     let activity_width = terminal_width as usize - 2 * (DURATION_WIDTH + 3) - 3;
 
     // Update the TUI state and load required data from it
-    let (duration_display, activity_descs, prev_top_layer, mut footer) =
+    let ((sort_order, sort_key), duration_display, activity_descs, mut footer) =
         with_state(cursive, |state| {
             // Reuse the display configuration used by previous profiling layers, or
             // set up the default configuration if this is the first layer
@@ -273,9 +281,6 @@ fn show_hierarchical_profile(
                 activity_width as u16,
             );
 
-            // Get the name of the previous topmost profiling layer, if any
-            let prev_top_layer = state.profile_stack.last().map(|profile| profile.0.clone());
-
             // Register this new layer in the profile stack
             state
                 .profile_stack
@@ -285,15 +290,12 @@ fn show_hierarchical_profile(
             let footer = state.processing_thread.describe_trace(terminal_width);
 
             // Bubble up useful data for following steps
-            (duration_display, activity_descs, prev_top_layer, footer)
+            (state.sort_config, duration_display, activity_descs, footer)
         });
 
     // Query the configuration of the previous top layer, if any, or just use a
     // sensible default configuration if we're the first
     let total_duration_col = HierarchicalColumn::Duration(DurationKind::Total, duration_display);
-    let (sort_key, duration_sort_order, description_sort_order) = prev_top_layer
-        .map(|top_layer| get_sort_configuration(cursive, &top_layer))
-        .unwrap_or((total_duration_col, Ordering::Greater, Ordering::Less));
 
     // Set up the children activity table
     let self_duration_col = HierarchicalColumn::Duration(DurationKind::Myself, duration_display);
@@ -301,22 +303,22 @@ fn show_hierarchical_profile(
         .column(
             total_duration_col,
             total_column_name(duration_display),
-            |c| c.width(DURATION_WIDTH).ordering(duration_sort_order),
+            |c| c.width(DURATION_WIDTH).ordering(sort_order[0]),
         )
         .column(self_duration_col, SELF_COLUMN_NAME, |c| {
-            c.width(DURATION_WIDTH).ordering(duration_sort_order)
+            c.width(DURATION_WIDTH).ordering(sort_order[1])
         })
         .column(HierarchicalColumn::Description, "Activity", |c| {
-            c.width(activity_width).ordering(description_sort_order)
+            c.width(activity_width).ordering(sort_order[2])
         });
     match sort_key {
-        HierarchicalColumn::Duration(DurationKind::Total, _) => {
+        HierarchicalColumnName::TotalDuration => {
             table.set_default_column(total_duration_col);
         }
-        HierarchicalColumn::Duration(DurationKind::Myself, _) => {
+        HierarchicalColumnName::SelfDuration => {
             table.set_default_column(self_duration_col);
         }
-        HierarchicalColumn::Description => {
+        HierarchicalColumnName::Description => {
             table.set_default_column(HierarchicalColumn::Description)
         }
     }
@@ -377,10 +379,46 @@ fn show_hierarchical_profile(
         }
     });
 
-    // FIXME: Catch sort order changes to bubble them back up to upper layers.
-    //        Use the opportunity to track the latest sort order for every
-    //        column in State, which will allow us to get rid of the ugly
-    //        get_sort_configuration trick.
+    // Propagate sort order changes to past and future profile views
+    table.set_on_sort(|cursive, column, order| {
+        // Update TUI state and extract required info from it
+        let column_name = column.name();
+        let (past_views, duration_display) = with_state(cursive, |state| {
+            // Update sort config for future views
+            let (sort_order, sort_key) = &mut state.sort_config;
+            sort_order[column_name as usize] = order;
+            *sort_key = column_name;
+
+            // Get a list of past views
+            let num_past_views = state.profile_stack.len() - 1;
+            let past_views = state
+                .profile_stack
+                .iter()
+                .cloned()
+                .take(num_past_views)
+                .collect::<Vec<_>>();
+
+            // Get the duration display configuration
+            let duration_display = state
+                .duration_display
+                .expect("Duration display configuration should be set by now");
+
+            // Extract useful state
+            (past_views, duration_display)
+        });
+
+        // Update sort order in past views
+        for_each_profile_layer(
+            cursive,
+            &past_views,
+            duration_display,
+            |mut table, table_duration_display| {
+                // Apply new sort
+                let column = column_name.into_column(table_duration_display);
+                table.sort_by(column, order);
+            },
+        );
+    });
 
     // Name the table to allow retrieving it for further edits
     let table = table.with_name(parent_name);
@@ -413,86 +451,101 @@ fn show_hierarchical_profile(
 
 /// Switch to a different duration unit in all currently displayed profiles
 fn switch_duration_unit(cursive: &mut Cursive) {
-    // Determine the next duration display and state of profiling layers to
-    // be updated, or exit if no profile is being displayed yet.
-    let (mut new_duration_display, profile_stack) = match with_state(cursive, |state| {
-        // Determine the next duration display or return None if no profile
-        // is being displayed (data is still being loaded)
-        let new_duration_display = match state.duration_display? {
-            DurationDisplay::Percentage(_, PercentageReference::Global) => {
-                DurationDisplay::Percentage(
-                    Finite::<Duration>::from_inner(0.0),
-                    PercentageReference::Parent,
-                )
-            }
-            DurationDisplay::Percentage(_, PercentageReference::Parent) => DurationDisplay::Time,
-            DurationDisplay::Time => DurationDisplay::Percentage(
-                state
-                    .global_percent_norm
-                    .expect("Global percent norm should be initialized before duration display"),
-                PercentageReference::Global,
-            ),
+    // Update TUI state and extract required data from it
+    let (new_duration_display, profile_stack, (sort_order, sort_key)) =
+        match with_state(cursive, |state| {
+            // Determine the next duration display or return None if no profile
+            // is being displayed (data is still being loaded)
+            let new_duration_display = match state.duration_display? {
+                DurationDisplay::Percentage(_, PercentageReference::Global) => {
+                    DurationDisplay::Percentage(
+                        Finite::<Duration>::from_inner(0.0),
+                        PercentageReference::Parent,
+                    )
+                }
+                DurationDisplay::Percentage(_, PercentageReference::Parent) => {
+                    DurationDisplay::Time
+                }
+                DurationDisplay::Time => DurationDisplay::Percentage(
+                    state.global_percent_norm.expect(
+                        "Global percent norm should be initialized before duration display",
+                    ),
+                    PercentageReference::Global,
+                ),
+            };
+            state.duration_display = Some(new_duration_display);
+
+            // Also bubble up a copy of the profile stack
+            Some((
+                new_duration_display,
+                state.profile_stack.clone(),
+                state.sort_config,
+            ))
+        }) {
+            Some(tuple) => tuple,
+            None => return,
         };
-        state.duration_display = Some(new_duration_display);
-
-        // Also bubble up a copy of the profile stack
-        Some((new_duration_display, state.profile_stack.clone()))
-    }) {
-        Some(tuple) => tuple,
-        None => return,
-    };
-
-    // Query the topmost profile's sorting configuration
-    let (sort_key, duration_sort_order, _description_sort_order) = get_sort_configuration(
-        cursive,
-        &profile_stack
-            .last()
-            .expect("A top profile should be registered")
-            .0,
-    );
 
     // Update all the profile layers that are currently being displayed
-    for (table_name, parent_percent_norm) in profile_stack {
+    for_each_profile_layer(
+        cursive,
+        &profile_stack,
+        new_duration_display,
+        |mut table, table_duration_display| {
+            // Recreate the duration columns accordingly
+            table.remove_column(1);
+            table.remove_column(0);
+            let total_duration_col =
+                HierarchicalColumn::Duration(DurationKind::Total, table_duration_display);
+            let self_duration_col =
+                HierarchicalColumn::Duration(DurationKind::Myself, table_duration_display);
+            table.insert_column(
+                0,
+                total_duration_col,
+                total_column_name(table_duration_display),
+                |c| c.width(DURATION_WIDTH).ordering(sort_order[0]),
+            );
+            table.insert_column(1, self_duration_col, SELF_COLUMN_NAME, |c| {
+                c.width(DURATION_WIDTH).ordering(sort_order[1])
+            });
+
+            // Re-select a new duration column if its former self was selected
+            match sort_key {
+                HierarchicalColumnName::TotalDuration => {
+                    table.set_default_column(total_duration_col);
+                }
+                HierarchicalColumnName::SelfDuration => {
+                    table.set_default_column(self_duration_col);
+                }
+                _ => {}
+            }
+        },
+    );
+}
+
+/// Iterate over profile layers
+fn for_each_profile_layer(
+    cursive: &mut Cursive,
+    layers: &[ProfileLayer],
+    mut duration_display: DurationDisplay,
+    mut operation: impl FnMut(ViewRef<HierarchicalView>, DurationDisplay),
+) {
+    for (table_name, parent_percent_norm) in layers {
         // In "relative to parent" duration display mode, set the norm
         // factor that is appropriate for the active layer
         if let DurationDisplay::Percentage(ref mut norm, PercentageReference::Parent) =
-            &mut new_duration_display
+            &mut duration_display
         {
-            *norm = parent_percent_norm;
+            *norm = *parent_percent_norm;
         }
 
         // Access the target table
-        let mut table = cursive
-            .find_name::<HierarchicalView>(&table_name)
-            .expect("Every registered profile should exist");
-
-        // Recreate the duration columns accordingly
-        table.remove_column(1);
-        table.remove_column(0);
-        let total_duration_col =
-            HierarchicalColumn::Duration(DurationKind::Total, new_duration_display);
-        let self_duration_col =
-            HierarchicalColumn::Duration(DurationKind::Myself, new_duration_display);
-        table.insert_column(
-            0,
-            total_duration_col,
-            total_column_name(new_duration_display),
-            |c| c.width(DURATION_WIDTH).ordering(duration_sort_order),
+        operation(
+            cursive
+                .find_name::<HierarchicalView>(&table_name)
+                .expect("Every registered profile should exist"),
+            duration_display,
         );
-        table.insert_column(1, self_duration_col, SELF_COLUMN_NAME, |c| {
-            c.width(DURATION_WIDTH).ordering(duration_sort_order)
-        });
-
-        // Re-select a new duration column if its former self was selected
-        match sort_key {
-            HierarchicalColumn::Duration(DurationKind::Total, _) => {
-                table.set_default_column(total_duration_col);
-            }
-            HierarchicalColumn::Duration(DurationKind::Myself, _) => {
-                table.set_default_column(self_duration_col);
-            }
-            HierarchicalColumn::Description => {}
-        }
     }
 }
 
@@ -503,27 +556,6 @@ fn total_column_name(duration_display: DurationDisplay) -> &'static str {
         DurationDisplay::Percentage(_, PercentageReference::Parent) => "%Parent",
         DurationDisplay::Time => "Duration",
     }
-}
-
-/// Extract the sorting configuration from a known profiling layer
-///
-/// Returns the column by which that layer is sorted, and the order in which
-/// duration columns and the description column should be sorted.
-///
-fn get_sort_configuration(
-    cursive: &mut Cursive,
-    profile: &str,
-) -> (HierarchicalColumn, Ordering, Ordering) {
-    let (sort_key, sort_order) = cursive
-        .find_name::<HierarchicalView>(profile)
-        .expect("Every registered profile should exist")
-        .order()
-        .expect("Every profile should be sorted");
-    let (duration_sort_order, description_sort_order) = match sort_key {
-        HierarchicalColumn::Duration(_, _) => (sort_order, Ordering::Less),
-        HierarchicalColumn::Description => (Ordering::Greater, sort_order),
-    };
-    (sort_key, duration_sort_order, description_sort_order)
 }
 
 /// Interactive backtrace dialog
@@ -561,6 +593,17 @@ enum HierarchicalColumn {
     Description,
 }
 //
+impl HierarchicalColumn {
+    /// Strip column styling information to get a column name
+    fn name(&self) -> HierarchicalColumnName {
+        match self {
+            Self::Duration(DurationKind::Total, _) => HierarchicalColumnName::TotalDuration,
+            Self::Duration(DurationKind::Myself, _) => HierarchicalColumnName::SelfDuration,
+            Self::Description => HierarchicalColumnName::Description,
+        }
+    }
+}
+//
 /// Kind of duration to be displayed
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 enum DurationKind {
@@ -593,6 +636,29 @@ enum PercentageReference {
 
     /// Time spent running the parent activity
     Parent,
+}
+//
+/// Simplified version of HierarchicalColumn to be used when identifying columns
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum HierarchicalColumnName {
+    TotalDuration = 0,
+    SelfDuration,
+    Description,
+}
+//
+impl HierarchicalColumnName {
+    /// Add styling information to get a column name
+    fn into_column(self, duration_display: DurationDisplay) -> HierarchicalColumn {
+        match self {
+            Self::TotalDuration => {
+                HierarchicalColumn::Duration(DurationKind::Total, duration_display)
+            }
+            Self::SelfDuration => {
+                HierarchicalColumn::Duration(DurationKind::Myself, duration_display)
+            }
+            Self::Description => HierarchicalColumn::Description,
+        }
+    }
 }
 //
 /// Row of hierarchical profile data
