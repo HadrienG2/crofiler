@@ -125,10 +125,7 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Dialog {
                 .iter()
                 .enumerate()
                 .rev()
-                .map(|(idx, profile)| {
-                    let table_name_str: &str = &profile.table_name;
-                    (String::from(table_name_str), idx)
-                }),
+                .map(|(idx, profile)| (String::from(profile.table_name()), idx)),
         )
     });
     select.set_on_submit(|cursive, idx| {

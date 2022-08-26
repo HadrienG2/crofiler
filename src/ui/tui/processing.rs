@@ -134,15 +134,27 @@ impl ProcessingThread {
         Self::fetch(&self.string_receiver)
     }
 
-    /// Get the list of root nodes
+    /// Get the list of root activities
     pub fn get_root_activities(&self) -> Box<[ActivityInfo]> {
         self.request(Instruction::GetRootActivities);
         Self::fetch(&self.activities_receiver)
     }
 
-    /// Get the list of a node's children
+    /// Get the list of all activities
+    pub fn get_all_activities(&self) -> Box<[ActivityInfo]> {
+        self.request(Instruction::GetAllActivities);
+        Self::fetch(&self.activities_receiver)
+    }
+
+    /// Get the list of a node's direct children
     pub fn get_direct_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
         self.request(Instruction::GetDirectChildren(id));
+        Self::fetch(&self.activities_receiver)
+    }
+
+    /// Get the list of all of a node's direct children
+    pub fn get_all_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
+        self.request(Instruction::GetAllChildren(id));
         Self::fetch(&self.activities_receiver)
     }
 
@@ -205,8 +217,14 @@ enum Instruction {
     /// Get the list of root nodes (reply via activities channel)
     GetRootActivities,
 
-    /// Get the list of a node's children (reply via activities channel)
+    /// Get the list of all activities (reply via activities channel)
+    GetAllActivities,
+
+    /// Get the list of a node's direct children (reply via activities channel)
     GetDirectChildren(ActivityTraceId),
+
+    /// Get the list of all a node's children (reply via activities channel)
+    GetAllChildren(ActivityTraceId),
 
     /// Display a set of activity descriptions
     DescribeActivities {
@@ -239,10 +257,21 @@ fn worker(
                 reply(&activities, activity_list(trace.root_activities()))
             }
 
-            // Get the list of a node's children
+            // Get the list of all activities
+            Instruction::GetAllActivities => {
+                reply(&activities, activity_list(trace.all_activities()))
+            }
+
+            // Get the list of a node's direct children
             Instruction::GetDirectChildren(id) => reply(
                 &activities,
                 activity_list(trace.activity_trace(id).direct_children()),
+            ),
+
+            // Get the list of all a node's children
+            Instruction::GetAllChildren(id) => reply(
+                &activities,
+                activity_list(trace.activity_trace(id).all_children()),
             ),
 
             // Describe a set of activities

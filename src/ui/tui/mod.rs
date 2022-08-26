@@ -7,7 +7,7 @@ mod profile;
 
 use self::{
     processing::ProcessingThread,
-    profile::{DurationDisplay, HierarchicalColumnName},
+    profile::{DurationDisplay, HierarchicalColumnName, SortConfig},
 };
 use crate::ui::tui::profile::ProfileLayer;
 use crate::CliArgs;
@@ -28,10 +28,10 @@ pub fn run(args: CliArgs) {
         processing_thread: ProcessingThread::start(&args.input),
         global_percent_norm: None,
         profile_stack: Vec::new(),
-        sort_config: (
-            [Ordering::Greater, Ordering::Greater, Ordering::Less],
-            HierarchicalColumnName::TotalDuration,
-        ),
+        sort_config: SortConfig {
+            order: [Ordering::Greater, Ordering::Greater, Ordering::Less],
+            key: HierarchicalColumnName::TotalDuration,
+        },
         duration_display: None,
     });
 
@@ -64,6 +64,7 @@ pub fn run(args: CliArgs) {
         "<profile root>".into(),
         global_percent_norm,
         root_activities,
+        |state| state.processing_thread.get_all_activities(),
     );
 
     // Start the cursive event loop
@@ -89,7 +90,7 @@ pub struct State {
     /// Tells the ordering to be used for each column and default column
     /// (toplevel sort key).
     ///
-    sort_config: ([Ordering; 3], HierarchicalColumnName),
+    sort_config: SortConfig,
 
     /// Current duration display configuration
     ///
@@ -121,6 +122,7 @@ fn help_dialog(_: &mut Cursive) -> Dialog {
         - Esc exits dialogs and goes up the backtrace\n\
         - U switches between duration units\n\
         - B shows the backtrace to the current activity\n\
+        - F toggles between flat and hierarchical profiles\n\
         - Q quits this program\n\
         \n\
         Logs are sent to syslog to avoid display issues",
