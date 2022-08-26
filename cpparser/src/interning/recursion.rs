@@ -14,25 +14,40 @@ use std::{cell::RefCell, hash::Hash, ops::Range};
 pub struct RecursiveSequenceInterner<
     Item: Clone + Eq + Hash,
     Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
->(RefCell<(SequenceInterner<Item, Key>, Vec<Vec<Item>>)>);
+>(RefCell<State<Item, Key>>);
+//
+#[derive(Clone)]
+struct State<
+    Item: Clone + Eq + Hash,
+    Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
+> {
+    /// Underlying SequenceInterner
+    interner: SequenceInterner<Item, Key>,
+
+    /// Storage for WIP sequences
+    storage: Vec<Vec<Item>>,
+}
 //
 impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
     RecursiveSequenceInterner<Item, Key>
 {
     // Set up a sequence interner
     pub fn new() -> Self {
-        Self(RefCell::new((SequenceInterner::new(), Vec::new())))
+        Self(RefCell::new(State {
+            interner: SequenceInterner::new(),
+            storage: Vec::new(),
+        }))
     }
 
     // Access the inner SequenceInterner
     pub fn borrow(&self) -> ARef<SequenceInterner<Item, Key>> {
-        ARef::new(self.0.borrow()).map(|(interner, _vecs)| interner)
+        ARef::new(self.0.borrow()).map(|state| &state.interner)
     }
 
     // Extract the inner SequenceInterner
     #[allow(unused)]
     pub fn into_inner(self) -> SequenceInterner<Item, Key> {
-        self.0.into_inner().0
+        self.0.into_inner().interner
     }
 
     // Access an interned sequence
@@ -44,14 +59,14 @@ impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
     // Intern a sequence
     #[allow(unused)]
     pub fn intern(&self, sequence: &[Item]) -> Key {
-        self.0.borrow_mut().0.intern(sequence)
+        self.0.borrow_mut().interner.intern(sequence)
     }
 
     // Prepare to intern a sequence in an iterative fashion, item by item
     pub fn entry(&self) -> SequenceEntry<Item, Key> {
         let sequence = {
             let mut inner = self.0.borrow_mut();
-            if let Some(mut sequence) = inner.1.pop() {
+            if let Some(mut sequence) = inner.storage.pop() {
                 sequence.clear();
                 sequence
             } else {
@@ -59,7 +74,7 @@ impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
             }
         };
         SequenceEntry {
-            interner: &self.0,
+            interner: self,
             sequence,
         }
     }
@@ -80,7 +95,7 @@ pub struct SequenceEntry<
     Key: InternerKey<ImplKey = Range<usize>> = SequenceKey<Spur, 8>,
 > {
     /// Underlying sequence interner
-    interner: &'interner RefCell<(SequenceInterner<Item, Key>, Vec<Vec<Item>>)>,
+    interner: &'interner RecursiveSequenceInterner<Item, Key>,
 
     /// Buffer for a sequence that is in the process of being interned
     sequence: Vec<Item>,
@@ -96,7 +111,11 @@ impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>
 
     /// Finish the interning transaction
     pub fn intern(self) -> Key {
-        self.interner.borrow_mut().0.intern(&self.sequence[..])
+        self.interner
+            .0
+            .borrow_mut()
+            .interner
+            .intern(&self.sequence[..])
     }
 }
 //
@@ -105,8 +124,9 @@ impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>
 {
     fn drop(&mut self) {
         self.interner
+            .0
             .borrow_mut()
-            .1
+            .storage
             .push(std::mem::take(&mut self.sequence))
     }
 }
@@ -141,10 +161,9 @@ mod tests {
 
             // Check that storage is reused
             let state = interner.0.borrow();
-            let storage = &state.1;
-            assert_eq!(storage.len(), 1);
-            assert_eq!(storage[0].as_ptr(), storage_ptr);
-            assert_eq!(storage[0].capacity(), storage_capacity);
+            assert_eq!(state.storage.len(), 1);
+            assert_eq!(state.storage[0].as_ptr(), storage_ptr);
+            assert_eq!(state.storage[0].capacity(), storage_capacity);
         }
     }
 
@@ -177,7 +196,7 @@ mod tests {
                 assert_eq!(interner.borrow().get(key2), input2);
 
                 // Check that both vectors seem to be reused
-                assert_eq!(interner.0.borrow().1.len(), 2);
+                assert_eq!(interner.0.borrow().storage.len(), 2);
             }
         }
     }

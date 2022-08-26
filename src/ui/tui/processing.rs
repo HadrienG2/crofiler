@@ -318,7 +318,7 @@ fn describe_activities(
                     match display_activity_desc(
                         &mut output,
                         activity_trace.activity().id(),
-                        &parsed_arg.resolve(&trace),
+                        &parsed_arg.resolve(trace),
                         max_cols,
                     ) {
                         Ok(()) => {}

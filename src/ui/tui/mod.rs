@@ -28,7 +28,7 @@ const DURATION_WIDTH: usize = 12;
 const SELF_COLUMN_NAME: &str = "Self";
 
 /// Compute the percentage norm associated with a set of activities
-fn percent_norm<'a>(total_duration: Duration) -> Finite<Duration> {
+fn percent_norm(total_duration: Duration) -> Finite<Duration> {
     Finite::<Duration>::from_inner(100.0 / total_duration)
 }
 
@@ -147,10 +147,10 @@ fn setup_cursive(state: State) -> CursiveRunnable {
     ) {
         cursive.set_global_callback(event, move |cursive| {
             const GLOBAL_DIALOG_NAME: &str = "Global dialog";
-            if !cursive
+            if cursive
                 .screen_mut()
                 .find_layer_from_name(GLOBAL_DIALOG_NAME)
-                .is_some()
+                .is_none()
             {
                 let dialog = dialog_factory(cursive).with_name(GLOBAL_DIALOG_NAME);
                 cursive.add_layer(dialog);
@@ -232,7 +232,7 @@ fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadErr
 }
 
 /// Display a hierarchical profile
-fn show_hierarchical_profile<'a>(
+fn show_hierarchical_profile(
     cursive: &mut Cursive,
     parent_name: Box<str>,
     parent_percent_norm: Finite<Duration>,
@@ -307,8 +307,7 @@ fn show_hierarchical_profile<'a>(
             c.width(DURATION_WIDTH).ordering(duration_sort_order)
         })
         .column(HierarchicalColumn::Description, "Activity", |c| {
-            c.width(activity_width.into())
-                .ordering(description_sort_order)
+            c.width(activity_width).ordering(description_sort_order)
         });
     match sort_key {
         HierarchicalColumn::Duration(DurationKind::Total, _) => {
@@ -324,7 +323,8 @@ fn show_hierarchical_profile<'a>(
 
     // Collect children activities into the table
     let items = activity_infos
-        .iter()
+        .into_vec()
+        .into_iter()
         .zip(activity_descs.into_vec().into_iter())
         .map(|(activity_info, description)| {
             let mut buf = String::new();
@@ -354,8 +354,8 @@ fn show_hierarchical_profile<'a>(
                     .borrow_item(index)
                     .expect("Callback shouldn't be called with an invalid index");
                 let activity_desc_str: &str = &activity.description;
-                let activity_desc = if activity_desc_str.starts_with('+') {
-                    String::from(&activity_desc_str[1..]).into()
+                let activity_desc = if let Some(desc) = activity_desc_str.strip_prefix('+') {
+                    String::from(desc).into()
                 } else {
                     activity_desc_str.into()
                 };

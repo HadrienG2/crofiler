@@ -115,9 +115,9 @@ impl DisplayState {
     }
 
     /// Enter a new level of recursion or return Err if recursion limit reached
-    pub fn recurse(&self) -> Result<RecursionGuard, ()> {
+    pub fn recurse(&self) -> Result<RecursionGuard, RecursionLimitReached> {
         if !self.can_recurse() {
-            return Err(());
+            return Err(RecursionLimitReached);
         }
         {
             let mut state = self.0.borrow_mut();
@@ -144,6 +144,10 @@ impl Drop for RecursionGuard<'_> {
         state.max_recursion += 1;
     }
 }
+//
+/// `DisplayState::recurse` failed because the recursion limit was reached
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecursionLimitReached;
 
 #[cfg(test)]
 pub(crate) mod tests {

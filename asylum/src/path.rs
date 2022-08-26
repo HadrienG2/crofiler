@@ -146,7 +146,7 @@ impl<'parent, Parent: PathResolver + ?Sized> InternedPath<'parent, Parent> {
 //
 impl<'parent, Parent: PathResolver + ?Sized> PartialEq for InternedPath<'parent, Parent> {
     fn eq(&self, other: &Self) -> bool {
-        self.key == other.key && (&*self.parent as *const _ == &*other.parent as *const _)
+        self.key == other.key && std::ptr::eq(&*self.parent, &*other.parent)
     }
 }
 //

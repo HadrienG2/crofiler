@@ -315,7 +315,7 @@ impl<'entities> ValueView<'entities> {
 //
 impl<'entities> PartialEq for ValueView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.key == other.key)
+        std::ptr::eq(self.entities, other.entities) && (self.key == other.key)
     }
 }
 //

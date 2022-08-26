@@ -142,14 +142,13 @@ impl Activity {
     ) -> Result<Self, ActivityParseError> {
         // Handling of activity name
         let (id, arg_type) = if let Some(activity) = ACTIVITIES.get(&name) {
-            activity
+            *activity
         } else {
             return Err(ActivityParseError::UnknownActivity(
                 name.clone(),
                 args.take(),
             ));
         };
-        let arg_type = arg_type.clone();
 
         // Interior mutability to allow multiple mutable borrows
         let args = RefCell::new(args);
@@ -181,11 +180,8 @@ impl Activity {
             }
         };
         match arg_result {
-            Ok(arg) => Ok(Self {
-                id: id.clone(),
-                arg,
-            }),
-            Err(e) => Err(ActivityParseError::BadArguments(id.clone(), e)),
+            Ok(arg) => Ok(Self { id, arg }),
+            Err(e) => Err(ActivityParseError::BadArguments(id, e)),
         }
     }
 

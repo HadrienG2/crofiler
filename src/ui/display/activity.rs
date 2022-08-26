@@ -47,7 +47,7 @@ pub fn display_activity_desc(
             super::display_string(&mut output, s, max_cols)?;
         }
         ActivityArgument::FilePath(p) => {
-            write!(output, "{}", super::path::truncate_path(&p, max_cols))?;
+            write!(output, "{}", super::path::truncate_path(p, max_cols))?;
         }
         ActivityArgument::CppEntity(e)
         | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {

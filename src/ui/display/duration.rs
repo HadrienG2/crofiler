@@ -12,7 +12,7 @@ pub fn display_duration(output: impl io::Write, duration: Duration) -> io::Resul
 fn display_duration_impl(
     mut output: impl io::Write,
     duration: Duration,
-    hms: Option<HMS>,
+    force_hms: Option<ForceHMS>,
 ) -> io::Result<()> {
     if duration >= 23.0 * HOUR + 59.0 * MINUTE + 59.995 * SECOND {
         let mut days = (duration / DAY).floor();
@@ -22,35 +22,35 @@ fn display_duration_impl(
             remainder = 0.0;
         }
         write!(output, "{days}d ")?;
-        display_duration_impl(output, remainder, Some(HMS::ForceHour))
-    } else if hms == Some(HMS::ForceHour) || duration >= 59.0 * MINUTE + 59.995 * SECOND {
+        display_duration_impl(output, remainder, Some(ForceHMS::Hour))
+    } else if force_hms == Some(ForceHMS::Hour) || duration >= 59.0 * MINUTE + 59.995 * SECOND {
         let mut hours = (duration / HOUR).floor();
         let mut remainder = duration - hours * HOUR;
         if remainder >= 59.0 * MINUTE + 59.995 * SECOND {
             hours += 1.0;
             remainder = 0.0;
         }
-        if hms == Some(HMS::ForceHour) {
+        if force_hms == Some(ForceHMS::Hour) {
             write!(output, "{hours:02}:")?;
         } else {
             write!(output, "{hours}:")?;
         }
-        display_duration_impl(output, remainder, Some(HMS::ForceMinute))
-    } else if hms == Some(HMS::ForceMinute) || duration >= 59.995 * SECOND {
+        display_duration_impl(output, remainder, Some(ForceHMS::Minute))
+    } else if force_hms == Some(ForceHMS::Minute) || duration >= 59.995 * SECOND {
         let mut minutes = (duration / MINUTE).floor();
         let mut remainder = duration - minutes * MINUTE;
         if remainder >= 59.995 * SECOND {
             minutes += 1.0;
             remainder = 0.0;
         }
-        if hms == Some(HMS::ForceMinute) {
+        if force_hms == Some(ForceHMS::Minute) {
             write!(output, "{minutes:02}:")?;
         } else {
             write!(output, "{minutes}:")?;
         }
-        display_duration_impl(output, remainder, Some(HMS::ForceSecond))
-    } else if duration >= 0.999995 * SECOND || hms == Some(HMS::ForceSecond) {
-        if hms == Some(HMS::ForceSecond) {
+        display_duration_impl(output, remainder, Some(ForceHMS::Second))
+    } else if duration >= 0.999995 * SECOND || force_hms == Some(ForceHMS::Second) {
+        if force_hms == Some(ForceHMS::Second) {
             write!(output, "{:05.2}", duration / SECOND)?;
         } else {
             write!(output, "{:.2}s", duration / SECOND)?;
@@ -64,10 +64,10 @@ fn display_duration_impl(
 }
 //
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum HMS {
-    ForceHour,
-    ForceMinute,
-    ForceSecond,
+enum ForceHMS {
+    Hour,
+    Minute,
+    Second,
 }
 
 #[cfg(test)]

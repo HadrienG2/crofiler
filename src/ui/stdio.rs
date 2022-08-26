@@ -60,7 +60,7 @@ pub fn run(args: CliArgs) {
 /// Display the amount of time spent on various activity types
 fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration, threshold: Duration) {
     println!("\nSelf-duration breakdown by activity type:");
-    let activity_type_breakdown = profile::activity_type_breakdown(&trace);
+    let activity_type_breakdown = profile::activity_type_breakdown(trace);
     for (idx, (name, duration)) in activity_type_breakdown.iter().enumerate() {
         if duration * duration_norm < threshold {
             println!(

@@ -263,6 +263,11 @@ impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
         self.interner.concatenated.len() - self.initial_concatenated_len
     }
 
+    /// Truth that no item was added to the sequence yet
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Finish the interning transaction
     pub fn intern(self) -> K {
         // Hash the input sequence and figure what its interning key would be

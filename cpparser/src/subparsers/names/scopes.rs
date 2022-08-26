@@ -262,7 +262,7 @@ impl<'entities> IdExpressionView<'entities> {
 //
 impl<'entities> PartialEq for IdExpressionView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
@@ -332,7 +332,7 @@ impl<'entities> NestedNameSpecifierView<'entities> {
 //
 impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
@@ -422,7 +422,7 @@ impl<'entities> ScopeView<'entities> {
 //
 impl<'entities> PartialEq for ScopeView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //

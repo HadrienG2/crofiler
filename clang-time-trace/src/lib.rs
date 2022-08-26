@@ -259,7 +259,10 @@ impl FromStr for ClangTrace {
         let mut clang_pid = None;
         let merge_pid =
             |curr_pid: &mut Option<Pid>, proposed_pid: Pid| match (*curr_pid, proposed_pid) {
-                (None, _) => Ok(*curr_pid = Some(proposed_pid)),
+                (None, _) => {
+                    *curr_pid = Some(proposed_pid);
+                    Ok(())
+                }
                 (Some(pid1), pid2) if pid1 == pid2 => Ok(()),
                 (Some(pid1), pid2) => Err(ClangTraceParseError::InconsistentPid(pid1, pid2)),
             };

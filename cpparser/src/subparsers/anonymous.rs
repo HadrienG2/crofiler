@@ -166,7 +166,7 @@ impl<'entities> ClangLambdaView<'entities> {
 //
 impl<'entities> PartialEq for ClangLambdaView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
@@ -215,7 +215,7 @@ impl<'entities> LibibertyLambdaView<'entities> {
 //
 impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //

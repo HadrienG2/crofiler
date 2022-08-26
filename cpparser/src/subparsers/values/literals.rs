@@ -80,7 +80,7 @@ impl<'entities> LiteralView<'entities> {
 //
 impl<'entities> PartialEq for LiteralView<'entities> {
     fn eq(&self, other: &Self) -> bool {
-        (self.entities as *const _ == other.entities as *const _) && (self.inner == other.inner)
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //

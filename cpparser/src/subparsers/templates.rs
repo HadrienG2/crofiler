@@ -177,12 +177,10 @@ impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         if let Some(list) = &self.0 {
             list.display_impl(f, state)
+        } else if let Ok(_guard) = state.recurse() {
+            write!(f, "<, void>")
         } else {
-            if let Ok(_guard) = state.recurse() {
-                write!(f, "<, void>")
-            } else {
-                write!(f, "<…>")
-            }
+            write!(f, "<…>")
         }
     }
 }
