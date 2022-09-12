@@ -46,41 +46,14 @@ enum ProfileKind {
     Flat,
 }
 
-/// Information about the TUI's current profile sorting configuration
-// FIXME: Combine with DurationDisplay into a single DisplayConfig struct that
-//        can more easily be passed around, make that public and the other
-//        structs/enums/fields private.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SortConfig {
-    /// Ordering to be used for each column of a hierarchical profile
-    pub order: [Ordering; 3],
+/// Information about the TUI's current display configuration
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProfileDisplay {
+    /// Current column sorting configuration
+    sort_config: SortConfig,
 
-    /// Active sorting column (default column)
-    pub key: HierarchicalColumnName,
-}
-//
-/// Hierarchical profile column identifier
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum HierarchicalColumnName {
-    /// How much time was spent on an activity, overall
-    TotalDuration = 0,
-
-    /// How much time was spent on this activity specifically, excluding
-    /// downstream activities
-    SelfDuration,
-
-    /// Description of the activity
-    Description,
-}
-//
-impl HierarchicalColumnName {
-    /// Constrain this column name into the flat profile column name set
-    fn into_flat(self) -> Self {
-        match self {
-            HierarchicalColumnName::TotalDuration => HierarchicalColumnName::SelfDuration,
-            other => other,
-        }
-    }
+    /// Current duration display configuration
+    duration_display: Option<DurationDisplay>,
 }
 
 /// Display a hierarchical profile
@@ -109,7 +82,7 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
         match super::with_state(cursive, |state| {
             // Determine the next duration display or return None if no profile
             // is being displayed (it means clang data is still being loaded)
-            let new_duration_display = match state.duration_display? {
+            let new_duration_display = match state.display_config.duration_display? {
                 DurationDisplay::Percentage(_, PercentageReference::Global) => {
                     DurationDisplay::Percentage(
                         Finite::<Duration>::from_inner(0.0),
@@ -126,13 +99,13 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
                     PercentageReference::Global,
                 ),
             };
-            state.duration_display = Some(new_duration_display);
+            state.display_config.duration_display = Some(new_duration_display);
 
             // Also bubble up a copy of the profile stack and sort configuration
             Some((
                 new_duration_display,
                 state.profile_stack.clone(),
-                state.sort_config,
+                state.display_config.sort_config,
             ))
         }) {
             Some(tuple) => tuple,
@@ -146,12 +119,19 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
         new_duration_display,
         |layer, mut table, table_duration_display| {
             // Recreate the duration columns with the new configuration
-            table.remove_column(0);
             match layer.kind {
                 ProfileKind::Hierarchical => table.remove_column(1),
                 ProfileKind::Flat => {}
             }
-            add_duration_cols_and_sort(&mut table, layer.kind, table_duration_display, sort_config);
+            table.remove_column(0);
+            add_duration_cols_and_sort(
+                &mut table,
+                layer.kind,
+                ProfileDisplay {
+                    sort_config,
+                    duration_display: Some(table_duration_display),
+                },
+            );
         },
     );
 }
@@ -186,7 +166,7 @@ fn show_profile(
     let description_width = terminal_width as usize - non_description_width;
 
     // Update the TUI state and load required data from it
-    let (sort_config, duration_display, activity_descs, mut footer) = register_profile(
+    let (display_config, activity_descs, mut footer) = register_profile(
         cursive,
         terminal_width,
         ProfileLayer {
@@ -206,8 +186,7 @@ fn show_profile(
         get_other_activities,
         activity_descs,
         description_width,
-        duration_display,
-        sort_config,
+        display_config,
     );
 
     // Add help instructions to the trace description footer
@@ -247,21 +226,25 @@ fn register_profile(
     layer: ProfileLayer,
     activity_infos: &[ActivityInfo],
     description_width: u16,
-) -> (SortConfig, DurationDisplay, Box<[Arc<str>]>, String) {
+) -> (ProfileDisplay, Box<[Arc<str>]>, String) {
     super::with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
-        let mut duration_display = *state.duration_display.get_or_insert_with(|| {
-            // Check out the global percentage norm. If it's not been
-            // initialized yet, it means we are the first (toplevel)
-            // profile, and thus our local norm is the global norm.
-            let global_percent_norm = *state
-                .global_percent_norm
-                .get_or_insert(layer.parent_percent_norm);
+        let mut duration_display =
+            *state
+                .display_config
+                .duration_display
+                .get_or_insert_with(|| {
+                    // Check out the global percentage norm. If it's not been
+                    // initialized yet, it means we are the first (toplevel)
+                    // profile, and thus our local norm is the global norm.
+                    let global_percent_norm = *state
+                        .global_percent_norm
+                        .get_or_insert(layer.parent_percent_norm);
 
-            // Default to a percentage of the clang execution time
-            DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
-        });
+                    // Default to a percentage of the clang execution time
+                    DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
+                });
 
         // In "relative to parent" duration display mode, set the percent
         // normalization factor that is appropriate for the active layer
@@ -284,7 +267,7 @@ fn register_profile(
         let footer = state.processing_thread.describe_trace(terminal_width);
 
         // Bubble up useful data for following steps
-        (state.sort_config, duration_display, activity_descs, footer)
+        (state.display_config, activity_descs, footer)
     })
 }
 
@@ -296,8 +279,7 @@ fn make_profile_view(
     get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>>,
     activity_descs: Box<[Arc<str>]>,
     description_width: usize,
-    duration_display: DurationDisplay,
-    sort_config: SortConfig,
+    display_config: ProfileDisplay,
 ) -> impl View {
     // Prepare the tabular data
     let items = activity_infos
@@ -338,10 +320,11 @@ fn make_profile_view(
         .items(items)
         .selected_row(0)
         .column(HierarchicalColumn::Description, "Activity", |c| {
-            c.width(description_width).ordering(sort_config.order[2])
+            c.width(description_width)
+                .ordering(display_config.sort_config.order[2])
         })
         .on_sort(sort_other_profiles);
-    add_duration_cols_and_sort(&mut table, kind, duration_display, sort_config);
+    add_duration_cols_and_sort(&mut table, kind, display_config);
 
     // Let user zoom in on child activities in hierarchical profiles
     match kind {
@@ -439,8 +422,8 @@ fn sort_other_profiles(cursive: &mut Cursive, column: HierarchicalColumn, order:
     let mut column_name = column.name();
     let (past_views, duration_display) = super::with_state(cursive, |state| {
         // Update sort config for future views
-        state.sort_config.order[column_name as usize] = order;
-        state.sort_config.key = column_name;
+        state.display_config.sort_config.order[column_name as usize] = order;
+        state.display_config.sort_config.key = column_name;
 
         // Get a list of past views
         let num_past_views = state.profile_stack.len() - 1;
@@ -453,6 +436,7 @@ fn sort_other_profiles(cursive: &mut Cursive, column: HierarchicalColumn, order:
 
         // Get the duration display configuration
         let duration_display = state
+            .display_config
             .duration_display
             .expect("Duration display configuration should be set by now");
 
@@ -510,9 +494,13 @@ fn for_each_profile_layer(
 fn add_duration_cols_and_sort(
     table: &mut ProfileView,
     kind: ProfileKind,
-    duration_display: DurationDisplay,
-    mut sort_config: SortConfig,
+    display_config: ProfileDisplay,
 ) {
+    let mut sort_config = display_config.sort_config;
+    let duration_display = display_config.duration_display.expect(
+        "Duration display configuration should have been set \
+         before creating/modifying table duration columns",
+    );
     match kind {
         ProfileKind::Hierarchical => {
             // Add duration columns appropriate for hierarchical profiles
@@ -580,7 +568,7 @@ enum DurationKind {
 //
 /// Kind of display to be used for a Duration column
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DurationDisplay {
+enum DurationDisplay {
     /// Absolute time elapsed processing this activity
     Time,
 
@@ -594,7 +582,7 @@ pub enum DurationDisplay {
 //
 /// Reference durations with respect to which percentages can be computed
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum PercentageReference {
+enum PercentageReference {
     /// Total time spent running clang
     Global,
 
@@ -602,7 +590,29 @@ pub enum PercentageReference {
     Parent,
 }
 //
+/// Hierarchical profile column identifier
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum HierarchicalColumnName {
+    /// How much time was spent on an activity, overall
+    TotalDuration = 0,
+
+    /// How much time was spent on this activity specifically, excluding
+    /// downstream activities
+    SelfDuration,
+
+    /// Description of the activity
+    Description,
+}
+//
 impl HierarchicalColumnName {
+    /// Constrain this column name into the flat profile column name set
+    fn into_flat(self) -> Self {
+        match self {
+            HierarchicalColumnName::TotalDuration => HierarchicalColumnName::SelfDuration,
+            other => other,
+        }
+    }
+
     /// Add styling information to get a column name
     fn into_column(self, duration_display: DurationDisplay) -> HierarchicalColumn {
         match self {
@@ -702,5 +712,24 @@ fn flat_self_column_name(duration_display: DurationDisplay) -> &'static str {
         DurationDisplay::Percentage(_, PercentageReference::Global) => "Self%Tot",
         DurationDisplay::Percentage(_, PercentageReference::Parent) => "Self%Par",
         DurationDisplay::Time => "SelfDur",
+    }
+}
+
+/// Information about the TUI's current profile sorting configuration
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SortConfig {
+    /// Ordering to be used for each column of a hierarchical profile
+    order: [Ordering; 3],
+
+    /// Active sorting column (default column)
+    key: HierarchicalColumnName,
+}
+//
+impl Default for SortConfig {
+    fn default() -> Self {
+        Self {
+            order: [Ordering::Greater, Ordering::Greater, Ordering::Less],
+            key: HierarchicalColumnName::TotalDuration,
+        }
     }
 }

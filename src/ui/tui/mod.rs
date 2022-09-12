@@ -5,17 +5,13 @@ mod init;
 mod processing;
 mod profile;
 
-use self::{
-    processing::ProcessingThread,
-    profile::{DurationDisplay, HierarchicalColumnName, SortConfig},
-};
+use self::{processing::ProcessingThread, profile::ProfileDisplay};
 use crate::ui::tui::profile::ProfileLayer;
 use crate::CliArgs;
 use clang_time_trace::Duration;
 use cursive::{views::Dialog, Cursive};
 use decorum::Finite;
 use log::LevelFilter;
-use std::cmp::Ordering;
 use syslog::Facility;
 
 /// Run the analysis using the textual user interface
@@ -28,11 +24,7 @@ pub fn run(args: CliArgs) {
         processing_thread: ProcessingThread::start(&args.input),
         global_percent_norm: None,
         profile_stack: Vec::new(),
-        sort_config: SortConfig {
-            order: [Ordering::Greater, Ordering::Greater, Ordering::Less],
-            key: HierarchicalColumnName::TotalDuration,
-        },
-        duration_display: None,
+        display_config: Default::default(),
     });
 
     // Wait for the clang time trace to finish loading
@@ -85,18 +77,8 @@ pub struct State {
     /// Current stack of profiling UI layers
     profile_stack: Vec<ProfileLayer>,
 
-    /// Current column sorting configuration
-    ///
-    /// Tells the ordering to be used for each column and default column
-    /// (toplevel sort key).
-    ///
-    sort_config: SortConfig,
-
-    /// Current duration display configuration
-    ///
-    /// Will be set when the first layer of hierarchical profiling is displayed.
-    ///
-    duration_display: Option<DurationDisplay>,
+    /// Current profile display configuration
+    display_config: ProfileDisplay,
 }
 
 /// Run a closure on the UI state
