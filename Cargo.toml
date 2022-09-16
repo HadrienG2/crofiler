@@ -1,5 +1,5 @@
 [workspace]
-members = ["simpp"]
+members = ["dispplay", "simpp"]
 
 [package]
 name = "crofiler"
