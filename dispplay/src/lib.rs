@@ -91,7 +91,7 @@ pub enum Tree {
     /// Display without inner structure (e.g. single identifier)
     ///
     /// If style allows, this can still be shrunk through ellipses.
-    ///
+    // TODO: Implement that, and then we have abbreviated paths
     Leaf(String),
 
     /// Homogeneous list of things (e.g. function parameters, template
@@ -114,7 +114,7 @@ pub enum Tree {
     },
     //
     // TODO: Also account for heterogeneous lists of things, e.g. the various
-    //       components of an UnqualifiedId
+    //       components of an UnqualifiedId. Call that a tuple ?
 }
 
 /// Like a Tree, but indicates the nature of the thing being displayed
