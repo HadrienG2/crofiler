@@ -1,4 +1,5 @@
-use cpparser::subparsers::names::atoms::IdentifierView;
+mod entities;
+
 use lasso::{MiniSpur, Rodeo};
 use std::{fmt::Write, num::NonZeroU8};
 
@@ -61,6 +62,9 @@ impl Context {
     //       gradually fleshed out to include pretty-printing & simplification.
     //       This should integrate the functionality of recycle below
     //
+    //       Consider having that method just take an impl TreeDisplay as a
+    //       parameter, making Tree an implementation detail.
+    //
     /// Discard a Tree in a manner that allows its allocations to be reused
     pub fn recycle(&mut self, (_id, tree): TaggedTree) {
         self.recycle_impl(tree)
@@ -91,7 +95,7 @@ impl Context {
 pub enum Tree {
     /// Display without inner structure (e.g. single identifier)
     ///
-    /// If style allows, this can still be shrunk through ellipses.
+    /// If style settings allow, this can still be shrunk through ellipses.
     // TODO: Implement that, and then replace truncate_path
     Leaf(String),
 
@@ -160,16 +164,6 @@ pub trait TreeDisplay {
     // purpose other than making parsing slightly more expensive.
     //
     fn tree_display(&self, context: &mut Context) -> TaggedTree;
-}
-
-// Implementation for IdentifierView
-// TODO: Move to separate module
-impl TreeDisplay for IdentifierView<'_> {
-    fn tree_display(&self, context: &mut Context) -> TaggedTree {
-        let mut s = context.new_leaf();
-        write!(s, "{self}").expect("Actually infaillible");
-        (context.id("Identifier"), Tree::Leaf(s))
-    }
 }
 
 // TODO: Add tests
