@@ -145,7 +145,7 @@ impl Display for LiteralValue {
         match self {
             Self::I64(i) => write!(f, "{i}"),
             Self::U64(u) => write!(f, "{u}"),
-            Self::Char(c) => write!(f, "'{c}'"),
+            Self::Char(c) => write!(f, "{c:?}"),
         }
     }
 }
