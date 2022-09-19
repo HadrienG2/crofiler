@@ -58,13 +58,14 @@ impl Context {
     }
 
     // TODO: Add method to display a TaggedTree, with configuration that's
-    //       gradually fleshed out to include pretty-printing & simplification
-
+    //       gradually fleshed out to include pretty-printing & simplification.
+    //       This should integrate the functionality of recycle below
+    //
     /// Discard a Tree in a manner that allows its allocations to be reused
     pub fn recycle(&mut self, (_id, tree): TaggedTree) {
         self.recycle_impl(tree)
     }
-
+    //
     /// Implementation of recycle(), operating below the Id layer
     fn recycle_impl(&mut self, tree: Tree) {
         match tree {
@@ -91,7 +92,7 @@ pub enum Tree {
     /// Display without inner structure (e.g. single identifier)
     ///
     /// If style allows, this can still be shrunk through ellipses.
-    // TODO: Implement that, and then we have abbreviated paths
+    // TODO: Implement that, and then replace truncate_path
     Leaf(String),
 
     /// Homogeneous list of things (e.g. function parameters, template
@@ -115,6 +116,9 @@ pub enum Tree {
     //
     // TODO: Also account for heterogeneous lists of things, e.g. the various
     //       components of an UnqualifiedId. Call that a tuple ?
+    //
+    // TODO: Go over all subparsers of cpparser until I think I can implement
+    //       all existing displays.
 }
 
 /// Like a Tree, but indicates the nature of the thing being displayed
@@ -151,6 +155,10 @@ pub enum Separator {
 /// Method for displaying a C++ entity with advanced functionality
 pub trait TreeDisplay {
     /// Get a tree-like visual representation for advanced display
+    //
+    // For tags, use the entity name without the trailing "View" : it serves no
+    // purpose other than making parsing slightly more expensive.
+    //
     fn tree_display(&self, context: &mut Context) -> TaggedTree;
 }
 
@@ -160,7 +168,7 @@ impl TreeDisplay for IdentifierView<'_> {
     fn tree_display(&self, context: &mut Context) -> TaggedTree {
         let mut s = context.new_leaf();
         write!(s, "{self}").expect("Actually infaillible");
-        (context.id("IdentifierView"), Tree::Leaf(s))
+        (context.id("Identifier"), Tree::Leaf(s))
     }
 }
 
