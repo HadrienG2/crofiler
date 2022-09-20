@@ -6,5 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+assert_matches = "1.5"
+asylum = { path = "../asylum" }
 cpparser = { path = "../cpparser" }
 lasso = { version = "0.6", features = ["ahasher"] }
+unicode-width = "0.1"

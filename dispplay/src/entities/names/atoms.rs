@@ -1,15 +1,18 @@
 //! Atoms from the C++ entity grammar
 
-use crate::{Context, TaggedTree, Tree, TreeDisplay};
+use crate::{Context, Tree, TreeDisplay};
 use cpparser::subparsers::names::atoms::IdentifierView;
 use std::fmt::Write;
 
-// Implementation for IdentifierView
 impl TreeDisplay for IdentifierView<'_> {
-    fn tree_display(&self, context: &mut Context) -> TaggedTree {
+    fn raw_tree(&self, context: &mut Context) -> Tree {
         let mut s = context.new_leaf();
         write!(s, "{self}").expect("Actually infaillible");
-        (context.id("Identifier"), Tree::Leaf(s))
+        Tree::Leaf(s)
+    }
+
+    fn tag() -> &'static str {
+        "Identifier"
     }
 }
 
@@ -27,7 +30,7 @@ mod tests {
 
         let mut context = Context::new();
         assert_eq!(
-            view.tree_display(&mut context),
+            view.tree(&mut context),
             (context.id("Identifier"), Tree::Leaf(IDENTIFIER.to_owned()))
         );
 

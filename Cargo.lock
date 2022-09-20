@@ -477,8 +477,11 @@ checksum = "0e25ea47919b1560c4e3b7fe0aaab9becf5b84a10325ddf7db0f0ba5e1026499"
 name = "dispplay"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
+ "asylum",
  "cpparser",
  "lasso",
+ "unicode-width",
 ]
 
 [[package]]
