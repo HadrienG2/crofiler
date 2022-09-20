@@ -108,7 +108,7 @@ impl Context {
         if flat_width <= cols {
             flat_display(tree, target);
         } else {
-            // TODO: Expand the idea of process_flat_display so that this can fit in
+            // TODO: Expand the idea of process_flat_display so that this can fit in?
             match tree {
                 Tree::Leaf(s) => {
                     if flat_width <= cols {
