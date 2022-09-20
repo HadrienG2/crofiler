@@ -49,7 +49,7 @@ impl Context {
         self.config.entry(id).or_default()
     }
 
-    /// Directly access the configuration, knowing the interning key
+    /// Compute a node's configuration, accounting for parent configuration
     fn full_config(&mut self, id: Id, parent: NodeConfig) -> NodeConfig {
         parent.with_child(*self.node_config_raw(id))
     }
@@ -94,7 +94,7 @@ impl Context {
             .unwrap_or_default()
     }
 
-    /// Implementation of display() operating directly on TaggedTrees
+    /// Implementation of display() operating directly on Trees
     fn display_impl(
         &mut self,
         tree: &Tree,
