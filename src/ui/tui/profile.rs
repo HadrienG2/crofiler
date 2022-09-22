@@ -318,13 +318,13 @@ fn make_profile_view(
     // Set up the children activity table
     let mut table = ProfileView::new()
         .items(items)
-        .selected_row(0)
         .column(HierarchicalColumn::Description, "Activity", |c| {
             c.width(description_width)
                 .ordering(display_config.sort_config.order[2])
         })
         .on_sort(sort_other_profiles);
     add_duration_cols_and_sort(&mut table, kind, display_config);
+    table.set_selected_row(0);
 
     // Let user zoom in on child activities in hierarchical profiles
     match kind {
