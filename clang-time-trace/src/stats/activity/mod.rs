@@ -341,6 +341,7 @@ generate_activities! {
     "LibCallsShrinkWrapPass" => (LibCallsShrinkWrapPass, MangledSymbol),
     "LCSSAPass" => (LCSSAPass, MangledSymbol),
     "LoopDeletionPass" => (LoopDeletionPass, UnnamedLoop),
+    "DivRemPairsPass" => (DivRemPairsPass, MangledSymbol),
 }
 
 /// What can go wrong while parsing an Activity
