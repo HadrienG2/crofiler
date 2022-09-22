@@ -16,7 +16,7 @@ fn force_parse_arg(trace: &mut ClangTrace, id: ActivityTraceId) -> ParsedActivit
     match raw_arg.parse(trace) {
         Ok(parsed) => parsed,
         Err(e) => {
-            log::error!("Failed to parse activity argument ({e}), will treat it as a string");
+            log::error!("Failed to parse activity argument {detail:?} (got error {e}). Will treat it as a string.");
             if let Some(detail) = detail {
                 ParsedActivityArgument::String(detail)
             } else {
