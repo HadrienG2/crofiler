@@ -12,6 +12,7 @@ use clang_time_trace::Duration;
 use cursive::{views::Dialog, Cursive};
 use decorum::Finite;
 use log::LevelFilter;
+use std::panic::{self, AssertUnwindSafe};
 use syslog::Facility;
 
 /// Run the analysis using the textual user interface
@@ -59,8 +60,14 @@ pub fn run(args: CliArgs) {
         |state| state.processing_thread.get_all_activities(),
     );
 
-    // Start the cursive event loop
-    cursive.run();
+    // Start the cursive event loop + last-chance panic handler
+    let res = panic::catch_unwind(AssertUnwindSafe(move || cursive.run()));
+    if let Err(e) = res {
+        eprintln!("The TUI crashed due to an unhandled panic.\n\
+                   This is a bug, please report it at https://github.com/HadrienG2/crofiler/issues!\n\
+                   The system logs may contain more information about what happened.");
+        panic::resume_unwind(e);
+    }
 }
 
 /// General UI state available via cursive's user data mechanism
