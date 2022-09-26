@@ -230,26 +230,25 @@ fn register_profile(
     super::with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
-        let mut duration_display =
-            *state
-                .display_config
-                .duration_display
-                .get_or_insert_with(|| {
-                    // Check out the global percentage norm. If it's not been
-                    // initialized yet, it means we are the first (toplevel)
-                    // profile, and thus our local norm is the global norm.
-                    let global_percent_norm = *state
-                        .global_percent_norm
-                        .get_or_insert(layer.parent_percent_norm);
+        let duration_display = state
+            .display_config
+            .duration_display
+            .get_or_insert_with(|| {
+                // Check out the global percentage norm. If it's not been
+                // initialized yet, it means we are the first (toplevel)
+                // profile, and thus our local norm is the global norm.
+                let global_percent_norm = *state
+                    .global_percent_norm
+                    .get_or_insert(layer.parent_percent_norm);
 
-                    // Default to a percentage of the clang execution time
-                    DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
-                });
+                // Default to a percentage of the clang execution time
+                DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)
+            });
 
         // In "relative to parent" duration display mode, set the percent
         // normalization factor that is appropriate for the active layer
         if let DurationDisplay::Percentage(ref mut norm, PercentageReference::Parent) =
-            &mut duration_display
+            duration_display
         {
             *norm = layer.parent_percent_norm;
         }
