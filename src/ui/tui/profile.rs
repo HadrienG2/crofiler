@@ -690,7 +690,7 @@ impl TableViewItem<HierarchicalColumn> for HierarchicalData {
 type ProfileView = TableView<HierarchicalData, HierarchicalColumn>;
 
 /// Width of duration columns
-const DURATION_WIDTH: usize = 12;
+const DURATION_WIDTH: usize = 11;
 
 /// Name of the self-duration column
 const HIERARCHICAL_SELF_COLUMN_NAME: &str = "Self";
@@ -701,7 +701,7 @@ fn total_column_name(duration_display: DurationDisplay) -> &'static str {
     match duration_display {
         DurationDisplay::Percentage(_, PercentageReference::Global) => "%Total",
         DurationDisplay::Percentage(_, PercentageReference::Parent) => "%Parent",
-        DurationDisplay::Time => "Duration",
+        DurationDisplay::Time => "Time",
     }
 }
 
@@ -711,7 +711,7 @@ fn flat_self_column_name(duration_display: DurationDisplay) -> &'static str {
     match duration_display {
         DurationDisplay::Percentage(_, PercentageReference::Global) => "Self%Tot",
         DurationDisplay::Percentage(_, PercentageReference::Parent) => "Self%Par",
-        DurationDisplay::Time => "SelfDur",
+        DurationDisplay::Time => "SelfTime",
     }
 }
 
