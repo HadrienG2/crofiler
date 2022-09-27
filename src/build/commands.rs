@@ -25,8 +25,10 @@ pub fn load() -> Result<Database, DatabaseLoadError> {
 pub enum DatabaseLoadError {
     /// Could not open database
     #[error(
-        "no compilation database found, please go to the build directory \
-        or re-run cmake with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        "no compilation database found, you may want to either 1/go to the \
+        project's build directory, 2/re-run cmake with option \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON or 3/point me to a pre-computed \
+        time-trace file from clang"
     )]
     FileNotFound,
 
