@@ -14,7 +14,7 @@ unicode-width = "0.1"
 
 [dev-dependencies]
 assert_matches = "1.5"
-criterion = "0.3"
+criterion = { version = "0.4", default-features = false }
 pretty_assertions = "1.2"
 
 # Benchmarking configuration

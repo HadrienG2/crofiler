@@ -16,5 +16,5 @@ thiserror = "1.0"
 [dev-dependencies]
 assert_matches = "1.5"
 maplit = "1.0"
-more-asserts = "0.2"
+more-asserts = "0.3"
 pretty_assertions = "1.2"
