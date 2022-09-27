@@ -114,6 +114,6 @@ fn help_dialog(_: &mut Cursive) -> Dialog {
         - F toggles between flat and hierarchical profiles\n\
         - Q quits this program\n\
         \n\
-        Logs are sent to syslog to avoid display issues",
+        Logs go to syslog to avoid display corruption",
     )
 }

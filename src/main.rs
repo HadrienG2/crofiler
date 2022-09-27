@@ -31,11 +31,11 @@ pub struct CliArgs {
 
     /// Choice of user interface
     ///
-    /// "tui" is an interactive TUI that requires a tty
+    /// "tui" is an interactive TUI (requires a tty)
     ///
     /// "stdio" is a non-interactive display that you can pipe to a file
     ///
-    /// "auto" selectes the TUI if connected to a tty, otherwise "stdio"
+    /// "auto" selects the TUI if connected to a tty, otherwise "stdio"
     ///
     #[clap(short, long, default_value = "auto", arg_enum)]
     ui: UI,
