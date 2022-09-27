@@ -54,7 +54,8 @@ pub fn run(args: CliArgs) {
     );
 
     // Conclude on parser/interner usage during this session
-    trace.log_parser_usage();
+    #[cfg(feature = "unstable_interner_stats")]
+    trace.log_interner_usage();
 }
 
 /// Display the amount of time spent on various activity types

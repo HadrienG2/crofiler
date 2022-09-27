@@ -14,7 +14,6 @@ use self::{
     tree::{ActivityTree, ActivityTreeBuilder},
 };
 use cpparser::{EntityKey, EntityParser, EntityView};
-use log::info;
 use serde_json as json;
 use std::{
     collections::HashMap,
@@ -173,7 +172,8 @@ impl ClangTrace {
     /// will be logged by this function is unspecified and subjected to change
     /// without advance notice!
     ///
-    pub fn log_parser_usage(&self) {
+    pub fn log_interner_usage(&self) {
+        use log::info;
         let parser = &self.entities;
         info!("EntityParser interner usage statistics:");
         info!("- Identifiers: {}", parser.num_identifiers());

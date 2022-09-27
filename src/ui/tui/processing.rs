@@ -369,7 +369,8 @@ fn describe_activities(
         .collect();
 
     // Conclude on new parser/interner usage after this transaction
-    trace.log_parser_usage();
+    #[cfg(feature = "unstable_interner_stats")]
+    trace.log_interner_usage();
 
     // Emit results
     result

@@ -6,6 +6,14 @@ name = "crofiler"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Display statistics on the usage of the C++ entity interners
+#
+# This can be used during development to adjust interner key sizes based on
+# real-world workloads.
+#
+unstable_interner_stats = []
+
 [dependencies]
 atty = "0.2"
 chrono = "0.4"
