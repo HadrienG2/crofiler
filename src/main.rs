@@ -2,6 +2,7 @@
 
 #![deny(missing_docs)]
 
+mod build;
 mod profile;
 mod ui;
 
