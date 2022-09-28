@@ -1,11 +1,13 @@
 //! Full-build profiling facilities
 
+mod cmakeperf;
+
 use serde::Deserialize;
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
 
 /// Load a previously measured build profile
-pub fn load(path: impl AsRef<Path>) -> Result<Vec<Unit>, ProfileLoadError> {
+pub fn load(path: impl AsRef<Path>) -> Result<Profile, ProfileLoadError> {
     let reader = match csv::Reader::from_path(path.as_ref()) {
         Err(e) => match e.kind() {
             csv::ErrorKind::Io(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -23,7 +25,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Vec<Unit>, ProfileLoadError> {
     Ok(result)
 }
 
-/// Result of loading a build profile from a file
+/// Failure to load a build profile from a file
 #[derive(Debug, Error)]
 pub enum ProfileLoadError {
     /// Build profile file not found
@@ -69,3 +71,6 @@ impl Unit {
         self.wall_time_secs.map(Duration::from_secs_f32)
     }
 }
+
+/// Full build profile
+type Profile = Vec<Unit>;

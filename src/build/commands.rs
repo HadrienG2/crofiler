@@ -115,4 +115,4 @@ impl Entry {
 pub type Database = Vec<Entry>;
 
 /// Location of the compilation database relative to the build directory
-const LOCATION: &str = "compile_commands.json";
+pub const LOCATION: &str = "compile_commands.json";
