@@ -31,7 +31,7 @@ pub struct CliArgs {
 
     /// Choice of user interface
     ///
-    /// "tui" is an interactive TUI (requires a tty)
+    /// "tui" is an interactive Text User Interface (requires a tty)
     ///
     /// "stdio" is a non-interactive display that you can pipe to a file
     ///
