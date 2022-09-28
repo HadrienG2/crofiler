@@ -14,6 +14,11 @@ use decorum::Finite;
 use std::{cell::RefCell, cmp::Ordering, rc::Rc, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
+/// Truth that profiling is in progress
+pub fn profiling(cursive: &mut Cursive) -> bool {
+    with_state(cursive, |state| !state.profile_stack.is_empty())
+}
+
 /// Information about a layer of the cursive TUI stack that contains a profile
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileLayer {
@@ -76,6 +81,11 @@ pub fn show_hierarchical_profile(
 
 /// Switch to a different duration unit in all currently displayed profiles
 pub fn switch_duration_unit(cursive: &mut Cursive) {
+    // This does nothing when we're not doing profiling
+    if !profiling(cursive) {
+        return;
+    }
+
     // Update TUI state and extract required data from it, or just return if no
     // profile is being displayed yet.
     let (new_duration_display, profile_stack, sort_config) =

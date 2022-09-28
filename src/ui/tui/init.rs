@@ -4,6 +4,7 @@ use super::{profile, State};
 use clang_time_trace::ClangTraceLoadError;
 use cursive::{
     event::{Event, Key},
+    traits::Scrollable,
     view::Nameable,
     views::{Dialog, SelectView},
     Cursive, CursiveRunnable,
@@ -28,7 +29,7 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
     fn set_global_dialog_callback(
         cursive: &mut Cursive,
         event: impl Into<Event>,
-        mut dialog_factory: impl 'static + FnMut(&mut Cursive) -> Dialog,
+        mut dialog_factory: impl 'static + FnMut(&mut Cursive) -> Option<Dialog>,
     ) {
         cursive.set_global_callback(event, move |cursive| {
             // This name must not be a valid C++ entity name to avoid namespace
@@ -39,17 +40,20 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
                 .find_layer_from_name(GLOBAL_DIALOG_NAME)
                 .is_none()
             {
-                let dialog = dialog_factory(cursive).with_name(GLOBAL_DIALOG_NAME);
-                cursive.add_layer(dialog);
+                if let Some(dialog) = dialog_factory(cursive) {
+                    cursive.add_layer(dialog.with_name(GLOBAL_DIALOG_NAME));
+                }
             }
         });
     }
 
     // Q and Ctrl+C quit, after confirming that this is wanted
-    fn quit_dialog(_: &mut Cursive) -> Dialog {
-        Dialog::text("Ready to quit?")
-            .button("Yes", Cursive::quit)
-            .dismiss_button("No")
+    fn quit_dialog(_: &mut Cursive) -> Option<Dialog> {
+        Some(
+            Dialog::text("Ready to quit?")
+                .button("Yes", Cursive::quit)
+                .dismiss_button("No"),
+        )
     }
     set_global_dialog_callback(&mut cursive, 'q', quit_dialog);
     set_global_dialog_callback(&mut cursive, Event::CtrlChar('c'), quit_dialog);
@@ -116,7 +120,7 @@ fn exit_current_layer(cursive: &mut Cursive) {
 }
 
 /// Interactive backtrace dialog
-fn backtrace_dialog(cursive: &mut Cursive) -> Dialog {
+fn backtrace_dialog(cursive: &mut Cursive) -> Option<Dialog> {
     let mut select = SelectView::new();
     super::with_state(cursive, |state| {
         select.add_all(
@@ -128,6 +132,9 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Dialog {
                 .map(|(idx, profile)| (String::from(profile.table_name()), idx)),
         )
     });
+    if select.len() < 2 {
+        return None;
+    }
     select.set_on_submit(|cursive, idx| {
         let screen = cursive.screen_mut();
         while screen.len() > idx + 1 {
@@ -135,7 +142,9 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Dialog {
         }
         super::with_state(cursive, |state| state.profile_stack.truncate(idx + 1));
     });
-    Dialog::around(select)
-        .title("Backtrace")
-        .dismiss_button("Ok")
+    Some(
+        Dialog::around(select.scrollable())
+            .title("Backtrace")
+            .dismiss_button("Ok"),
+    )
 }

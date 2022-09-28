@@ -1,8 +1,8 @@
 //! Build-wide analysis facilities
 
-mod clang;
-mod commands;
-mod profile;
+pub mod clang;
+pub mod commands;
+pub mod profile;
 
 use std::{
     io,

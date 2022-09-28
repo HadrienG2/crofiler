@@ -97,8 +97,11 @@ fn with_state<R>(cursive: &mut Cursive, f: impl FnOnce(&mut State) -> R) -> R {
 
 /// Help dialog
 // TODO: Update as the feature set increases
-fn help_dialog(_: &mut Cursive) -> Dialog {
-    Dialog::info(
+fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
+    if !profile::profiling(cursive) {
+        return None;
+    }
+    Some(Dialog::info(
         "The first column is the time spent on an activity\n\
         Self is that minus the time spent on callees\n\
         Activity is what clang was doing\n\
@@ -115,5 +118,5 @@ fn help_dialog(_: &mut Cursive) -> Dialog {
         - Q quits this program\n\
         \n\
         Logs go to syslog to avoid display corruption",
-    )
+    ))
 }

@@ -6,6 +6,9 @@ use serde::Deserialize;
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
 
+/// Default full-build profile location
+pub const DEFAULT_LOCATION: &str = "./cmakeperf.csv";
+
 /// Load a previously measured build profile
 pub fn load(path: impl AsRef<Path>) -> Result<Profile, ProfileLoadError> {
     let reader = match csv::Reader::from_path(path.as_ref()) {
