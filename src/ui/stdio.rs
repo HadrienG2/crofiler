@@ -18,6 +18,18 @@ pub fn run(args: CliArgs) {
     // Set up logging using env_logger
     env_logger::init();
 
+    // The stdio display does not support full-build profiling
+    let input = if let Some(input) = args.input {
+        input
+    } else {
+        return eprintln!(
+            "Full-build profiling requires user interaction, so it is not \
+            supported by the non-interactive stdio user interface.\n\
+            Please switch to the interactive textual user interface or re-run \
+            me on an input file emitted by clang++ -ftime-trace."
+        );
+    };
+
     // Determine column budget
     let max_cols = termion::terminal_size()
         .map(|(width, _height)| width.min(args.max_cols))
@@ -25,7 +37,7 @@ pub fn run(args: CliArgs) {
 
     // Load the clang trace
     eprintln!("Processing input data...");
-    let mut trace = match ClangTrace::from_file(args.input) {
+    let mut trace = match ClangTrace::from_file(input) {
         Ok(trace) => trace,
         Err(e) => {
             return eprintln!("Failed to process input: {e}");

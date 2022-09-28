@@ -68,13 +68,14 @@ impl Collect {
     pub fn finish(&mut self) -> Result<CollectStep, CollectError> {
         let exit_status = self.child.wait()?;
         if !exit_status.success() {
-            let stderr = self
+            let mut stderr = self
                 .child
                 .stderr
                 .take()
                 .expect("Failed to access piped child stderr");
-            stderr.read_to_string(&mut self.line);
-            return Err(CollectError::BadExit(exit_status, self.line.into()));
+            stderr.read_to_string(&mut self.line)?;
+            let stderr: &str = &self.line;
+            return Err(CollectError::BadExit(exit_status, stderr.into()));
         }
         Ok(CollectStep::Finished)
     }

@@ -80,7 +80,7 @@ impl Entry {
     ///
     pub fn output(&self) -> Option<PathBuf> {
         // Start from working directory provided by cmake
-        let mut result = PathBuf::from(self.directory);
+        let mut result = PathBuf::from(&*self.directory);
 
         // Parse arguments, extract file name and (assumed relative) path
         let rel_output = self
@@ -90,7 +90,6 @@ impl Entry {
             .next()?;
         let rel_output = Path::new(rel_output.as_ref());
         let file_name = rel_output.file_name()?;
-        let rel_path = rel_output.parent();
 
         // Add output path to working directory, try to canonicalize
         // (ignore failures to do so, that's not critical), add file name

@@ -3,86 +3,71 @@
 use super::with_state;
 use super::{processing::ActivityInfo, State};
 use crate::ui::display::duration::display_duration;
-use clang_time_trace::{ActivityTraceId, Duration};
+use clang_time_trace::{ActivityTraceId, ClangTraceLoadError, Duration};
 use cursive::{
     view::{Nameable, Resizable, View},
-    views::{LinearLayout, OnEventView, TextView, ViewRef},
-    Cursive,
+    views::{Dialog, LinearLayout, OnEventView, TextView, ViewRef},
+    Cursive, CursiveRunnable,
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::{cell::RefCell, cmp::Ordering, rc::Rc, sync::Arc};
+use std::{cell::RefCell, cmp::Ordering, path::Path, rc::Rc, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
-/// Truth that profiling is in progress
-pub fn profiling(cursive: &mut Cursive) -> bool {
-    with_state(cursive, |state| !state.profile_stack.is_empty())
-}
-
-/// Information about a layer of the cursive TUI stack that contains a profile
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProfileLayer {
-    /// Name of the profile data TableView = name of the parent entity
-    table_name: Rc<str>,
-
-    /// Norm used to compute percentages with respect to this profile's parent.
-    parent_percent_norm: Finite<Duration>,
-
-    /// What kind of profile this is
-    kind: ProfileKind,
-}
-//
-impl ProfileLayer {
-    /// Name of the profile data TableView = name of the parent entity
-    pub fn table_name(&self) -> &str {
-        &self.table_name
+/// Load and display a time-trace profile
+pub fn profile(cursive: &mut CursiveRunnable, trace_path: impl AsRef<Path>) {
+    // Load the trace, take note of how many other layers we have
+    let layers_below_profile = cursive.screen().len();
+    with_state(cursive, |state| {
+        state.layers_below_profile = layers_below_profile;
+        state.loading_trace = true;
+        state.processing_thread.start_load_trace(trace_path)
+    });
+    if let Err(error) = wait_for_input(cursive) {
+        cursive.add_layer(
+            Dialog::text(format!("Failed to process input: {error}")).button("Quit", Cursive::quit),
+        );
+        cursive.run();
+        return;
     }
-}
-//
-/// Kind of profile that this app can display
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProfileKind {
-    /// Hierarchical profile allow drilling down on the tasks that are
-    /// transitively spawned by each task, following parent -> child relations
-    Hierarchical,
 
-    /// Flat profiles go across the entire set of tasks transitively spawned by
-    /// a task and tell what the time contribution of each is.
-    Flat,
-}
+    // Query the list of root activities and deduce the global percentage norm
+    let (root_activities, global_percent_norm) = with_state(cursive, |state| {
+        state.loading_trace = false;
+        let root_activities = state.processing_thread.get_root_activities();
+        let global_percent_norm = percent_norm(
+            root_activities
+                .iter()
+                .map(|activity| activity.duration)
+                .sum::<Duration>(),
+        );
+        (root_activities, global_percent_norm)
+    });
 
-/// Information about the TUI's current display configuration
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ProfileDisplay {
-    /// Current column sorting configuration
-    sort_config: SortConfig,
+    // TODO: Show activity summary on S
 
-    /// Current duration display configuration
-    duration_display: Option<DurationDisplay>,
-}
-
-/// Display a hierarchical profile
-pub fn show_hierarchical_profile(
-    cursive: &mut Cursive,
-    table_name: Rc<str>,
-    parent_percent_norm: Finite<Duration>,
-    activity_infos: Box<[ActivityInfo]>,
-    get_flat_activities: impl 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>,
-) {
-    show_profile(
-        ProfileKind::Hierarchical,
+    // Display the hierarchical profile
+    show_hierarchical_profile(
         cursive,
-        table_name,
-        parent_percent_norm,
-        activity_infos,
-        Box::new(get_flat_activities),
+        "<profile root>".into(),
+        global_percent_norm,
+        root_activities,
+        |state| state.processing_thread.get_all_activities(),
     );
+
+    // Start the cursive event loop
+    cursive.run()
+}
+
+/// Truth that profiling is in progress
+pub fn is_profiling(cursive: &mut Cursive) -> bool {
+    with_state(cursive, |state| !state.profile_stack.is_empty())
 }
 
 /// Switch to a different duration unit in all currently displayed profiles
 pub fn switch_duration_unit(cursive: &mut Cursive) {
     // This does nothing when we're not doing profiling
-    if !profiling(cursive) {
+    if !is_profiling(cursive) {
         return;
     }
 
@@ -146,8 +131,102 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
     );
 }
 
+/// Information about a layer of the cursive TUI stack that contains a profile
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileLayer {
+    /// Name of the profile data TableView = name of the parent entity
+    table_name: Rc<str>,
+
+    /// Norm used to compute percentages with respect to this profile's parent.
+    parent_percent_norm: Finite<Duration>,
+
+    /// What kind of profile this is
+    kind: ProfileKind,
+}
+//
+impl ProfileLayer {
+    /// Name of the profile data TableView = name of the parent entity
+    pub fn table_name(&self) -> &str {
+        &self.table_name
+    }
+}
+//
+/// Kind of profile that this app can display
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProfileKind {
+    /// Hierarchical profile allow drilling down on the tasks that are
+    /// transitively spawned by each task, following parent -> child relations
+    Hierarchical,
+
+    /// Flat profiles go across the entire set of tasks transitively spawned by
+    /// a task and tell what the time contribution of each is.
+    Flat,
+}
+
+/// Information about the TUI's current display configuration
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProfileDisplay {
+    /// Current column sorting configuration
+    sort_config: SortConfig,
+
+    /// Current duration display configuration
+    duration_display: Option<DurationDisplay>,
+}
+
+/// Load the ClangTrace with a pretty loading screen
+fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadError> {
+    // Set up the loading screen
+    cursive.add_layer(Dialog::text("Processing input data...").button("Abort", Cursive::quit));
+
+    // Initiate the cursive event loop
+    let mut runner = cursive.runner();
+    runner.refresh();
+    let result = loop {
+        // Process TUI events
+        runner.step();
+
+        // Abort input processing if instructed to do so
+        if !runner.is_running() {
+            std::mem::drop(runner);
+            std::process::abort()
+        }
+
+        // Otherwise check how the input processing is going
+        match super::with_state(&mut runner, |state| {
+            state.processing_thread.try_extract_load_result()
+        }) {
+            None => continue,
+            Some(result) => break result,
+        }
+    };
+
+    // Clear screen layers before returning
+    while !cursive.screen().is_empty() {
+        cursive.pop_layer();
+    }
+    result
+}
+
+/// Display a hierarchical profile
+fn show_hierarchical_profile(
+    cursive: &mut Cursive,
+    table_name: Rc<str>,
+    parent_percent_norm: Finite<Duration>,
+    activity_infos: Box<[ActivityInfo]>,
+    get_flat_activities: impl 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>,
+) {
+    show_profile(
+        ProfileKind::Hierarchical,
+        cursive,
+        table_name,
+        parent_percent_norm,
+        activity_infos,
+        Box::new(get_flat_activities),
+    );
+}
+
 /// Compute the percentage norm associated with a set of activities
-pub fn percent_norm(total_duration: Duration) -> Finite<Duration> {
+fn percent_norm(total_duration: Duration) -> Finite<Duration> {
     Finite::<Duration>::from_inner(100.0 / total_duration)
 }
 
@@ -726,7 +805,7 @@ fn flat_self_column_name(duration_display: DurationDisplay) -> &'static str {
 
 /// Information about the TUI's current profile sorting configuration
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SortConfig {
+struct SortConfig {
     /// Ordering to be used for each column of a hierarchical profile
     order: [Ordering; 3],
 

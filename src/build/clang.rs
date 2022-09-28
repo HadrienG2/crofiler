@@ -32,7 +32,7 @@ pub fn find_clangpp() -> Result<impl AsRef<str>, ClangError> {
         None => return Err(ClangError::EmptyVersion),
     };
     if let Some(version) = version_line.strip_prefix("clang version ") {
-        if let Some((major_version, _)) = version_line.split_once('.') {
+        if let Some((major_version, _)) = version.split_once('.') {
             if let Ok(major_version) = major_version.parse::<usize>() {
                 if major_version >= MIN_VERSION {
                     return Ok(CLANG_PROGRAM);

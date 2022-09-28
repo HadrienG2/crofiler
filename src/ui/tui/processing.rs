@@ -9,6 +9,7 @@ use clang_time_trace::{
     ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration,
     ParsedActivityArgument,
 };
+
 use std::{
     collections::HashMap,
     io::Write,
@@ -18,16 +19,16 @@ use std::{
         Arc, Mutex, TryLockError,
     },
     thread::{self, JoinHandle},
-    time,
 };
 
 /// Encapsulation of the processing thread
+#[derive(Debug)]
 pub struct ProcessingThread {
     /// JoinHandle of the processing thread
     _handle: JoinHandle<()>,
 
-    /// Result of loading the trace
-    load_result: Arc<Mutex<Option<Result<(), ClangTraceLoadError>>>>,
+    /// Trace loading status
+    trace_status: Arc<Mutex<ClangTraceLoadStatus>>,
 
     /// Channel to send instructions to the processing thread
     instruction_sender: Sender<Instruction>,
@@ -44,11 +45,10 @@ pub struct ProcessingThread {
 //
 impl ProcessingThread {
     /// Start the processing thread
-    pub fn start(path: &Path) -> Self {
+    pub fn start() -> Self {
         // Set up processing thread state and communication channels
-        let path = path.to_path_buf();
-        let load_result = Arc::new(Mutex::new(None));
-        let load_result_2 = load_result.clone();
+        let trace_status = Arc::new(Mutex::new(ClangTraceLoadStatus::Extracted));
+        let trace_status_2 = trace_status.clone();
         let (instruction_sender, instruction_receiver) = mpsc::channel();
         let (string_sender, string_receiver) = mpsc::channel();
         let (activities_sender, activities_receiver) = mpsc::channel();
@@ -56,24 +56,9 @@ impl ProcessingThread {
 
         // Spawn the processing thread
         let handle = thread::spawn(move || {
-            // Load the ClangTrace and generate user-specified metadata
-            let trace = {
-                let mut result_lock = load_result_2.lock().expect("Main thread has crashed");
-                match ClangTrace::from_file(path) {
-                    Ok(trace) => {
-                        *result_lock = Some(Ok(()));
-                        trace
-                    }
-                    Err(e) => {
-                        *result_lock = Some(Err(e));
-                        panic!("Failed to load ClangTrace")
-                    }
-                }
-            };
-
             // Process instructions until the main thread hangs up
             worker(
-                trace,
+                trace_status_2,
                 instruction_receiver,
                 string_sender,
                 activities_sender,
@@ -81,23 +66,31 @@ impl ProcessingThread {
             );
         });
 
-        // Wait for the thread to start processing the ClangTrace (as indicated
-        // by acquisition of the result lock or emission of a result)
-        while match load_result.try_lock() {
-            Ok(guard) => guard.is_none(),
-            Err(TryLockError::WouldBlock) => false,
-            Err(TryLockError::Poisoned(e)) => panic!("Processing thread has crashed: {e}"),
-        } {
-            thread::sleep(time::Duration::new(0, 10_000));
-        }
+        // Emit output interface
         Self {
             _handle: handle,
-            load_result,
+            trace_status,
             instruction_sender,
             string_receiver,
             activities_receiver,
             strings_receiver,
         }
+    }
+
+    /// Start loading a clang time-trace file
+    ///
+    /// This operation does not block, enabling the display of an interactive
+    /// loading screen by the UI thread. But the processing thread itself will
+    /// be unresponsive for the duration of the loading process. You can
+    /// busy-wait for progress using `try_extract_load_result()`.
+    ///
+    pub fn start_load_trace(&mut self, path: impl AsRef<Path>) {
+        let mut status = self
+            .trace_status
+            .lock()
+            .expect("Trace load status has been corrupted");
+        *status = ClangTraceLoadStatus::Loading;
+        self.request(Instruction::LoadTrace(path.as_ref().into()));
     }
 
     /// Query the outcome of loading the ClangTrace
@@ -110,12 +103,9 @@ impl ProcessingThread {
     /// Will panic if the processing thread has panicked or the result has
     /// already been extracted through a call to this function
     ///
-    pub fn try_extract_load_result(&mut self) -> Option<Result<(), ClangTraceLoadError>> {
-        match self.load_result.try_lock() {
-            Ok(mut guard) => match guard.take() {
-                opt @ Some(_) => opt,
-                None => panic!("Load result has already been extracted"),
-            },
+    pub fn try_extract_load_result(&mut self) -> Option<ClangTraceLoadResult> {
+        match self.trace_status.try_lock() {
+            Ok(mut guard) => guard.extract(),
             Err(TryLockError::WouldBlock) => None,
             Err(TryLockError::Poisoned(e)) => {
                 panic!("Processing thread has crashed: {e}")
@@ -188,6 +178,42 @@ impl ProcessingThread {
     }
 }
 
+/// Status of the ClangTrace loading process
+#[derive(Debug)]
+enum ClangTraceLoadStatus {
+    /// In the process of loading the trace
+    Loading,
+
+    /// The loading process finished with a certain result
+    Loaded(ClangTraceLoadResult),
+
+    /// The result has already been extracted, this is a bug.
+    Extracted,
+}
+//
+impl ClangTraceLoadStatus {
+    /// Extract the result of the ClangTrace loading process, if available
+    ///
+    /// After getting a non-empty option, you become the owner of the result and
+    /// should not poll for it again. Doing so will result in a panic.
+    ///
+    fn extract(&mut self) -> Option<ClangTraceLoadResult> {
+        match self {
+            Self::Loading => None,
+            Self::Loaded(res) => {
+                let result = std::mem::replace(res, Ok(()));
+                *self = Self::Extracted;
+                Some(result)
+            }
+            Self::Extracted => {
+                panic!("Tried to extract the ClangTrace load result twice!");
+            }
+        }
+    }
+}
+//
+pub type ClangTraceLoadResult = Result<(), ClangTraceLoadError>;
+
 /// Basic activity data as emitted by the processing thread
 ///
 /// This query provides easily accessible info. The caller may decide to
@@ -211,6 +237,9 @@ pub struct ActivityInfo {
 
 /// Instructions that can be sent to the processing thread
 enum Instruction {
+    /// Load a clang trace file
+    LoadTrace(Box<Path>),
+
     /// Render trace-wide metadata for a certain terminal width
     DescribeTrace(u16),
 
@@ -235,13 +264,19 @@ enum Instruction {
 
 /// Processing thread worker
 fn worker(
-    mut trace: ClangTrace,
+    trace_status: Arc<Mutex<ClangTraceLoadStatus>>,
     instructions: Receiver<Instruction>,
     string: Sender<String>,
     activities: Sender<Box<[ActivityInfo]>>,
     strings: Sender<Box<[Arc<str>]>>,
 ) {
     // Set up caches for activity parsing and rendering, which are costly
+    let mut trace = None;
+    fn expect(trace: &mut Option<ClangTrace>) -> &mut ClangTrace {
+        trace
+            .as_mut()
+            .expect("Client requested trace analysis before loading a trace")
+    }
     let mut parsed_arg_cache = HashMap::new();
     let mut description_cache = HashMap::new();
     let mut last_max_cols = 0;
@@ -249,30 +284,60 @@ fn worker(
     // Process instructions until the main thread hangs up
     for instruction in instructions.iter() {
         match instruction {
+            // Load a trace
+            Instruction::LoadTrace(path) => {
+                parsed_arg_cache.clear();
+                description_cache.clear();
+                trace = Some({
+                    let mut status_lock = trace_status.lock().expect("Main thread has crashed");
+                    match ClangTrace::from_file(path) {
+                        Ok(trace) => {
+                            *status_lock = ClangTraceLoadStatus::Loaded(Ok(()));
+                            trace
+                        }
+                        Err(e) => {
+                            *status_lock = ClangTraceLoadStatus::Loaded(Err(e));
+                            panic!("Failed to load ClangTrace")
+                        }
+                    }
+                });
+            }
+
             // Describe the trace
-            Instruction::DescribeTrace(max_cols) => reply(&string, metadata(&trace, max_cols)),
+            Instruction::DescribeTrace(max_cols) => {
+                let trace = expect(&mut trace);
+                reply(&string, metadata(trace, max_cols))
+            }
 
             // Get the list of root nodes
             Instruction::GetRootActivities => {
+                let trace = expect(&mut trace);
                 reply(&activities, activity_list(trace.root_activities()))
             }
 
             // Get the list of all activities
             Instruction::GetAllActivities => {
+                let trace = expect(&mut trace);
                 reply(&activities, activity_list(trace.all_activities()))
             }
 
             // Get the list of a node's direct children
-            Instruction::GetDirectChildren(id) => reply(
-                &activities,
-                activity_list(trace.activity_trace(id).direct_children()),
-            ),
+            Instruction::GetDirectChildren(id) => {
+                let trace = expect(&mut trace);
+                reply(
+                    &activities,
+                    activity_list(trace.activity_trace(id).direct_children()),
+                )
+            }
 
             // Get the list of all a node's children
-            Instruction::GetAllChildren(id) => reply(
-                &activities,
-                activity_list(trace.activity_trace(id).all_children()),
-            ),
+            Instruction::GetAllChildren(id) => {
+                let trace = expect(&mut trace);
+                reply(
+                    &activities,
+                    activity_list(trace.activity_trace(id).all_children()),
+                )
+            }
 
             // Describe a set of activities
             Instruction::DescribeActivities {
@@ -286,10 +351,11 @@ fn worker(
                 }
 
                 // Describe the requested activities
+                let trace = expect(&mut trace);
                 reply(
                     &strings,
                     describe_activities(
-                        &mut trace,
+                        trace,
                         &mut parsed_arg_cache,
                         &mut description_cache,
                         activities,

@@ -1,7 +1,6 @@
 //! Initialization of the text user interface
 
-use super::{profile, State};
-use clang_time_trace::ClangTraceLoadError;
+use super::{trace, State};
 use cursive::{
     event::{Event, Key},
     traits::Scrollable,
@@ -22,7 +21,7 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
     cursive.set_global_callback(Key::Esc, exit_current_layer);
 
     // U switches between duration units for all active profiles
-    cursive.set_global_callback('u', profile::switch_duration_unit);
+    cursive.set_global_callback('u', trace::switch_duration_unit);
 
     // We do not allow dialogs spawned by global keyboard shortcuts to stack on
     // top of each other as this is jarring and has no known use case.
@@ -68,54 +67,37 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
     cursive
 }
 
-/// Load the ClangTrace with a pretty loading screen
-pub fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadError> {
-    // Set up the loading screen
-    cursive.add_layer(Dialog::text("Processing input data...").button("Abort", Cursive::quit));
-
-    // Initiate the cursive event loop
-    let mut runner = cursive.runner();
-    runner.refresh();
-    let result = loop {
-        // Process TUI events
-        runner.step();
-
-        // Abort input processing if instructed to do so
-        if !runner.is_running() {
-            std::mem::drop(runner);
-            std::process::abort()
-        }
-
-        // Otherwise check how the input processing is going
-        match super::with_state(&mut runner, |state| {
-            state.processing_thread.try_extract_load_result()
-        }) {
-            None => continue,
-            Some(result) => break result,
-        }
-    };
-
-    // Clear screen layers before returning
-    while !cursive.screen().is_empty() {
-        cursive.pop_layer();
-    }
-    result
-}
-
 /// Exit the current cursive layer if there's another one underneath, keep the
 /// profile layer tracking up to date while doing so.
 fn exit_current_layer(cursive: &mut Cursive) {
     let num_layers = cursive.screen().len();
     if num_layers > 1 {
-        super::with_state(cursive, |state| {
-            // Profile layers are at the bottom of the cursive layer stack,
-            // with dialogs residing on top of them, as we don't allow
-            // spawning a profiling layer on top of a dialog.
-            if num_layers == state.profile_stack.len() {
+        let should_pop = super::with_state(cursive, |state| {
+            // The normal UI layer stack goes roughly like this...
+            // - Full build profiling (optional)
+            // - Trace profile layers
+            // - Dialogs (help, backtrace, quit prompt...)
+            // ...but to complicate matters a bit, in place of profile layers,
+            // there are occasionally progress dialogs that Esc shouldn't close.
+            //
+            // This can actually only happen during trace loading because for
+            // full build ops the progress dialog is the bottom layer, which
+            // exit_current_layer would never pop anyway.
+            //
+            // We handle this by asserting that no dialog should come atop those
+            // and tracking whether a trace is in the process of being loaded.
+            //
+            if state.loading_trace {
+                return false;
+            }
+            if num_layers == state.profile_stack.len() + state.layers_below_profile {
                 state.profile_stack.pop();
             }
+            true
         });
-        cursive.pop_layer();
+        if should_pop {
+            cursive.pop_layer();
+        }
     }
 }
 

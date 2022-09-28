@@ -1,12 +1,12 @@
 //! Interactive textual user interface
-//! FIXME: Split this into submodules
 
+//mod build;
 mod init;
 mod processing;
-mod profile;
+mod trace;
 
-use self::{processing::ProcessingThread, profile::ProfileDisplay};
-use crate::ui::tui::profile::ProfileLayer;
+use self::{processing::ProcessingThread, trace::ProfileDisplay};
+use crate::ui::tui::trace::ProfileLayer;
 use crate::CliArgs;
 use clang_time_trace::Duration;
 use cursive::{views::Dialog, Cursive};
@@ -22,46 +22,26 @@ pub fn run(args: CliArgs) {
 
     // Start the processing thread and set up the text user interface
     let mut cursive = init::setup_cursive(State {
-        processing_thread: ProcessingThread::start(&args.input),
+        processing_thread: ProcessingThread::start(),
         global_percent_norm: None,
         profile_stack: Vec::new(),
+        layers_below_profile: 0,
+        loading_trace: false,
         display_config: Default::default(),
     });
 
-    // Wait for the clang time trace to finish loading
-    if let Err(error) = init::wait_for_input(&mut cursive) {
-        cursive.add_layer(
-            Dialog::text(format!("Failed to process input: {error}")).button("Quit", Cursive::quit),
-        );
-        cursive.run();
-        return;
-    }
+    // Set up the last-chance panic handler
+    let res = panic::catch_unwind(AssertUnwindSafe(move || {
+        if let Some(trace_path) = &args.input {
+            trace::profile(&mut cursive, trace_path);
+        } /* else {
+              build::profile(&mut cursive, &args);
+          }*/
+    }));
 
-    // Query the list of root activities and deduce the global percentage norm
-    let (root_activities, global_percent_norm) = with_state(&mut cursive, |state| {
-        let root_activities = state.processing_thread.get_root_activities();
-        let global_percent_norm = profile::percent_norm(
-            root_activities
-                .iter()
-                .map(|activity| activity.duration)
-                .sum::<Duration>(),
-        );
-        (root_activities, global_percent_norm)
-    });
-
-    // TODO: Show activity summary on S
-
-    // Display the hierarchical profile
-    profile::show_hierarchical_profile(
-        &mut cursive,
-        "<profile root>".into(),
-        global_percent_norm,
-        root_activities,
-        |state| state.processing_thread.get_all_activities(),
-    );
-
-    // Start the cursive event loop + last-chance panic handler
-    let res = panic::catch_unwind(AssertUnwindSafe(move || cursive.run()));
+    // Last-chance panic handler. This runs after the cursive handle is dropped,
+    // so hopefully the terminal should be in a correct state and the user
+    // should see the message...
     if let Err(e) = res {
         eprintln!("The TUI crashed due to an unhandled panic.\n\
                    This is a bug, please report it at https://github.com/HadrienG2/crofiler/issues!\n\
@@ -84,6 +64,12 @@ pub struct State {
     /// Current stack of profiling UI layers
     profile_stack: Vec<ProfileLayer>,
 
+    /// Number of UI layers below the profile_stack
+    layers_below_profile: usize,
+
+    /// Truth that trace data is being loaded
+    loading_trace: bool,
+
     /// Current profile display configuration
     display_config: ProfileDisplay,
 }
@@ -98,7 +84,7 @@ fn with_state<R>(cursive: &mut Cursive, f: impl FnOnce(&mut State) -> R) -> R {
 /// Help dialog
 // TODO: Update as the feature set increases
 fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
-    if !profile::profiling(cursive) {
+    if !trace::is_profiling(cursive) {
         return None;
     }
     Some(Dialog::info(

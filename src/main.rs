@@ -10,7 +10,16 @@ use atty::Stream::{Stdin, Stdout};
 use clap::{ArgEnum, Parser};
 use std::path::PathBuf;
 
-/// Turn a clang time-trace dump into a profiler-like visualization
+/// Analyze where your compilation time is spent in order to optimize it
+///
+/// If you run this program without an argument inside of your build directory,
+/// it will offer you to measure the CPU and memory consumption of your entire
+/// build and then individually study the heaviest compilation units.
+///
+/// Alternatively, if you already know which compilation unit you are interested
+/// in, you can take a shortcut and directly point this program to the JSON file
+/// produced by compiling it using clang with the `-ftime-trace` option enabled.
+///
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct CliArgs {
@@ -53,7 +62,11 @@ pub struct CliArgs {
     build_profile: Option<PathBuf>,
 
     /// Clang time-trace file to be analyzed
-    input: PathBuf,
+    ///
+    /// If no input file is specified, will enter full-build profiling mode.
+    /// This is only available when using the TUI.
+    ///
+    input: Option<PathBuf>,
 }
 //
 /// Select desired user interface

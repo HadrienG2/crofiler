@@ -11,12 +11,12 @@ pub const DEFAULT_LOCATION: &str = "./cmakeperf.csv";
 
 /// Load a previously measured build profile
 pub fn load(path: impl AsRef<Path>) -> Result<Profile, ProfileLoadError> {
-    let reader = match csv::Reader::from_path(path.as_ref()) {
+    let mut reader = match csv::Reader::from_path(path.as_ref()) {
         Err(e) => match e.kind() {
             csv::ErrorKind::Io(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Err(ProfileLoadError::FileNotFound)
             }
-            other => return Err(ProfileLoadError::ParseError(e)),
+            _other => return Err(ProfileLoadError::ParseError(e)),
         },
         other => other?,
     };
