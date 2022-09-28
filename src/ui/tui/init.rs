@@ -132,7 +132,7 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Option<Dialog> {
                 .map(|(idx, profile)| (String::from(profile.table_name()), idx)),
         )
     });
-    if select.len() < 2 {
+    if select.is_empty() {
         return None;
     }
     select.set_on_submit(|cursive, idx| {
