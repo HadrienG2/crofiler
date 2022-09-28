@@ -40,6 +40,18 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "auto", arg_enum)]
     ui: UI,
 
+    /// Path to the full-build profile
+    ///
+    /// This is used in full-build profiling mode to directly display the build
+    /// profile instead of measuring it first.
+    ///
+    /// If this is not specified, it will default to "cmakeperf.csv". And
+    /// if the profile does not exist yet, you will be provided with the option
+    /// to measure it.
+    ///
+    #[clap(long)]
+    build_profile: Option<PathBuf>,
+
     /// Clang time-trace file to be analyzed
     input: PathBuf,
 }

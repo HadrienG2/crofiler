@@ -2,3 +2,4 @@
 
 mod clang;
 mod commands;
+mod profile;

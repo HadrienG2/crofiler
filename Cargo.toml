@@ -19,6 +19,7 @@ atty = "0.2"
 chrono = "0.4"
 clang-time-trace = { path = "clang-time-trace" }
 clap = { version = "3.2", features = ["derive"] }
+csv = "1.1"
 cursive = { version = "0.20", default-features = false, features = ["termion-backend"] }
 cursive_table_view = "0.14"
 decorum = "0.3"
