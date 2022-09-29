@@ -12,14 +12,14 @@ use std::{
 use thiserror::Error;
 
 /// Measure how log ago a file was last modified
-fn file_age(path: impl AsRef<Path>) -> Result<Duration, FileAgeError> {
+pub fn file_age(path: impl AsRef<Path>) -> Result<Duration, FileAgeError> {
     let age = std::fs::metadata(path)?.modified()?.elapsed()?;
     Ok(age)
 }
 
 /// Error while looking up the age of a file
 #[derive(Debug, Error)]
-enum FileAgeError {
+pub enum FileAgeError {
     /// Failed to access the file
     #[error("failed to access the file ({0})")]
     BadIo(#[from] io::Error),
