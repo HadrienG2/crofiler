@@ -1,6 +1,6 @@
 //! Interactive textual user interface
 
-//mod build;
+mod build;
 mod init;
 mod processing;
 mod trace;
@@ -34,9 +34,9 @@ pub fn run(args: CliArgs) {
     let res = panic::catch_unwind(AssertUnwindSafe(move || {
         if let Some(trace_path) = &args.input {
             trace::profile(&mut cursive, trace_path);
-        } /* else {
-              build::profile(&mut cursive, &args);
-          }*/
+        } else {
+            build::profile(&mut cursive, args);
+        }
     }));
 
     // Last-chance panic handler. This runs after the cursive handle is dropped,

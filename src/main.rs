@@ -23,31 +23,44 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct CliArgs {
+    /// Clang time-trace file to be analyzed
+    ///
+    /// If no input file is specified, will enter full-build profiling mode.
+    /// This is only available when using the Text User Interface.
+    ///
+    input: Option<PathBuf>,
+
+    /// Choice of user interface
+    ///
+    /// "tui" is an interactive Text User Interface (requires a terminal)
+    ///
+    /// "stdio" is a non-interactive display that you can pipe to a file
+    ///
+    /// "auto" selects the TUI if connected to a terminal, otherwise stdio
+    ///
+    #[clap(short, long, default_value = "auto", arg_enum)]
+    ui: UI,
+
     /// Self-profile display threshold, as a percentage of total duration
+    ///
+    /// Only used by the stdio user interface, the TUI displays everything.
+    ///
     #[clap(short, long, default_value = "0.5")]
     self_threshold: f32,
 
     /// Hierarchical profile display threshold, as a percentage of total duration
+    ///
+    /// Only used by the stdio user interface, the TUI displays everything.
+    ///
     #[clap(short, long, default_value = "0.5")]
     hierarchical_threshold: f32,
 
     /// Maximal number of terminal columns to be used in the display
     ///
-    /// Only used by the stdio display
+    /// Only used by the stdio user interface, the TUI detects the screen width.
     ///
     #[clap(short = 'c', long = "cols", default_value = "200")]
     max_cols: u16,
-
-    /// Choice of user interface
-    ///
-    /// "tui" is an interactive Text User Interface (requires a tty)
-    ///
-    /// "stdio" is a non-interactive display that you can pipe to a file
-    ///
-    /// "auto" selects the TUI if connected to a tty, otherwise "stdio"
-    ///
-    #[clap(short, long, default_value = "auto", arg_enum)]
-    ui: UI,
 
     /// Path to the full-build profile
     ///
@@ -58,15 +71,10 @@ pub struct CliArgs {
     /// if the profile does not exist yet, you will be provided with the option
     /// to measure it.
     ///
+    /// Full-build profiling is only available when using the TUI.
+    ///
     #[clap(long)]
     build_profile: Option<PathBuf>,
-
-    /// Clang time-trace file to be analyzed
-    ///
-    /// If no input file is specified, will enter full-build profiling mode.
-    /// This is only available when using the TUI.
-    ///
-    input: Option<PathBuf>,
 }
 //
 /// Select desired user interface
