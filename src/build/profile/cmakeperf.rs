@@ -5,6 +5,7 @@
 //! as encapsulated as possible.
 
 use crate::build;
+use log::info;
 use std::{
     io::{self, BufRead, BufReader, ErrorKind, Read},
     path::Path,
@@ -14,7 +15,12 @@ use thiserror::Error;
 
 /// Check for cmakeperf's presence
 pub fn find() -> io::Result<ExitStatus> {
-    Command::new(PROGRAM).arg("--help").status()
+    Command::new(PROGRAM)
+        .arg("--help")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
 }
 
 /// Ongoing build profile collection
@@ -26,14 +32,14 @@ pub struct Collect {
     stdout: BufReader<ChildStdout>,
 
     /// Line buffer
-    line: String,
+    buf: String,
 }
 //
 impl Collect {
     /// Start collecting a build profile to a specified location
     pub fn start(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut child = Command::new(PROGRAM)
-            .args(["-i", POLLING_INTERVAL, "-o"])
+            .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
             .arg(path.as_ref())
             .arg(build::commands::LOCATION)
             .stdin(Stdio::null())
@@ -49,18 +55,19 @@ impl Collect {
         Ok(Self {
             child,
             stdout,
-            line: String::new(),
+            buf: String::new(),
         })
     }
 
     /// Wait for the next step in the build profile collection process
     pub fn wait_next_step(&mut self) -> Result<CollectStep, CollectError> {
-        self.line.clear();
-        match self.stdout.read_line(&mut self.line) {
+        self.buf.clear();
+        match self.stdout.read_line(&mut self.buf) {
             Err(e) if e.kind() == ErrorKind::BrokenPipe => return self.finish(),
             Ok(0) => return self.finish(),
             other => other?,
         };
+        info!("cmakeperf output: {}", self.buf.trim());
         Ok(CollectStep::FileCompiled)
     }
 
@@ -73,8 +80,9 @@ impl Collect {
                 .stderr
                 .take()
                 .expect("Failed to access piped child stderr");
-            stderr.read_to_string(&mut self.line)?;
-            let stderr: &str = &self.line;
+            self.buf.clear();
+            stderr.read_to_string(&mut self.buf)?;
+            let stderr: &str = &self.buf;
             return Err(CollectError::BadExit(exit_status, stderr.into()));
         }
         Ok(CollectStep::Finished)
@@ -98,7 +106,7 @@ pub enum CollectError {
     Io(#[from] io::Error),
 
     /// Process ran through with a failing exit status
-    #[error("cmakeperf exited with failing status {0} and stderr output {1:?}")]
+    #[error("cmakeperf run failed ({0}) with the following stderr output:\n---\n{1}---")]
     BadExit(ExitStatus, Box<str>),
 }
 

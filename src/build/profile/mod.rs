@@ -1,6 +1,6 @@
 //! Full-build profiling facilities
 
-mod cmakeperf;
+pub mod cmakeperf;
 
 use serde::Deserialize;
 use std::{io, path::Path, time::Duration};

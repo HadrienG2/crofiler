@@ -1,17 +1,62 @@
 //! Full-build profiling interface
 
-use crate::{build, build::profile, CliArgs};
-use cursive::{views::Dialog, Cursive, CursiveRunnable};
-use std::{cell::Cell, fmt::Write, path::Path, rc::Rc};
+use crate::{
+    build::{
+        self,
+        commands::{Database as CompilationDatabase, DatabaseLoadError},
+        profile::{
+            self,
+            cmakeperf::{self, CollectStep},
+        },
+    },
+    CliArgs,
+};
+use cursive::{
+    views::{Dialog, LinearLayout, ProgressBar, TextView},
+    Cursive, CursiveRunnable,
+};
+use std::{
+    cell::Cell,
+    fmt::Write,
+    io,
+    path::Path,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 /// Perform full-build profiling, from which the user can go to trace profiling
 pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
-    // Determine the path to the build profile, creating it if needed
-    let profile_path = if let Some(profile_path) = update_profile(cursive, &args) {
-        profile_path
-    } else {
-        return;
+    // Load the compilation database
+    let compilation_database = match build::commands::load() {
+        Ok(database) => database,
+        Err(e) => {
+            let message = match e {
+                DatabaseLoadError::FileNotFound => {
+                    "No compilation database found. But it is needed for \
+                    full-build profiling!\n\
+                    Make sure you are in the build directory and/or re-run \
+                    CMake with the -DCMAKE_EXPORT_COMPILE_COMMANDS=ON option."
+                        .to_owned()
+                }
+                DatabaseLoadError::IoError(e) => {
+                    format!("Failed to load compilation database: {e}")
+                }
+                DatabaseLoadError::ParseError(e) => {
+                    format!("Failed to parse compilation database: {e}")
+                }
+            };
+            error(cursive, message);
+            return;
+        }
     };
+
+    // Determine the path to the build profile, creating it if needed
+    let profile_path =
+        if let Some(profile_path) = update_profile(cursive, &args, &compilation_database) {
+            profile_path
+        } else {
+            return;
+        };
 
     // TODO: Load profile and display it
     // TODO: Use trace::profile where appropriate
@@ -24,7 +69,11 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
 /// Returns the path to the build profile, which can be assumed to exist, or
 /// None if we can't create a build profile and should stop here.
 ///
-pub fn update_profile(cursive: &mut CursiveRunnable, args: &CliArgs) -> Option<Box<Path>> {
+pub fn update_profile(
+    cursive: &mut CursiveRunnable,
+    args: &CliArgs,
+    compilation_database: &CompilationDatabase,
+) -> Option<Box<Path>> {
     // Determine full build profile path
     let default_profile_path: &Path = profile::DEFAULT_LOCATION.as_ref();
     let is_default_path = args.build_profile.is_none();
@@ -62,7 +111,9 @@ pub fn update_profile(cursive: &mut CursiveRunnable, args: &CliArgs) -> Option<B
     if let Some(create_prompt) = create_prompt {
         let should_create = create_prompt.ask(cursive);
         if should_create {
-            measure_profile(profile_path);
+            if !measure_profile(cursive, profile_path, compilation_database) {
+                return None;
+            }
         } else if !profile_exists {
             // If the user does not want to create a profile and none exists,
             // we have to stop there and terminate the program.
@@ -73,10 +124,110 @@ pub fn update_profile(cursive: &mut CursiveRunnable, args: &CliArgs) -> Option<B
 }
 
 /// Measure a build profile, storing the result in a specific location
-fn measure_profile(path: &Path) {
-    // TODO: Check for compilation database existence
-    // TODO: Check for cmakeperf availability
-    // TODO: Run cmakeperf
+///
+/// Return true if everything worked out, false if that failed and the
+/// application must terminate.
+///
+fn measure_profile(
+    cursive: &mut CursiveRunnable,
+    path: &Path,
+    compilation_database: &CompilationDatabase,
+) -> bool {
+    // Check for cmakeperf availability
+    let error_message = match cmakeperf::find() {
+        Ok(status) if status.success() => None,
+        Ok(bad_status) => Some(format!(
+            "Found cmakeperf, but it exits with the error status {bad_status}.\n\
+            Please repair your cmakeperf installation to enable build profiling."
+        )),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Some(
+            "cmakeperf was not found, please install it or bring it into PATH \
+            to enable build profiling.\n\
+            'pip3 install cmakeperf' should do this for you, but the use of a \
+            virtual environment is recommended to avoid harmful interactions."
+                .to_owned(),
+        ),
+        Err(e) => Some(format!(
+            "Failed to run cmakeperf for build profiling due to an I/O error: {e}"
+        )),
+    };
+    if let Some(message) = error_message {
+        error(cursive, message);
+        return false;
+    }
+
+    // Start cmakeperf
+    let mut collect = match cmakeperf::Collect::start(path) {
+        Ok(collect) => collect,
+        Err(e) => {
+            error(cursive, format!("Failed to start cmakeperf: {e}"));
+            return false;
+        }
+    };
+
+    // Set up progress dialog
+    let cb_sink = cursive.cb_sink().clone();
+    let outcome = Arc::new(Mutex::new(None));
+    let outcome2 = outcome.clone();
+    cursive.add_layer(
+        Dialog::around(
+            LinearLayout::vertical()
+                .child(TextView::new(
+                    "Profiling the build, please minimize system activity...",
+                ))
+                .child(
+                    ProgressBar::new()
+                        .max(compilation_database.len() + 1)
+                        .with_task(move |counter| {
+                            loop {
+                                let outcome = match collect.wait_next_step() {
+                                    Ok(CollectStep::FileCompiled) => {
+                                        counter.tick(1);
+                                        continue;
+                                    }
+                                    Ok(CollectStep::Finished) => Ok(()),
+                                    Err(e) => Err(e),
+                                };
+                                *outcome2.lock().expect("Failed to acquire mutex") = Some(outcome);
+                                break;
+                            }
+                            cb_sink
+                                .send(Box::new(|cursive| cursive.quit()))
+                                .expect("Failed to exit cursive");
+                        }),
+                ),
+        )
+        .button("Abort", Cursive::quit),
+    );
+
+    // Measure the profile, handle errors
+    let old_fps = cursive.fps();
+    cursive.set_autorefresh(true);
+    cursive.run();
+    cursive.set_fps(old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    let error_message_or_abort = match outcome.lock() {
+        Ok(mut guard) => match guard.take() {
+            Some(Ok(())) => return true,
+            Some(Err(e)) => Some(format!("Failed to collect build profile: {e}")),
+            None => None,
+        },
+        Err(e) => Some(format!("Build profile collection thread panicked: {e}")),
+    };
+    let should_abort = if let Some(message) = error_message_or_abort {
+        error(cursive, message);
+        false
+    } else {
+        true
+    };
+
+    // Try to delete partially generated files, it does not matter if that
+    // cleanup operation fails (it may legitimately do so)
+    std::mem::drop(std::fs::remove_file(path));
+    if should_abort {
+        std::process::abort()
+    } else {
+        return false;
+    }
 }
 
 /// Prompt to be shown when a new profile or trace may need to be created
@@ -99,7 +250,7 @@ impl CreatePrompt {
     fn new_build_profile() -> Self {
         Self {
             question: format!(
-                "It looks like this build hasn't been profiled yet. \
+                "It looks like this build has not been profiled yet. \
                 Ready to do so?\n{}",
                 Self::BUILD_PROFILE_TRAILER
             ),
@@ -159,4 +310,10 @@ impl CreatePrompt {
         cursive.run();
         return replied_default.get() ^ !self.default_means_create;
     }
+}
+
+/// Simple error dialog, to be followed by application exit
+fn error(cursive: &mut CursiveRunnable, message: impl Into<String>) {
+    cursive.add_layer(Dialog::text(message).button("Quit", Cursive::quit));
+    cursive.run();
 }

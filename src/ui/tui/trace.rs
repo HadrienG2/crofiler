@@ -176,9 +176,12 @@ pub struct ProfileDisplay {
 /// Load the ClangTrace with a pretty loading screen
 fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadError> {
     // Set up the loading screen
+    let old_layers = cursive.screen().len();
     cursive.add_layer(Dialog::text("Processing input data...").button("Abort", Cursive::quit));
 
     // Initiate the cursive event loop
+    let old_fps = cursive.fps();
+    cursive.set_autorefresh(true);
     let mut runner = cursive.runner();
     runner.refresh();
     let result = loop {
@@ -200,8 +203,9 @@ fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadErr
         }
     };
 
-    // Clear screen layers before returning
-    while !cursive.screen().is_empty() {
+    // Reset cursive state before returning
+    cursive.set_fps(old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    while cursive.screen().len() > old_layers {
         cursive.pop_layer();
     }
     result

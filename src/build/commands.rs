@@ -23,13 +23,8 @@ pub fn load() -> Result<Database, DatabaseLoadError> {
 /// Error that is emitted when an activity id cannot be displayed
 #[derive(Debug, Error)]
 pub enum DatabaseLoadError {
-    /// Could not open database
-    #[error(
-        "no compilation database found, you may want to either 1/go to the \
-        project's build directory, 2/re-run cmake with option \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON or 3/point me to a pre-computed \
-        time-trace file from clang"
-    )]
+    /// Compilation database not found
+    #[error("no compilation database found")]
     FileNotFound,
 
     /// Other I/O error
