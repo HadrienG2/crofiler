@@ -443,7 +443,7 @@ fn display_profile(
     cursive.add_fullscreen_layer(
         LinearLayout::vertical()
             .child(table.min_size((terminal_width, terminal_height - 1)))
-            .child(TextView::new("Press H for help")),
+            .child(TextView::new("Press H for help.")),
     );
     cursive.run();
 }
