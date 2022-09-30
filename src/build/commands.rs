@@ -10,14 +10,14 @@ use std::{
 use thiserror::Error;
 
 /// Load the compilation database
-pub fn load() -> Result<Database, DatabaseLoadError> {
+pub fn load() -> Result<CompilationDatabase, DatabaseLoadError> {
     let data = match std::fs::read_to_string(LOCATION) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             return Err(DatabaseLoadError::FileNotFound)
         }
         other => other?,
     };
-    Ok(json::from_str::<Database>(&data)?)
+    Ok(json::from_str::<CompilationDatabase>(&data)?)
 }
 
 /// Error that is emitted when an activity id cannot be displayed
@@ -106,7 +106,7 @@ impl Entry {
 }
 
 /// Full compilation database
-pub type Database = Vec<Entry>;
+pub type CompilationDatabase = Vec<Entry>;
 
 /// Location of the compilation database relative to the build directory
 pub const LOCATION: &str = "compile_commands.json";

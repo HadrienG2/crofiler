@@ -2,12 +2,44 @@
 
 pub mod cmakeperf;
 
+use crate::build::{self, commands::CompilationDatabase};
 use serde::Deserialize;
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
 
 /// Default full-build profile location
 pub const DEFAULT_LOCATION: &str = "./cmakeperf.csv";
+
+/// Check if a build profile is up to date wrt the compilation database
+///
+/// Note that this is a necessary condition for profile freshness, but not a
+/// sufficient one, because the compilation database does not know about all the
+/// files that compilation commands depend on (e.g. it doesn't know headers)
+///
+pub fn is_up_to_date(
+    profile_path: &Path,
+    compilation_database: &CompilationDatabase,
+) -> Result<bool, io::Error> {
+    // Check profile mtime
+    let profile_mtime = profile_path.metadata()?.modified()?;
+
+    // Compare to compilation database mtime
+    if profile_mtime
+        < Path::new(build::commands::LOCATION)
+            .metadata()?
+            .modified()?
+    {
+        return Ok(false);
+    }
+
+    // Compare to mtime of every input file in compilation database
+    for entry in compilation_database {
+        if profile_mtime < entry.input().metadata()?.modified()? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 
 /// Load a previously measured build profile
 pub fn load(path: impl AsRef<Path>) -> Result<Profile, ProfileLoadError> {
