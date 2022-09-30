@@ -60,7 +60,7 @@ pub enum ClangError {
     IoError(#[from] io::Error),
 
     /// Test run returned failing status
-    #[error("clang++ test run returned failing status {0}")]
+    #[error("clang++ test run returned failing status ({0})")]
     BadStatus(ExitStatus),
 
     /// Test run returned non-UTF-8 bytes

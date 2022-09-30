@@ -2,7 +2,7 @@
 
 use crate::{
     build::{
-        self,
+        self, clang,
         commands::{CompilationDatabase, DatabaseLoadError},
         profile::{
             self,
@@ -46,6 +46,18 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
                 }
             };
             error(cursive, message);
+            return;
+        }
+    };
+
+    // Check for clang availability and retrieve it path
+    let clangpp = match clang::find_clangpp() {
+        Ok(program) => program,
+        Err(e) => {
+            error(
+                cursive,
+                format!("Did not find a clang version suitable for build profiling: {e}"),
+            );
             return;
         }
     };
