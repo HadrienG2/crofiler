@@ -189,7 +189,7 @@ impl CreatePrompt {
                 Self::BUILD_PROFILE_TRAILER
             ),
             default_reply: "Yes",
-            other_reply: "Quit",
+            other_reply: "No",
             default_means_create: true,
         }
     }
@@ -428,15 +428,29 @@ fn display_profile(
     table.sort();
     table.set_selected_row(0);
 
-    // TODO: Add footer, help dialog, interaction
+    // Update UI state
+    super::with_state(cursive, |state| {
+        state.showing_full_build = true;
+    });
+
+    // TODO: Add interaction
     // TODO: Use trace::profile where appropriate. Remember to correctly handle
     //       the case where a trace in the build profile isn't present in the
     //       compilation database, which can happen with stale profiles. Also
     //       remember to check for freshness
 
-    // DEBUG
-    cursive.add_fullscreen_layer(table.min_size((terminal_width, terminal_height)));
+    // Show the profile
+    cursive.add_fullscreen_layer(
+        LinearLayout::vertical()
+            .child(table.min_size((terminal_width, terminal_height - 1)))
+            .child(TextView::new("Press H for help")),
+    );
     cursive.run();
+}
+
+/// Truth that a build profile is being displayed
+pub fn is_profiling(cursive: &mut Cursive) -> bool {
+    super::with_state(cursive, |state| state.showing_full_build)
 }
 
 /// Column in the build profile

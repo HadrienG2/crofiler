@@ -25,6 +25,7 @@ pub fn run(args: CliArgs) {
         processing_thread: ProcessingThread::start(),
         global_percent_norm: None,
         profile_stack: Vec::new(),
+        showing_full_build: false,
         layers_below_profile: 0,
         loading_trace: false,
         display_config: Default::default(),
@@ -64,6 +65,9 @@ pub struct State {
     /// Current stack of profiling UI layers
     profile_stack: Vec<ProfileLayer>,
 
+    /// Showing a full-build profile below the trace profiling layers
+    showing_full_build: bool,
+
     /// Number of UI layers below the profile_stack
     layers_below_profile: usize,
 
@@ -84,10 +88,7 @@ fn with_state<R>(cursive: &mut Cursive, f: impl FnOnce(&mut State) -> R) -> R {
 /// Help dialog
 // TODO: Update as the feature set increases
 fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
-    if !trace::is_profiling(cursive) {
-        return None;
-    }
-    Some(Dialog::info(
+    let help = if trace::is_profiling(cursive) {
         "The first column is the time spent on an activity\n\
         Self is that minus the time spent on callees\n\
         Activity is what clang was doing\n\
@@ -103,6 +104,21 @@ fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
         - F toggles between flat and hierarchical profiles\n\
         - Q quits this program\n\
         \n\
-        Logs go to syslog to avoid display corruption",
-    ))
+        Logs go to syslog to avoid display corruption"
+    } else if build::is_profiling(cursive) {
+        "Memory is the top RAM consumption (max-RSS)\n\
+        Time is the (wall-clock) time spent compiling\n\
+        Source file is the affected compilation unit\n\
+        \n\
+        Available commands:\n\
+        - Up/Down selects a compilation unit\n\
+        - Return zooms on a compilation unit's profile\n\
+        - Left/Right + Return adjusts sort\n\
+        - Q quits this program\n\
+        \n\
+        Logs go to syslog to avoid display corruption"
+    } else {
+        return None;
+    };
+    Some(Dialog::info(help))
 }
