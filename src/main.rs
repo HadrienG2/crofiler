@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 
 mod build;
-mod profile;
+mod trace;
 mod ui;
 
 use atty::Stream::{Stdin, Stdout};

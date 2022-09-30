@@ -5,7 +5,7 @@ use super::display::{
     duration::display_duration,
     metadata::metadata,
 };
-use crate::{profile, CliArgs};
+use crate::{trace, CliArgs};
 use clang_time_trace::{
     ActivityArgument, ActivityId, ActivityTrace, ActivityTraceId, ClangTrace, Duration,
 };
@@ -48,7 +48,7 @@ pub fn run(args: CliArgs) {
     println!("\n{}", metadata(&trace, max_cols));
 
     // Use total clang execution time as a duration norm
-    let duration_norm = profile::duration_norm(trace.root_activities());
+    let duration_norm = trace::duration_norm(trace.root_activities());
 
     // Activity types by self-duration
     let self_threshold = args.self_threshold as Duration / 100.0;
@@ -73,7 +73,7 @@ pub fn run(args: CliArgs) {
 /// Display the amount of time spent on various activity types
 fn print_activity_type_profile(trace: &ClangTrace, duration_norm: Duration, threshold: Duration) {
     println!("\nSelf-duration breakdown by activity type:");
-    let activity_type_breakdown = profile::activity_type_breakdown(trace);
+    let activity_type_breakdown = trace::activity_type_breakdown(trace);
     for (idx, (name, duration)) in activity_type_breakdown.iter().enumerate() {
         if duration * duration_norm < threshold {
             println!(
@@ -98,7 +98,7 @@ fn print_flat_profile(
     max_cols: u16,
 ) {
     println!("\nHottest activities by self-duration:");
-    let hottest = profile::hottest_activities(
+    let hottest = trace::hottest_activities(
         trace.all_activities(),
         |a| a.self_duration() * duration_norm,
         threshold,
@@ -201,7 +201,7 @@ fn hierarchical_profile_tree(
 
     // Collect hottest children
     let num_children = root.direct_children().count();
-    let hottest_children = profile::hottest_activities(
+    let hottest_children = trace::hottest_activities(
         root.direct_children(),
         |a| a.duration() * duration_norm,
         threshold,
