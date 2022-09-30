@@ -140,6 +140,105 @@ pub fn update_profile(
     Some(profile_path.into())
 }
 
+/// Prompt to be shown when a new profile or trace may need to be created
+struct CreatePrompt {
+    /// Question to be asked to the user
+    question: String,
+
+    /// Default reply
+    default_reply: &'static str,
+
+    /// Other reply
+    other_reply: &'static str,
+
+    /// Default reply means that a new profile should be created
+    default_means_create: bool,
+}
+//
+impl CreatePrompt {
+    /// Build profile cration prompt when there is no existing build profile
+    fn new_build_profile() -> Self {
+        Self {
+            question: format!(
+                "It looks like this build has not been profiled yet. \
+                Ready to do so?\n{}",
+                Self::BUILD_PROFILE_TRAILER
+            ),
+            default_reply: "Yes",
+            other_reply: "No",
+            default_means_create: true,
+        }
+    }
+
+    /// Build profile cration prompt when the build profile might be or is stale
+    ///
+    /// If the cpp files changed, we know that the profile is stale, but if
+    /// other build dependencies like headers changed, we don't know about it
+    /// because CMake won't tell us about those.
+    ///
+    /// Given that measuring a build profile can take more than an hour, it's
+    /// best in any case to ask before overwriting the existing profile, which
+    /// may still be good enough.
+    ///
+    fn stale_build_profile(profile_age_mins: Option<u64>) -> Self {
+        let mut question = String::new();
+        match profile_age_mins {
+            Some(age_mins) => {
+                let age_hours = age_mins / 60;
+                let age_days = age_hours / 24;
+                question.push_str("There is an existing build profile from ");
+                if age_days > 0 {
+                    write!(question, "{age_days} day").expect("Write to String can't fail");
+                    if age_days > 1 {
+                        write!(question, "s").expect("Write to String can't fail");
+                    }
+                } else if age_hours > 0 {
+                    write!(question, "{age_hours}h").expect("Write to String can't fail");
+                } else {
+                    write!(question, "{age_mins}min").expect("Write to String can't fail");
+                }
+                question.push_str(" ago. Would you consider it up to date?\n");
+            }
+            None => question.push_str(
+                "There is an existing build profile, but it is not up to date \
+                with respect to current source code. Use it anyway?\n",
+            ),
+        }
+        question.push_str(Self::BUILD_PROFILE_TRAILER);
+        Self {
+            question,
+            default_reply: "Reuse",
+            other_reply: "Measure",
+            default_means_create: false,
+        }
+    }
+
+    /// Common trailer for all build profile creation questions
+    const BUILD_PROFILE_TRAILER: &'static str =
+        "(Measuring a build profile requires a full single-core build, \
+            during which you should minimize other system activity)";
+
+    /// Ask whether a new profile should be created
+    fn ask(self, cursive: &mut CursiveRunnable) -> bool {
+        let replied_default = Rc::new(Cell::default());
+        let reply = |is_default| {
+            let replied_default2 = replied_default.clone();
+            move |cursive: &mut Cursive| {
+                replied_default2.set(is_default);
+                cursive.pop_layer();
+                cursive.quit();
+            }
+        };
+        cursive.add_layer(
+            Dialog::text(self.question)
+                .button(self.default_reply, reply(true))
+                .button(self.other_reply, reply(false)),
+        );
+        cursive.run();
+        return replied_default.get() ^ !self.default_means_create;
+    }
+}
+
 /// Measure a build profile, storing the result in a specific location
 ///
 /// Return true if everything worked out, false if that failed and the
@@ -244,105 +343,6 @@ fn measure_profile(
         std::process::abort()
     } else {
         return false;
-    }
-}
-
-/// Prompt to be shown when a new profile or trace may need to be created
-struct CreatePrompt {
-    /// Question to be asked to the user
-    question: String,
-
-    /// Default reply
-    default_reply: &'static str,
-
-    /// Other reply
-    other_reply: &'static str,
-
-    /// Default reply means that a new profile should be created
-    default_means_create: bool,
-}
-//
-impl CreatePrompt {
-    /// Build profile cration prompt when there is no existing build profile
-    fn new_build_profile() -> Self {
-        Self {
-            question: format!(
-                "It looks like this build has not been profiled yet. \
-                Ready to do so?\n{}",
-                Self::BUILD_PROFILE_TRAILER
-            ),
-            default_reply: "Yes",
-            other_reply: "No",
-            default_means_create: true,
-        }
-    }
-
-    /// Build profile cration prompt when the build profile might be or is stale
-    ///
-    /// If the cpp files changed, we know that the profile is stale, but if
-    /// other build dependencies like headers changed, we don't know about it
-    /// because CMake won't tell us about those.
-    ///
-    /// Given that measuring a build profile can take more than an hour, it's
-    /// best in any case to ask before overwriting the existing profile, which
-    /// may still be good enough.
-    ///
-    fn stale_build_profile(profile_age_mins: Option<u64>) -> Self {
-        let mut question = String::new();
-        match profile_age_mins {
-            Some(age_mins) => {
-                let age_hours = age_mins / 60;
-                let age_days = age_hours / 24;
-                question.push_str("There is an existing build profile from ");
-                if age_days > 0 {
-                    write!(question, "{age_days} day").expect("Write to String can't fail");
-                    if age_days > 1 {
-                        write!(question, "s").expect("Write to String can't fail");
-                    }
-                } else if age_hours > 0 {
-                    write!(question, "{age_hours}h").expect("Write to String can't fail");
-                } else {
-                    write!(question, "{age_mins}min").expect("Write to String can't fail");
-                }
-                question.push_str(" ago. Would you consider it up to date?\n");
-            }
-            None => question.push_str(
-                "There is an existing build profile, but it is not up to date \
-                with respect to current source code. Use it anyway?\n",
-            ),
-        }
-        question.push_str(Self::BUILD_PROFILE_TRAILER);
-        Self {
-            question,
-            default_reply: "Reuse",
-            other_reply: "Measure",
-            default_means_create: false,
-        }
-    }
-
-    /// Common trailer for all build profile creation questions
-    const BUILD_PROFILE_TRAILER: &'static str =
-        "(Measuring a build profile requires a full single-core build, \
-            during which you should minimize other system activity)";
-
-    /// Ask whether a new profile should be created
-    fn ask(self, cursive: &mut CursiveRunnable) -> bool {
-        let replied_default = Rc::new(Cell::default());
-        let reply = |is_default| {
-            let replied_default2 = replied_default.clone();
-            move |cursive: &mut Cursive| {
-                replied_default2.set(is_default);
-                cursive.pop_layer();
-                cursive.quit();
-            }
-        };
-        cursive.add_layer(
-            Dialog::text(self.question)
-                .button(self.default_reply, reply(true))
-                .button(self.other_reply, reply(false)),
-        );
-        cursive.run();
-        return replied_default.get() ^ !self.default_means_create;
     }
 }
 
