@@ -10,7 +10,7 @@ use thiserror::Error;
 pub const DEFAULT_LOCATION: &str = "./cmakeperf.csv";
 
 /// Load a previously measured build profile
-pub fn load(path: impl AsRef<Path>) -> Result<Profile, ProfileLoadError> {
+pub fn load(path: impl AsRef<Path>) -> Result<BuildProfile, ProfileLoadError> {
     let mut reader = match csv::Reader::from_path(path.as_ref()) {
         Err(e) => match e.kind() {
             csv::ErrorKind::Io(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -44,7 +44,7 @@ pub enum ProfileLoadError {
 ///
 /// This summarizes the compilation performance of one compilation unit.
 ///
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Unit {
     /// Relative path to the source file, starting from the build directory
     #[serde(rename = "file")]
@@ -76,4 +76,4 @@ impl Unit {
 }
 
 /// Full build profile
-type Profile = Vec<Unit>;
+pub type BuildProfile = Vec<Unit>;

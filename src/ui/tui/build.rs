@@ -7,16 +7,21 @@ use crate::{
         profile::{
             self,
             cmakeperf::{self, CollectStep},
+            BuildProfile, ProfileLoadError,
         },
     },
+    ui::display::path::truncate_path_iter,
     CliArgs,
 };
 use cursive::{
+    traits::Resizable,
     views::{Dialog, LinearLayout, ProgressBar, TextView},
     Cursive, CursiveRunnable,
 };
+use cursive_table_view::{TableView, TableViewItem};
 use std::{
     cell::Cell,
+    cmp::Ordering,
     fmt::Write,
     io,
     path::Path,
@@ -50,7 +55,7 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
         }
     };
 
-    // Check for clang availability and retrieve it path
+    // Check for availability of a suitable clang release
     let clangpp = match clang::find_clangpp() {
         Ok(program) => program,
         Err(e) => {
@@ -70,11 +75,25 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
             return;
         };
 
-    // TODO: Load profile and display it
-    // TODO: Use trace::profile where appropriate. Remember to correctly handle
-    //       the case where a trace in the build profile isn't present in the
-    //       compilation database, which can happen with stale profiles. Also
-    //       remember to check for freshness
+    // Load the full-build profile
+    let profile = match profile::load(profile_path) {
+        Ok(profile) => profile,
+        Err(e) => {
+            let message = match e {
+                ProfileLoadError::FileNotFound => {
+                    "Performance profile vanished before it could be loaded!".to_owned()
+                }
+                ProfileLoadError::ParseError(p) => {
+                    format!("Failed to parse performance profile: {p}")
+                }
+            };
+            error(cursive, message);
+            return;
+        }
+    };
+
+    // Display the build profile and let the user pick a trace to anaylze
+    display_profile(cursive, compilation_database, clangpp.as_ref(), profile)
 }
 
 /// Update the build profile as needed as preparation for opening it
@@ -212,7 +231,7 @@ impl CreatePrompt {
             }
             question.push_str(" ago");
         }
-        question.push_str(". Would you consider it up to date?");
+        question.push_str(". Do you consider it up to date?");
         Self::stale_build_profile_impl(question)
     }
 
@@ -360,6 +379,115 @@ fn measure_profile(
         std::process::abort()
     } else {
         return false;
+    }
+}
+
+/// Display the full-build profile, let user explore it and analyze traces
+fn display_profile(
+    cursive: &mut CursiveRunnable,
+    compilation_database: CompilationDatabase,
+    clangpp: &str,
+    profile: BuildProfile,
+) {
+    // Determine if the profile contains wall-clock time information
+    let has_walltime = profile
+        .first()
+        .map(|unit| unit.wall_time().is_some())
+        .unwrap_or(false);
+
+    // Check terminal dimensions
+    let (terminal_width, terminal_height) =
+        termion::terminal_size().expect("Could not read terminal configuration");
+
+    // Compute table column widths
+    const MAX_RSS_WIDTH: usize = 10;
+    const WALL_TIME_WIDTH: usize = 8;
+    let mut non_file_width = MAX_RSS_WIDTH + 5;
+    if has_walltime {
+        non_file_width += WALL_TIME_WIDTH + 3;
+    }
+    let file_width = terminal_width as usize - non_file_width;
+
+    // Set up table
+    let mut table = TableView::<profile::Unit, ProfileColumn>::new()
+        .items(profile)
+        .column(ProfileColumn::MaxRSS, "Memory", |c| {
+            c.width(MAX_RSS_WIDTH).ordering(Ordering::Greater)
+        })
+        .default_column(ProfileColumn::MaxRSS);
+    if has_walltime {
+        table.add_column(ProfileColumn::WallTime, "Time", |c| {
+            c.width(WALL_TIME_WIDTH).ordering(Ordering::Greater)
+        });
+    }
+    table.add_column(
+        ProfileColumn::RelPath(file_width as u16),
+        "Source file",
+        |c| c.width(file_width),
+    );
+    table.sort();
+    table.set_selected_row(0);
+
+    // TODO: Add footer, help dialog, interaction
+    // TODO: Use trace::profile where appropriate. Remember to correctly handle
+    //       the case where a trace in the build profile isn't present in the
+    //       compilation database, which can happen with stale profiles. Also
+    //       remember to check for freshness
+
+    // DEBUG
+    cursive.add_fullscreen_layer(table.min_size((terminal_width, terminal_height)));
+    cursive.run();
+}
+
+/// Column in the build profile
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum ProfileColumn {
+    /// Maximal RSS memory consumption
+    MaxRSS,
+
+    /// Elapsed CPU time
+    WallTime,
+
+    /// Relative file path (to be shrunk to a specified amount of term columns)
+    RelPath(u16),
+}
+//
+impl TableViewItem<ProfileColumn> for profile::Unit {
+    fn to_column(&self, column: ProfileColumn) -> String {
+        match column {
+            ProfileColumn::MaxRSS => format!("{:.2} GB", self.max_rss_bytes() as f32 / 1e9),
+            ProfileColumn::WallTime => format!(
+                "{:.1}s",
+                self.wall_time()
+                    .expect("Wall-time should be present if this is probed")
+                    .as_secs_f32()
+            ),
+            ProfileColumn::RelPath(cols) => truncate_path_iter(
+                self.rel_path()
+                    .as_ref()
+                    .components()
+                    .map(|s| s.as_os_str().to_string_lossy()),
+                cols,
+            )
+            .into(),
+        }
+    }
+
+    fn cmp(&self, other: &Self, column: ProfileColumn) -> Ordering
+    where
+        Self: Sized,
+    {
+        match column {
+            ProfileColumn::MaxRSS => self.max_rss_bytes().cmp(&other.max_rss_bytes()),
+            ProfileColumn::WallTime => self
+                .wall_time()
+                .zip(other.wall_time())
+                .map(|(x, y)| x.cmp(&y))
+                .expect("Wall-time should be present if this is probed"),
+            ProfileColumn::RelPath(_cols) => {
+                self.rel_path().as_ref().cmp(&other.rel_path().as_ref())
+            }
+        }
     }
 }
 

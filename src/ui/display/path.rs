@@ -26,8 +26,8 @@ pub fn truncate_path(path: &InternedPath, cols: u16) -> Box<str> {
 
 /// Easily testable implementation of truncate_path that takes an iterator of
 /// path components as input instead of an InternedPath
-fn truncate_path_iter<'a>(
-    mut components: impl Iterator<Item = &'a str> + DoubleEndedIterator + Clone,
+pub fn truncate_path_iter(
+    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
     cols: u16,
 ) -> Box<str> {
     // Track remaining column budget, keeping 1 spare column to insert an
@@ -45,7 +45,10 @@ fn truncate_path_iter<'a>(
     } else if cols >= MIN_FILENAME_WIDTH + 2 {
         // If not, and if the filename is long enough for this not to be
         // ridiculous, display a shortened file name where the middle is elided.
-        display_filename(components.next_back().expect("Expected file name"), cols)
+        display_filename(
+            components.next_back().expect("Expected file name").as_ref(),
+            cols,
+        )
     } else {
         // Otherwise give up and emit a single ellipsis
         '…'.to_string().into()
@@ -71,7 +74,7 @@ const MIN_FILENAME_WIDTH: usize = 15;
 ///
 /// Return the number of selected components at the front and the back
 fn select_components<'a>(
-    mut components: impl Iterator<Item = &'a str> + DoubleEndedIterator + Clone,
+    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
     mut cols: usize,
 ) -> (usize, usize) {
     // Check how many path components we can print on the front & back sides
@@ -99,6 +102,7 @@ fn select_components<'a>(
             // components are followed by one, and back components are preceded
             // by one, but the fs root needs no separator and the last component
             // will use the separator of the following/preceding element.
+            let candidate = candidate.as_ref();
             let need_separator = !(is_last_component || (candidate == ROOT_COMPONENT.as_ref()));
             let width_with_separator = candidate.width() + (need_separator as usize);
 
@@ -139,7 +143,7 @@ fn select_components<'a>(
 
 /// Display the set of path components selected by select_components
 fn display_components<'a>(
-    mut components: impl Iterator<Item = &'a str> + DoubleEndedIterator + Clone,
+    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
     (accepted_front, accepted_back): (usize, usize),
 ) -> Box<str> {
     // Set up storage
@@ -151,6 +155,7 @@ fn display_components<'a>(
         let component = components
             .next()
             .expect("There should be more components than accepted components");
+        let component = component.as_ref();
         buffer.push_str(component);
         if component != ROOT_COMPONENT.as_ref() {
             buffer.push(PATH_SEPARATOR);
@@ -177,7 +182,8 @@ fn display_components<'a>(
         buffer.push_str(
             components
                 .next()
-                .expect("There should be more components than accepted components"),
+                .expect("There should be more components than accepted components")
+                .as_ref(),
         );
     }
 
