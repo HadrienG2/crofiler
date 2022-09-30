@@ -2,8 +2,8 @@
 
 use crate::{
     build::{
-        self, clang,
-        commands::{CompilationDatabase, DatabaseLoadError},
+        clang,
+        commands::{CompilationDatabase, DatabaseLoadError, ProductFreshness},
         profile::{
             self,
             cmakeperf::{self, CollectStep},
@@ -27,7 +27,7 @@ use std::{
 /// Perform full-build profiling, from which the user can go to trace profiling
 pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
     // Load the compilation database
-    let compilation_database = match build::commands::load() {
+    let compilation_database = match CompilationDatabase::load() {
         Ok(database) => database,
         Err(e) => {
             let message = match e {
@@ -73,9 +73,8 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
     // TODO: Load profile and display it
     // TODO: Use trace::profile where appropriate. Remember to correctly handle
     //       the case where a trace in the build profile isn't present in the
-    //       compilation database, which can happen with stale profiles.
-    // TODO: For traces, don't prompt for staleness, just compare input and
-    //       output file age and recreate profile file as needed.
+    //       compilation database, which can happen with stale profiles. Also
+    //       remember to check for freshness
 }
 
 /// Update the build profile as needed as preparation for opening it
@@ -83,6 +82,7 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
 /// Returns the path to the build profile, which can be assumed to exist, or
 /// None if we can't create a build profile and should stop here.
 ///
+// TODO: Make some of this logic reusable for traces
 pub fn update_profile(
     cursive: &mut CursiveRunnable,
     args: &CliArgs,
@@ -98,42 +98,35 @@ pub fn update_profile(
         .unwrap_or(default_profile_path);
 
     // Check if we should ask the user about full build profile (re)creation
-    let profile_exists = profile_path.exists();
-    let create_prompt = match (profile_exists, is_default_path) {
-        // The specified build profile does not exist yet
-        (false, _) => Some(CreatePrompt::new_build_profile()),
+    let (profile_exists, create_prompt) = match compilation_database.profile_freshness(profile_path)
+    {
+        // No build profiled at the expected location
+        Ok(ProductFreshness::Nonexistent) => (false, Some(CreatePrompt::new_build_profile())),
 
-        // A build profile exists, but it may be stale. Since the user stuck
-        // with the default build profile location, a warning may be in order.
-        (true, true) => match profile::is_up_to_date(profile_path, compilation_database) {
-            Ok(true) => {
-                let profile_age = match build::file_age(profile_path) {
-                    Ok(profile_age) => profile_age,
-                    Err(e) => {
-                        error(cursive, format!("Failed to check build profile age: {e}"));
-                        return None;
-                    }
-                };
-                let profile_age_mins = profile_age.as_secs() / 60;
-                if profile_age_mins > 1 {
-                    Some(CreatePrompt::stale_build_profile(Some(profile_age_mins)))
-                } else {
-                    None
-                }
-            }
-            Ok(false) => Some(CreatePrompt::stale_build_profile(None)),
-            Err(e) => {
-                error(
-                    cursive,
-                    format!("Failed to check build profile staleness: {e}"),
-                );
-                return None;
-            }
-        },
+        // There is a build profile but it is obviously stale
+        Ok(ProductFreshness::Outdated) => (true, Some(CreatePrompt::stale_build_profile())),
 
-        // The user manually requested using a certain build profile that exists,
-        // so we're going to display that without unwelcome checks & questions
-        (true, false) => None,
+        // There is a build profile, and it does not look obviously stale, but
+        // might still be because we are not omniscient. Prompt if it's older
+        // than one minute and we're using the default path (not manual choice)
+        Ok(ProductFreshness::MaybeOutdated(age)) => {
+            let age_mins = age.map(|d| d.as_secs() / 60).unwrap_or(u64::MAX);
+            let create_prompt = if age_mins > 0 && is_default_path {
+                Some(CreatePrompt::maybe_stale_build_profile(Some(age_mins)))
+            } else {
+                None
+            };
+            (true, create_prompt)
+        }
+
+        // Something wrong happened while checking
+        Err(e) => {
+            error(
+                cursive,
+                format!("Failed to check build profile freshness: {e}"),
+            );
+            return None;
+        }
     };
 
     // Handle build profile creation requests
@@ -177,12 +170,21 @@ impl CreatePrompt {
                 Self::BUILD_PROFILE_TRAILER
             ),
             default_reply: "Yes",
-            other_reply: "No",
+            other_reply: "Quit",
             default_means_create: true,
         }
     }
 
-    /// Build profile cration prompt when the build profile might be or is stale
+    /// Build profile cration prompt when the build profile is stale
+    fn stale_build_profile() -> Self {
+        Self::stale_build_profile_impl(
+            "There is an existing build profile, but it is not up to date \
+            with respect to current source code. Use it anyway?"
+                .to_owned(),
+        )
+    }
+
+    /// Build profile cration prompt when the build profile might be stale
     ///
     /// If the cpp files changed, we know that the profile is stale, but if
     /// other build dependencies like headers changed, we don't know about it
@@ -192,30 +194,31 @@ impl CreatePrompt {
     /// best in any case to ask before overwriting the existing profile, which
     /// may still be good enough.
     ///
-    fn stale_build_profile(profile_age_mins: Option<u64>) -> Self {
-        let mut question = String::new();
-        match profile_age_mins {
-            Some(age_mins) => {
-                let age_hours = age_mins / 60;
-                let age_days = age_hours / 24;
-                question.push_str("There is an existing build profile from ");
-                if age_days > 0 {
-                    write!(question, "{age_days} day").expect("Write to String can't fail");
-                    if age_days > 1 {
-                        write!(question, "s").expect("Write to String can't fail");
-                    }
-                } else if age_hours > 0 {
-                    write!(question, "{age_hours}h").expect("Write to String can't fail");
-                } else {
-                    write!(question, "{age_mins}min").expect("Write to String can't fail");
+    fn maybe_stale_build_profile(age_mins: Option<u64>) -> Self {
+        let mut question = "There is an existing build profile".to_owned();
+        if let Some(age_mins) = age_mins {
+            question.push_str(" from ");
+            let age_hours = age_mins / 60;
+            let age_days = age_hours / 24;
+            if age_days > 0 {
+                write!(question, "{age_days} day").expect("Write to String can't fail");
+                if age_days > 1 {
+                    write!(question, "s").expect("Write to String can't fail");
                 }
-                question.push_str(" ago. Would you consider it up to date?\n");
+            } else if age_hours > 0 {
+                write!(question, "{age_hours}h").expect("Write to String can't fail");
+            } else {
+                write!(question, "{age_mins}min").expect("Write to String can't fail");
             }
-            None => question.push_str(
-                "There is an existing build profile, but it is not up to date \
-                with respect to current source code. Use it anyway?\n",
-            ),
+            question.push_str(" ago");
         }
+        question.push_str(". Would you consider it up to date?");
+        Self::stale_build_profile_impl(question)
+    }
+
+    /// Commonalities between all stale_build_profile functions
+    fn stale_build_profile_impl(mut question: String) -> Self {
+        question.push('\n');
         question.push_str(Self::BUILD_PROFILE_TRAILER);
         Self {
             question,
@@ -305,7 +308,9 @@ fn measure_profile(
                 ))
                 .child(
                     ProgressBar::new()
-                        .max(compilation_database.len() + 1)
+                        // cmakeperf will print one line in the beginning and
+                        // then one line per compilation database entry processed
+                        .max(compilation_database.entries().count() + 1)
                         .with_task(move |counter| {
                             loop {
                                 let outcome = match collect.wait_next_step() {

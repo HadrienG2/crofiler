@@ -4,7 +4,7 @@
 //! user experience (no need to install an extra Python package), so keep it
 //! as encapsulated as possible.
 
-use crate::build;
+use crate::build::commands::CompilationDatabase;
 use log::info;
 use std::{
     io::{self, BufRead, BufReader, ErrorKind, Read},
@@ -41,7 +41,7 @@ impl Collect {
         let mut child = Command::new(PROGRAM)
             .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
             .arg(path.as_ref())
-            .arg(build::commands::LOCATION)
+            .arg(CompilationDatabase::location())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

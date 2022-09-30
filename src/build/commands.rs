@@ -6,42 +6,21 @@ use shlex::Shlex;
 use std::{
     io,
     path::{Path, PathBuf},
+    time::Duration,
 };
 use thiserror::Error;
-
-/// Load the compilation database
-pub fn load() -> Result<CompilationDatabase, DatabaseLoadError> {
-    let data = match std::fs::read_to_string(LOCATION) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Err(DatabaseLoadError::FileNotFound)
-        }
-        other => other?,
-    };
-    Ok(json::from_str::<CompilationDatabase>(&data)?)
-}
-
-/// Error that is emitted when an activity id cannot be displayed
-#[derive(Debug, Error)]
-pub enum DatabaseLoadError {
-    /// Compilation database not found
-    #[error("no compilation database found")]
-    FileNotFound,
-
-    /// Other I/O error
-    #[error("failed to load compilation database ({0})")]
-    IoError(#[from] io::Error),
-
-    /// Failed to parse the compilation database
-    #[error("failed to parse compilation database ({0})")]
-    ParseError(#[from] json::Error),
-}
 
 /// One entry from the compilation database
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {
+    /// Working directory for the build command
     directory: Box<Path>,
+
+    /// Build command
     command: String,
+
+    /// Input
     file: Box<Path>,
 }
 //
@@ -106,7 +85,134 @@ impl Entry {
 }
 
 /// Full compilation database
-pub type CompilationDatabase = Vec<Entry>;
+pub struct CompilationDatabase(Vec<Entry>);
+//
+impl CompilationDatabase {
+    /// Location of the compilation database relative to the build directory
+    pub fn location() -> &'static Path {
+        Path::new("compile_commands.json")
+    }
 
-/// Location of the compilation database relative to the build directory
-pub const LOCATION: &str = "compile_commands.json";
+    /// Load from working directory
+    pub fn load() -> Result<Self, DatabaseLoadError> {
+        let data = match std::fs::read_to_string(Self::location()) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(DatabaseLoadError::FileNotFound)
+            }
+            other => other?,
+        };
+        let entries = json::from_str::<Vec<Entry>>(&data)?;
+        Ok(Self(entries))
+    }
+
+    /// List the database entries in arbitrary order
+    pub fn entries(&self) -> impl Iterator<Item = &Entry> {
+        self.0.iter()
+    }
+
+    /// Check if a full-build profile seems up to date
+    pub fn profile_freshness(&self, path: &Path) -> io::Result<ProductFreshness> {
+        self.product_freshness(
+            std::iter::once(Self::location()).chain(self.entries().map(Entry::input)),
+            path,
+        )
+    }
+
+    /// Check if the output of a build command seems up to date
+    ///
+    /// Entry is the index of the entry of interest, as can be probed during
+    /// self.entries().enumerate().
+    ///
+    pub fn output_freshness(&self, entry: usize) -> Result<ProductFreshness, OutputFreshnessError> {
+        let entry = &self.0[entry];
+        let freshness = self.product_freshness(
+            std::iter::once(entry.input()),
+            entry
+                .output()
+                .ok_or(OutputFreshnessError::NotACompileCommand(
+                    entry.command.clone(),
+                ))?,
+        )?;
+        Ok(freshness)
+    }
+
+    /// Check if some build derivative seems up to date
+    fn product_freshness<'a>(
+        &self,
+        inputs: impl Iterator<Item = &'a Path>,
+        output: impl AsRef<Path>,
+    ) -> io::Result<ProductFreshness> {
+        // Check build product existence and mtime
+        let output = output.as_ref();
+        let product_mtime = match output.metadata().and_then(|m| m.modified()) {
+            Ok(mtime) => mtime,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(ProductFreshness::Nonexistent)
+            }
+            Err(other) => return Err(other),
+        };
+
+        // Compare product mtime to compilation database mtime
+        if product_mtime < Path::new(Self::location()).metadata()?.modified()? {
+            return Ok(ProductFreshness::Outdated);
+        }
+
+        // Compare to mtime of every input file
+        for input in inputs {
+            if product_mtime < input.metadata()?.modified()? {
+                return Ok(ProductFreshness::Outdated);
+            }
+        }
+
+        // So far, so good, but we don't know about all build dependencies so
+        // we should stay cautious in our conclusions.
+        Ok(ProductFreshness::MaybeOutdated(
+            product_mtime.elapsed().ok(),
+        ))
+    }
+}
+
+/// Failure to load the CompilationDatabase from disk
+#[derive(Debug, Error)]
+pub enum DatabaseLoadError {
+    /// Compilation database not found
+    #[error("no compilation database found")]
+    FileNotFound,
+
+    /// Other I/O error
+    #[error("failed to load compilation database ({0})")]
+    IoError(#[from] io::Error),
+
+    /// Failed to parse the compilation database
+    #[error("failed to parse compilation database ({0})")]
+    ParseError(#[from] json::Error),
+}
+
+/// Result of a build profile/output freshness query
+pub enum ProductFreshness {
+    /// Build product has not been produced yet
+    Nonexistent,
+
+    /// Build product exists, but is provably outdated
+    Outdated,
+
+    /// Build profile has existed for a certain time and could be outdated
+    ///
+    /// None will be used to encode the case where the build product age is
+    /// unknown, which can happen when the system time is inconsistent with
+    /// filesystem timestamps and the build product seems to be from the future.
+    ///
+    MaybeOutdated(Option<Duration>),
+}
+
+/// Failure to check output fresheness
+#[derive(Debug, Error)]
+pub enum OutputFreshnessError {
+    /// Asked to probe freshness of an unknown entry
+    #[error("could not parse output location from compile command: {0}")]
+    NotACompileCommand(String),
+
+    /// I/O error
+    #[error("failed to check output freshness ({0})")]
+    IoError(#[from] io::Error),
+}
