@@ -20,6 +20,9 @@ pub fn run(args: CliArgs) {
     // Set up logging using syslog
     syslog::init(Facility::LOG_USER, LevelFilter::Info, None).expect("Failed to initialize syslog");
 
+    // Warn that logs will be emitted on syslog
+    eprintln!("Since stderr is not usable in a TUI, logs will be emitted on syslog.");
+
     // Start the processing thread and set up the text user interface
     let mut cursive = init::setup_cursive(State {
         processing_thread: ProcessingThread::start(),
