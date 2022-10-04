@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json as json;
 use shlex::Shlex;
 use std::{
+    collections::HashMap,
     io,
     path::{Path, PathBuf},
     time::Duration,
@@ -78,6 +79,11 @@ impl Entry {
         Some(result)
     }
 
+    /// Check if a file derived from this source file seems up to date
+    pub fn derived_freshness(&self, output_path: &Path) -> io::Result<ProductFreshness> {
+        CompilationDatabase::product_freshness(std::iter::once(self.input()), output_path)
+    }
+
     /// Command components
     fn full_args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
         Shlex::new(&self.command)
@@ -85,7 +91,7 @@ impl Entry {
 }
 
 /// Full compilation database
-pub struct CompilationDatabase(Vec<Entry>);
+pub struct CompilationDatabase(HashMap<Box<Path>, Entry>);
 //
 impl CompilationDatabase {
     /// Location of the compilation database relative to the build directory
@@ -102,43 +108,34 @@ impl CompilationDatabase {
             other => other?,
         };
         let entries = json::from_str::<Vec<Entry>>(&data)?;
-        Ok(Self(entries))
+        Ok(Self(
+            entries
+                .into_iter()
+                .map(|entry| (Box::from(entry.input()), entry))
+                .collect(),
+        ))
     }
 
     /// List the database entries in arbitrary order
     pub fn entries(&self) -> impl Iterator<Item = &Entry> {
-        self.0.iter()
+        self.0.values()
+    }
+
+    /// Query a database entry by input file path
+    ///
+    /// Will return None if no file with that name exists in the database.
+    ///
+    pub fn entry(&self, input_path: &Path) -> Option<&Entry> {
+        self.0.get(input_path)
     }
 
     /// Check if a full-build profile seems up to date
     pub fn profile_freshness(&self, path: &Path) -> io::Result<ProductFreshness> {
-        self.product_freshness(
-            std::iter::once(Self::location()).chain(self.entries().map(Entry::input)),
-            path,
-        )
-    }
-
-    /// Check if the output of a build command seems up to date
-    ///
-    /// Entry is the index of the entry of interest, as can be probed during
-    /// self.entries().enumerate().
-    ///
-    pub fn output_freshness(&self, entry: usize) -> Result<ProductFreshness, OutputFreshnessError> {
-        let entry = &self.0[entry];
-        let freshness = self.product_freshness(
-            std::iter::once(entry.input()),
-            entry
-                .output()
-                .ok_or(OutputFreshnessError::NotACompileCommand(
-                    entry.command.clone(),
-                ))?,
-        )?;
-        Ok(freshness)
+        Self::product_freshness(self.entries().map(Entry::input), path)
     }
 
     /// Check if some build derivative seems up to date
     fn product_freshness<'a>(
-        &self,
         inputs: impl Iterator<Item = &'a Path>,
         output: impl AsRef<Path>,
     ) -> io::Result<ProductFreshness> {
@@ -203,16 +200,4 @@ pub enum ProductFreshness {
     /// filesystem timestamps and the build product seems to be from the future.
     ///
     MaybeOutdated(Option<Duration>),
-}
-
-/// Failure to check output fresheness
-#[derive(Debug, Error)]
-pub enum OutputFreshnessError {
-    /// Asked to probe freshness of an unknown entry
-    #[error("could not parse output location from compile command: {0}")]
-    NotACompileCommand(String),
-
-    /// I/O error
-    #[error("failed to check output freshness ({0})")]
-    IoError(#[from] io::Error),
 }

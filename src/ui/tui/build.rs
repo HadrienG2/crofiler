@@ -433,6 +433,10 @@ fn display_profile(
         state.showing_full_build = true;
     });
 
+    // TODO: Extend BuildProfile to enable efficient lookup by file name.
+    //       Acknowledge the faillible nature of this task in the presence of
+    //       stale compilation profiles. Make compilation unit freshness check
+    //       a method of Entry, not compilation database as for build profiles.
     // TODO: Add interaction
     // TODO: Use trace::profile where appropriate. Remember to correctly handle
     //       the case where a trace in the build profile isn't present in the
