@@ -325,7 +325,6 @@ dependencies = [
  "decorum",
  "env_logger",
  "log",
- "no-panic",
  "once_cell",
  "serde",
  "serde_json",
@@ -774,17 +773,6 @@ name = "more-asserts"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5474f8732dc7e0635ae9df6595bcd39cd30e3cfe8479850d4fa3e69306c19712"
-
-[[package]]
-name = "no-panic"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b884e0f4a7a80970539a7757902675ce503d98615f5b564564b4bd0236f7f36"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "nom"

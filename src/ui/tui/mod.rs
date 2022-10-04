@@ -11,8 +11,11 @@ use crate::CliArgs;
 use clang_time_trace::Duration;
 use cursive::{views::Dialog, Cursive};
 use decorum::Finite;
-use log::LevelFilter;
-use std::panic::{self, AssertUnwindSafe};
+use log::{error, LevelFilter};
+use std::{
+    fmt::Write,
+    panic::{self, AssertUnwindSafe, PanicInfo},
+};
 use syslog::Facility;
 
 /// Run the analysis using the textual user interface
@@ -21,7 +24,7 @@ pub fn run(args: CliArgs) {
     syslog::init(Facility::LOG_USER, LevelFilter::Info, None).expect("Failed to initialize syslog");
 
     // Warn that logs will be emitted on syslog
-    eprintln!("Since stderr is not usable in a TUI, logs will be emitted on syslog.");
+    eprintln!("Since stderr is not usable inside of a TUI, logs will be emitted on syslog...");
 
     // Start the processing thread and set up the text user interface
     let mut cursive = init::setup_cursive(State {
@@ -34,7 +37,45 @@ pub fn run(args: CliArgs) {
         display_config: Default::default(),
     });
 
-    // Set up the last-chance panic handler
+    // Register a panic hook that logs as much info as possible
+    let default_panic_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
+        // Spell out what happened, and hopefully where
+        let mut message = String::from("The TUI crashed due to a panic");
+        if let Some(location) = panic_info.location() {
+            write!(
+                &mut message,
+                " at {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            )
+            .expect("Write to String can't fail");
+        }
+
+        // If the panic payload is a message (common case), extract it
+        let payload = panic_info.payload();
+        let payload_str = payload
+            .downcast_ref::<String>()
+            .map(|s: &String| -> &str { &s })
+            .or_else(|| {
+                payload
+                    .downcast_ref::<&'static str>()
+                    .map(|s| -> &str { &s })
+            });
+
+        // Log what we know
+        if let Some(payload_str) = payload_str {
+            error!("{message} with payload: {payload_str}");
+        } else {
+            error!("{message}");
+        }
+
+        // Leave the rest up to the default panic hook
+        default_panic_hook(panic_info);
+    }));
+
+    // Set up the last-chance panic handler and run
     let res = panic::catch_unwind(AssertUnwindSafe(move || {
         if let Some(trace_path) = &args.input {
             trace::profile(&mut cursive, trace_path);
@@ -47,7 +88,8 @@ pub fn run(args: CliArgs) {
     // so hopefully the terminal should be in a correct state and the user
     // should see the message...
     if let Err(e) = res {
-        eprintln!("The TUI crashed due to an unhandled panic.\n\
+        eprintln!("===\n\
+                   The TUI crashed due to an unhandled panic.\n\
                    This is a bug, please report it at https://github.com/HadrienG2/crofiler/issues!\n\
                    The system logs may contain more information about what happened.");
         panic::resume_unwind(e);

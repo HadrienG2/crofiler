@@ -1,7 +1,5 @@
 //! CMake compilation database handling
 
-#[cfg(feature = "no_panic")]
-use no_panic::no_panic;
 use serde::Deserialize;
 use serde_json as json;
 use shlex::Shlex;
@@ -29,25 +27,21 @@ pub struct Entry {
 //
 impl Entry {
     /// Working directory
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn current_dir(&self) -> &Path {
         &self.directory
     }
 
     /// Executable
-    // #[cfg_attr(feature = "no_panic", no_panic)] => impl Trait not supported
     pub fn program(&self) -> Option<impl AsRef<str>> {
         self.full_args().next()
     }
 
     /// Arguments to the executable
-    // #[cfg_attr(feature = "no_panic", no_panic)] => impl Trait not supported
     pub fn args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
         self.full_args().skip(1)
     }
 
     /// Input file path
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn input(&self) -> &Path {
         &self.file
     }
@@ -57,7 +51,6 @@ impl Entry {
     /// This parses the arguments assuming a GCC-like `-o <output>` syntax.
     /// Will return None if basic syntax assumptions do not look fullfilled.
     ///
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn output(&self) -> Option<PathBuf> {
         // Start from working directory provided by cmake
         let mut result = PathBuf::from(&*self.directory);
@@ -85,13 +78,11 @@ impl Entry {
     }
 
     /// Check if a file derived from this source file seems up to date
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn derived_freshness(&self, output_path: &Path) -> io::Result<ProductFreshness> {
         CompilationDatabase::product_freshness(std::iter::once(self.input()), output_path)
     }
 
     /// Command components
-    // #[cfg_attr(feature = "no_panic", no_panic)] => impl Trait not supported
     fn full_args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
         Shlex::new(&self.command)
     }
@@ -102,13 +93,11 @@ pub struct CompilationDatabase(HashMap<Box<Path>, Entry>);
 //
 impl CompilationDatabase {
     /// Location of the compilation database relative to the build directory
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn location() -> &'static Path {
         Path::new("compile_commands.json")
     }
 
     /// Load from working directory
-    // #[cfg_attr(feature = "no_panic", no_panic)] => False positive
     pub fn load() -> Result<Self, DatabaseLoadError> {
         let data = match std::fs::read_to_string(Self::location()) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -126,7 +115,6 @@ impl CompilationDatabase {
     }
 
     /// List the database entries in arbitrary order
-    // #[cfg_attr(feature = "no_panic", no_panic)] => Doesn't support impl Trait
     pub fn entries(&self) -> impl Iterator<Item = &Entry> {
         self.0.values()
     }
@@ -135,19 +123,16 @@ impl CompilationDatabase {
     ///
     /// Will return None if no file with that name exists in the database.
     ///
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn entry(&self, input_path: &Path) -> Option<&Entry> {
         self.0.get(input_path)
     }
 
     /// Check if a full-build profile seems up to date
-    // #[cfg_attr(feature = "no_panic", no_panic)] => False positive
     pub fn profile_freshness(&self, path: &Path) -> io::Result<ProductFreshness> {
         Self::product_freshness(self.entries().map(Entry::input), path)
     }
 
     /// Check if some build derivative seems up to date
-    // #[cfg_attr(feature = "no_panic", no_panic)] => False positive
     fn product_freshness<'a>(
         inputs: impl Iterator<Item = &'a Path>,
         output: impl AsRef<Path>,

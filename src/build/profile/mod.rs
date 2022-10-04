@@ -2,8 +2,6 @@
 
 pub mod cmakeperf;
 
-#[cfg(feature = "no_panic")]
-use no_panic::no_panic;
 use serde::Deserialize;
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
@@ -12,7 +10,6 @@ use thiserror::Error;
 pub const DEFAULT_LOCATION: &str = "./cmakeperf.csv";
 
 /// Load a previously measured build profile
-// #[cfg_attr(feature = "no_panic", no_panic)] => False positive ?
 pub fn load(path: impl AsRef<Path>) -> Result<BuildProfile, ProfileLoadError> {
     let mut reader = match csv::Reader::from_path(path.as_ref()) {
         Err(e) => match e.kind() {
@@ -63,13 +60,11 @@ pub struct Unit {
 //
 impl Unit {
     /// Path to the file, starting from the build directory
-    // #[cfg_attr(feature = "no_panic", no_panic)] => No impl Trait support
     pub fn rel_path(&self) -> impl AsRef<Path> + '_ {
         &self.rel_path
     }
 
     /// Maximum observed memory usage in bytes
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn max_rss_bytes(&self) -> usize {
         self.max_rss
     }
@@ -79,7 +74,6 @@ impl Unit {
     /// If the compilation profile contains invalid duration values, these will
     /// be reported as an "error" containing the raw floating-point number.
     ///
-    #[cfg_attr(feature = "no_panic", no_panic)]
     pub fn wall_time(&self) -> Option<Result<Duration, f32>> {
         let secs_f32 = self.wall_time_secs?;
         if !secs_f32.is_finite() {
