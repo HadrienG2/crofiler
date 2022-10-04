@@ -27,6 +27,7 @@ use std::{
     path::Path,
     rc::Rc,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 /// Perform full-build profiling, from which the user can go to trace profiling
@@ -478,7 +479,8 @@ impl TableViewItem<ProfileColumn> for profile::Unit {
                 "{:.1}s",
                 self.wall_time()
                     .expect("Wall-time should be present if this is probed")
-                    .as_secs_f32()
+                    .map(|dur| dur.as_secs_f32())
+                    .unwrap_or_else(|raw_secs| raw_secs)
             ),
             ProfileColumn::RelPath(cols) => truncate_path_iter(
                 self.rel_path()
@@ -500,7 +502,7 @@ impl TableViewItem<ProfileColumn> for profile::Unit {
             ProfileColumn::WallTime => self
                 .wall_time()
                 .zip(other.wall_time())
-                .map(|(x, y)| x.cmp(&y))
+                .map(|(x, y)| x.partial_cmp(&y).expect("Failed to compare wall-time"))
                 .expect("Wall-time should be present if this is probed"),
             ProfileColumn::RelPath(_cols) => {
                 self.rel_path().as_ref().cmp(&other.rel_path().as_ref())

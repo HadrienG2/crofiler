@@ -6,6 +6,8 @@
 
 use crate::build::commands::CompilationDatabase;
 use log::info;
+#[cfg(feature = "no_panic")]
+use no_panic::no_panic;
 use std::{
     io::{self, BufRead, BufReader, ErrorKind, Read},
     path::Path,
@@ -14,6 +16,7 @@ use std::{
 use thiserror::Error;
 
 /// Check for cmakeperf's presence
+// #[cfg_attr(feature = "no_panic", no_panic)] => False positive
 pub fn find() -> io::Result<ExitStatus> {
     Command::new(PROGRAM)
         .arg("--help")
@@ -37,6 +40,7 @@ pub struct Collect {
 //
 impl Collect {
     /// Start collecting a build profile to a specified location
+    // #[cfg_attr(feature = "no_panic", no_panic)] => Manual proof
     pub fn start(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut child = Command::new(PROGRAM)
             .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
@@ -50,7 +54,7 @@ impl Collect {
             child
                 .stdout
                 .take()
-                .expect("Failed to access piped child stdout"),
+                .expect("Should succeed because stdout is Stdio::piped()"),
         );
         Ok(Self {
             child,
@@ -60,6 +64,11 @@ impl Collect {
     }
 
     /// Wait for the next step in the build profile collection process
+    ///
+    /// It is an error to call wait_next_step() again after a Finished or error
+    /// has been emitted, which can result in a panic.
+    ///
+    // #[cfg_attr(feature = "no_panic", no_panic)] => Manual proof
     pub fn wait_next_step(&mut self) -> Result<CollectStep, CollectError> {
         self.buf.clear();
         match self.stdout.read_line(&mut self.buf) {
@@ -72,6 +81,7 @@ impl Collect {
     }
 
     /// An stdout read failed, check out the final process status
+    // #[cfg_attr(feature = "no_panic", no_panic)] => Manual proof
     pub fn finish(&mut self) -> Result<CollectStep, CollectError> {
         let exit_status = self.child.wait()?;
         if !exit_status.success() {
@@ -79,7 +89,7 @@ impl Collect {
                 .child
                 .stderr
                 .take()
-                .expect("Failed to access piped child stderr");
+                .expect("Should succeed because we finish only once");
             self.buf.clear();
             stderr.read_to_string(&mut self.buf)?;
             let stderr: &str = &self.buf;
