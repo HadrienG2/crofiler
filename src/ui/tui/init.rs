@@ -21,7 +21,7 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
     cursive.set_global_callback(Key::Esc, exit_current_layer);
 
     // U switches between duration units for all active profiles
-    cursive.set_global_callback('u', trace::switch_duration_unit);
+    cursive.set_global_callback('u', trace::display::switch_duration_unit);
 
     // We do not allow dialogs spawned by global keyboard shortcuts to stack on
     // top of each other as this is jarring and has no known use case.

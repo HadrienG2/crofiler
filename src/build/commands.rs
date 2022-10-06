@@ -32,6 +32,7 @@ impl Entry {
     }
 
     /// Executable
+    #[allow(unused)]
     pub fn program(&self) -> Option<impl AsRef<str>> {
         self.full_args().next()
     }
@@ -84,11 +85,17 @@ impl Entry {
 
     /// Command components
     fn full_args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
-        Shlex::new(&self.command)
+        Shlex::new(self.raw_command())
+    }
+
+    /// Raw compilation command without further processing
+    pub fn raw_command(&self) -> &str {
+        &self.command
     }
 }
 
 /// Full compilation database
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompilationDatabase(HashMap<Box<Path>, Entry>);
 //
 impl CompilationDatabase {
@@ -184,6 +191,7 @@ pub enum DatabaseLoadError {
 }
 
 /// Result of a build profile/output freshness query
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProductFreshness {
     /// Build product has not been produced yet
     Nonexistent,
@@ -198,4 +206,15 @@ pub enum ProductFreshness {
     /// filesystem timestamps and the build product seems to be from the future.
     ///
     MaybeOutdated(Option<Duration>),
+}
+//
+impl ProductFreshness {
+    /// Truth that a build product exists, however stale
+    pub fn exists(&self) -> bool {
+        match self {
+            ProductFreshness::Nonexistent => false,
+            ProductFreshness::Outdated => true,
+            ProductFreshness::MaybeOutdated(_age) => true,
+        }
+    }
 }

@@ -18,7 +18,7 @@ const MIN_VERSION: usize = 9;
 /// If found, provide the program argument to be passed to std::Command::new()
 /// when invoking clang. Otherwise, explain what went wrong.
 ///
-pub fn find_clangpp() -> Result<impl AsRef<str>, ClangError> {
+pub fn find_clangpp() -> Result<impl AsRef<str> + 'static, ClangError> {
     let clang_version_output = match Command::new(CLANG_PROGRAM).arg("--version").output() {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(ClangError::NotFound),
         other => other?,

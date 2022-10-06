@@ -60,7 +60,7 @@ pub struct Unit {
 //
 impl Unit {
     /// Path to the file, starting from the build directory
-    pub fn rel_path(&self) -> impl AsRef<Path> + '_ {
+    pub fn rel_path(&self) -> &Path {
         &self.rel_path
     }
 

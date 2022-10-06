@@ -16,7 +16,7 @@ use std::{
     path::Path,
     sync::{
         mpsc::{self, Receiver, Sender},
-        Arc, Mutex, TryLockError,
+        Arc,
     },
     thread::{self, JoinHandle},
 };
@@ -26,9 +26,6 @@ use std::{
 pub struct ProcessingThread {
     /// JoinHandle of the processing thread
     _handle: JoinHandle<()>,
-
-    /// Trace loading status
-    trace_status: Arc<Mutex<ClangTraceLoadStatus>>,
 
     /// Channel to send instructions to the processing thread
     instruction_sender: Sender<Instruction>,
@@ -47,8 +44,6 @@ impl ProcessingThread {
     /// Start the processing thread
     pub fn start() -> Self {
         // Set up processing thread state and communication channels
-        let trace_status = Arc::new(Mutex::new(ClangTraceLoadStatus::Extracted));
-        let trace_status_2 = trace_status.clone();
         let (instruction_sender, instruction_receiver) = mpsc::channel();
         let (string_sender, string_receiver) = mpsc::channel();
         let (activities_sender, activities_receiver) = mpsc::channel();
@@ -58,7 +53,6 @@ impl ProcessingThread {
         let handle = thread::spawn(move || {
             // Process instructions until the main thread hangs up
             worker(
-                trace_status_2,
                 instruction_receiver,
                 string_sender,
                 activities_sender,
@@ -69,7 +63,6 @@ impl ProcessingThread {
         // Emit output interface
         Self {
             _handle: handle,
-            trace_status,
             instruction_sender,
             string_receiver,
             activities_receiver,
@@ -81,36 +74,19 @@ impl ProcessingThread {
     ///
     /// This operation does not block, enabling the display of an interactive
     /// loading screen by the UI thread. But the processing thread itself will
-    /// be unresponsive for the duration of the loading process. You can
-    /// busy-wait for progress using `try_extract_load_result()`.
+    /// be unresponsive for the duration of the loading process.
     ///
-    pub fn start_load_trace(&mut self, path: impl AsRef<Path>) {
-        let mut status = self
-            .trace_status
-            .lock()
-            .expect("Trace load status has been corrupted");
-        *status = ClangTraceLoadStatus::Loading;
-        self.request(Instruction::LoadTrace(path.as_ref().into()));
-    }
-
-    /// Query the outcome of loading the ClangTrace
+    /// Once the trace is loaded, the callback will be called with the result.
     ///
-    /// May return...
-    /// - None if the ClangTrace is still being loaded
-    /// - Some(Ok(())) if the trace was successfully loaded
-    /// - Some(Err(error)) if the ClangTrace could not be loaded
-    ///
-    /// Will panic if the processing thread has panicked or the result has
-    /// already been extracted through a call to this function
-    ///
-    pub fn try_extract_load_result(&mut self) -> Option<ClangTraceLoadResult> {
-        match self.trace_status.try_lock() {
-            Ok(mut guard) => guard.extract(),
-            Err(TryLockError::WouldBlock) => None,
-            Err(TryLockError::Poisoned(e)) => {
-                panic!("Processing thread has crashed: {e}")
-            }
-        }
+    pub fn start_load_trace(
+        &mut self,
+        path: impl AsRef<Path>,
+        callback: impl FnOnce(ClangTraceLoadResult) + Send + 'static,
+    ) {
+        self.request(Instruction::LoadTrace(
+            path.as_ref().into(),
+            Box::new(callback),
+        ));
     }
 
     // TODO: Consider making the following requests asynchronous for increased
@@ -178,40 +154,7 @@ impl ProcessingThread {
     }
 }
 
-/// Status of the ClangTrace loading process
-#[derive(Debug)]
-enum ClangTraceLoadStatus {
-    /// In the process of loading the trace
-    Loading,
-
-    /// The loading process finished with a certain result
-    Loaded(ClangTraceLoadResult),
-
-    /// The result has already been extracted, this is a bug.
-    Extracted,
-}
-//
-impl ClangTraceLoadStatus {
-    /// Extract the result of the ClangTrace loading process, if available
-    ///
-    /// After getting a non-empty option, you become the owner of the result and
-    /// should not poll for it again. Doing so will result in a panic.
-    ///
-    fn extract(&mut self) -> Option<ClangTraceLoadResult> {
-        match self {
-            Self::Loading => None,
-            Self::Loaded(res) => {
-                let result = std::mem::replace(res, Ok(()));
-                *self = Self::Extracted;
-                Some(result)
-            }
-            Self::Extracted => {
-                panic!("Tried to extract the ClangTrace load result twice!");
-            }
-        }
-    }
-}
-//
+/// Result of the ClangTrace loading process
 pub type ClangTraceLoadResult = Result<(), ClangTraceLoadError>;
 
 /// Basic activity data as emitted by the processing thread
@@ -238,7 +181,7 @@ pub struct ActivityInfo {
 /// Instructions that can be sent to the processing thread
 enum Instruction {
     /// Load a clang trace file
-    LoadTrace(Box<Path>),
+    LoadTrace(Box<Path>, Box<dyn FnOnce(ClangTraceLoadResult) + Send>),
 
     /// Render trace-wide metadata for a certain terminal width
     DescribeTrace(u16),
@@ -264,7 +207,6 @@ enum Instruction {
 
 /// Processing thread worker
 fn worker(
-    trace_status: Arc<Mutex<ClangTraceLoadStatus>>,
     instructions: Receiver<Instruction>,
     string: Sender<String>,
     activities: Sender<Box<[ActivityInfo]>>,
@@ -285,18 +227,17 @@ fn worker(
     for instruction in instructions.iter() {
         match instruction {
             // Load a trace
-            Instruction::LoadTrace(path) => {
+            Instruction::LoadTrace(path, callback) => {
                 parsed_arg_cache.clear();
                 description_cache.clear();
                 trace = Some({
-                    let mut status_lock = trace_status.lock().expect("Main thread has crashed");
                     match ClangTrace::from_file(path) {
                         Ok(trace) => {
-                            *status_lock = ClangTraceLoadStatus::Loaded(Ok(()));
+                            callback(Ok(()));
                             trace
                         }
                         Err(e) => {
-                            *status_lock = ClangTraceLoadStatus::Loaded(Err(e));
+                            callback(Err(e));
                             panic!("Failed to load ClangTrace")
                         }
                     }

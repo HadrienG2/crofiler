@@ -3,31 +3,30 @@
 use crate::{
     build::{
         clang,
-        commands::{CompilationDatabase, DatabaseLoadError, ProductFreshness},
+        commands::{CompilationDatabase, DatabaseLoadError},
         profile::{
             self,
             cmakeperf::{self, CollectStep},
             BuildProfile, ProfileLoadError,
         },
     },
-    ui::display::path::truncate_path_iter,
+    ui::{
+        display::path::truncate_path_iter,
+        tui::{trace, CreatePrompt},
+    },
     CliArgs,
 };
 use cursive::{
-    traits::Resizable,
+    traits::{Nameable, Resizable},
     views::{Dialog, LinearLayout, ProgressBar, TextView},
     Cursive, CursiveRunnable,
 };
 use cursive_table_view::{TableView, TableViewItem};
 use std::{
-    cell::Cell,
     cmp::Ordering,
-    fmt::Write,
     io,
     path::Path,
-    rc::Rc,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 /// Perform full-build profiling, from which the user can go to trace profiling
@@ -94,7 +93,7 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
     };
 
     // Display the build profile and let the user pick a trace to anaylze
-    display_profile(cursive, compilation_database, clangpp.as_ref(), profile)
+    display_profile(cursive, args, compilation_database, clangpp, profile)
 }
 
 /// Update the build profile as needed as preparation for opening it
@@ -102,7 +101,6 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
 /// Returns the path to the build profile, which can be assumed to exist, or
 /// None if we can't create a build profile and should stop here.
 ///
-// TODO: Make some of this logic reusable for traces
 pub fn update_profile(
     cursive: &mut CursiveRunnable,
     args: &CliArgs,
@@ -110,7 +108,7 @@ pub fn update_profile(
 ) -> Option<Box<Path>> {
     // Determine full build profile path
     let default_profile_path = Path::new(profile::DEFAULT_LOCATION);
-    let is_default_path = args.build_profile.is_none();
+    let manually_specified = args.build_profile.is_some();
     let profile_path = args
         .build_profile
         .as_ref()
@@ -118,28 +116,8 @@ pub fn update_profile(
         .unwrap_or(default_profile_path);
 
     // Check if we should ask the user about full build profile (re)creation
-    let (profile_exists, create_prompt) = match compilation_database.profile_freshness(profile_path)
-    {
-        // No build profiled at the expected location
-        Ok(ProductFreshness::Nonexistent) => (false, Some(CreatePrompt::new_build_profile())),
-
-        // There is a build profile but it is obviously stale
-        Ok(ProductFreshness::Outdated) => (true, Some(CreatePrompt::stale_build_profile())),
-
-        // There is a build profile, and it does not look obviously stale, but
-        // might still be because we are not omniscient. Prompt if it's older
-        // than one minute and we're using the default path (not manual choice)
-        Ok(ProductFreshness::MaybeOutdated(age)) => {
-            let age_mins = age.map(|d| d.as_secs() / 60).unwrap_or(u64::MAX);
-            let create_prompt = if age_mins > 0 && is_default_path {
-                Some(CreatePrompt::maybe_stale_build_profile(Some(age_mins)))
-            } else {
-                None
-            };
-            (true, create_prompt)
-        }
-
-        // Something wrong happened while checking
+    let freshness = match compilation_database.profile_freshness(profile_path) {
+        Ok(freshness) => freshness,
         Err(e) => {
             error(
                 cursive,
@@ -148,15 +126,15 @@ pub fn update_profile(
             return None;
         }
     };
+    let create_prompt = CreatePrompt::from_freshness(freshness, manually_specified, true);
 
     // Handle build profile creation requests
     if let Some(create_prompt) = create_prompt {
-        let should_create = create_prompt.ask(cursive);
-        if should_create {
+        if create_prompt.ask(cursive) {
             if !measure_profile(cursive, profile_path, compilation_database) {
                 return None;
             }
-        } else if !profile_exists {
+        } else if !freshness.exists() {
             // If the user does not want to create a profile and none exists,
             // we have to stop there and terminate the program.
             return None;
@@ -165,113 +143,9 @@ pub fn update_profile(
     Some(profile_path.into())
 }
 
-/// Prompt to be shown when a new profile or trace may need to be created
-struct CreatePrompt {
-    /// Question to be asked to the user
-    question: String,
-
-    /// Default reply
-    default_reply: &'static str,
-
-    /// Other reply
-    other_reply: &'static str,
-
-    /// Default reply means that a new profile should be created
-    default_means_create: bool,
-}
-//
-impl CreatePrompt {
-    /// Build profile cration prompt when there is no existing build profile
-    fn new_build_profile() -> Self {
-        Self {
-            question: format!(
-                "It looks like this build has not been profiled yet. \
-                Ready to do so?\n{}",
-                Self::BUILD_PROFILE_TRAILER
-            ),
-            default_reply: "Yes",
-            other_reply: "No",
-            default_means_create: true,
-        }
-    }
-
-    /// Build profile cration prompt when the build profile is stale
-    fn stale_build_profile() -> Self {
-        Self::stale_build_profile_impl(
-            "There is an existing build profile, but it is not up to date \
-            with respect to current source code. Use it anyway?"
-                .to_owned(),
-        )
-    }
-
-    /// Build profile cration prompt when the build profile might be stale
-    ///
-    /// If the cpp files changed, we know that the profile is stale, but if
-    /// other build dependencies like headers changed, we don't know about it
-    /// because CMake won't tell us about those.
-    ///
-    /// Given that measuring a build profile can take more than an hour, it's
-    /// best in any case to ask before overwriting the existing profile, which
-    /// may still be good enough.
-    ///
-    fn maybe_stale_build_profile(age_mins: Option<u64>) -> Self {
-        let mut question = "There is an existing build profile".to_owned();
-        if let Some(age_mins) = age_mins {
-            question.push_str(" from ");
-            let age_hours = age_mins / 60;
-            let age_days = age_hours / 24;
-            if age_days > 0 {
-                write!(question, "{age_days} day").expect("Write to String can't fail");
-                if age_days > 1 {
-                    write!(question, "s").expect("Write to String can't fail");
-                }
-            } else if age_hours > 0 {
-                write!(question, "{age_hours}h").expect("Write to String can't fail");
-            } else {
-                write!(question, "{age_mins}min").expect("Write to String can't fail");
-            }
-            question.push_str(" ago");
-        }
-        question.push_str(". Do you consider it up to date?");
-        Self::stale_build_profile_impl(question)
-    }
-
-    /// Commonalities between all stale_build_profile functions
-    fn stale_build_profile_impl(mut question: String) -> Self {
-        question.push('\n');
-        question.push_str(Self::BUILD_PROFILE_TRAILER);
-        Self {
-            question,
-            default_reply: "Reuse",
-            other_reply: "Measure",
-            default_means_create: false,
-        }
-    }
-
-    /// Common trailer for all build profile creation questions
-    const BUILD_PROFILE_TRAILER: &'static str =
-        "(Measuring a build profile requires a full single-core build, \
-            during which you should minimize other system activity)";
-
-    /// Ask whether a new profile should be created
-    fn ask(self, cursive: &mut CursiveRunnable) -> bool {
-        let replied_default = Rc::new(Cell::default());
-        let reply = |is_default| {
-            let replied_default2 = replied_default.clone();
-            move |cursive: &mut Cursive| {
-                replied_default2.set(is_default);
-                cursive.pop_layer();
-                cursive.quit();
-            }
-        };
-        cursive.add_layer(
-            Dialog::text(self.question)
-                .button(self.default_reply, reply(true))
-                .button(self.other_reply, reply(false)),
-        );
-        cursive.run();
-        return replied_default.get() ^ !self.default_means_create;
-    }
+/// Truth that a build profile is being displayed
+pub fn is_profiling(cursive: &mut Cursive) -> bool {
+    super::with_state(cursive, |state| state.showing_full_build)
 }
 
 /// Measure a build profile, storing the result in a specific location
@@ -386,8 +260,9 @@ fn measure_profile(
 /// Display the full-build profile, let user explore it and analyze traces
 fn display_profile(
     cursive: &mut CursiveRunnable,
+    args: CliArgs,
     compilation_database: CompilationDatabase,
-    clangpp: &str,
+    clangpp: impl AsRef<str> + 'static,
     profile: BuildProfile,
 ) {
     // Determine if the profile contains wall-clock time information
@@ -409,8 +284,9 @@ fn display_profile(
     }
     let file_width = terminal_width as usize - non_file_width;
 
-    // Set up table
-    let mut table = TableView::<profile::Unit, ProfileColumn>::new()
+    // Set up table display
+    type FullBuildProfileView = TableView<profile::Unit, ProfileColumn>;
+    let mut table = FullBuildProfileView::new()
         .items(profile)
         .column(ProfileColumn::MaxRSS, "Memory", |c| {
             c.width(MAX_RSS_WIDTH).ordering(Ordering::Greater)
@@ -429,20 +305,32 @@ fn display_profile(
     table.sort();
     table.set_selected_row(0);
 
+    // Set up table interaction
+    const TABLE_NAME: &str = "<full-build profile>";
+    let time_trace_granularity = args.time_trace_granularity;
+    table.set_on_submit(move |cursive, _row, index| {
+        let rel_path: Box<Path> = cursive
+            .call_on_name(TABLE_NAME, |view: &mut FullBuildProfileView| {
+                view.borrow_item(index)
+                    .expect("Callback shouldn't be called with an invalid index")
+                    .rel_path()
+                    .into()
+            })
+            .expect("Failed to access full-build profile view");
+        trace::measure::show_wizard(
+            cursive,
+            &compilation_database,
+            rel_path,
+            clangpp.as_ref(),
+            time_trace_granularity,
+        );
+    });
+    let table = table.with_name(TABLE_NAME);
+
     // Update UI state
     super::with_state(cursive, |state| {
         state.showing_full_build = true;
     });
-
-    // TODO: Extend BuildProfile to enable efficient lookup by file name.
-    //       Acknowledge the faillible nature of this task in the presence of
-    //       stale compilation profiles. Make compilation unit freshness check
-    //       a method of Entry, not compilation database as for build profiles.
-    // TODO: Add interaction
-    // TODO: Use trace::profile where appropriate. Remember to correctly handle
-    //       the case where a trace in the build profile isn't present in the
-    //       compilation database, which can happen with stale profiles. Also
-    //       remember to check for freshness
 
     // Show the profile
     cursive.add_fullscreen_layer(
@@ -451,11 +339,6 @@ fn display_profile(
             .child(TextView::new("Press H for help.")),
     );
     cursive.run();
-}
-
-/// Truth that a build profile is being displayed
-pub fn is_profiling(cursive: &mut Cursive) -> bool {
-    super::with_state(cursive, |state| state.showing_full_build)
 }
 
 /// Column in the build profile
@@ -484,7 +367,6 @@ impl TableViewItem<ProfileColumn> for profile::Unit {
             ),
             ProfileColumn::RelPath(cols) => truncate_path_iter(
                 self.rel_path()
-                    .as_ref()
                     .components()
                     .map(|s| s.as_os_str().to_string_lossy()),
                 cols,
@@ -504,9 +386,7 @@ impl TableViewItem<ProfileColumn> for profile::Unit {
                 .zip(other.wall_time())
                 .map(|(x, y)| x.partial_cmp(&y).expect("Failed to compare wall-time"))
                 .expect("Wall-time should be present if this is probed"),
-            ProfileColumn::RelPath(_cols) => {
-                self.rel_path().as_ref().cmp(&other.rel_path().as_ref())
-            }
+            ProfileColumn::RelPath(_cols) => self.rel_path().cmp(&other.rel_path()),
         }
     }
 }

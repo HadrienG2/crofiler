@@ -62,6 +62,22 @@ pub struct CliArgs {
     #[clap(short = 'c', long = "cols", default_value = "200")]
     max_cols: u16,
 
+    /// Granularity to be used when measuring time-trace profiles (in µs)
+    ///
+    /// When clang's -ftime-trace feature is enabled, the compiler does not
+    /// record every process that occured, only those that would lasted more
+    /// than a certain number of microseconds (500µs by default as of
+    /// 2022-06-10). This improves the efficiency of the data collection and
+    /// reporting processes in various ways.
+    ///
+    /// You may tune this parameter if you wish. Lower values will lead to a
+    /// more details process, at the cost of using more resources and exposing
+    /// more bias from the profiling infrastructure (where short-lived tasks see
+    /// their duration increased by larger amounts).
+    ///
+    #[clap(short = 'g', long = "granularity")]
+    time_trace_granularity: Option<u64>,
+
     /// Path to the full-build profile
     ///
     /// This is used in full-build profiling mode to directly display the build

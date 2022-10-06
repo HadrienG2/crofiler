@@ -1,62 +1,72 @@
-//! Profiling dialogs and related functionality
+//! Interactive UI for loading and displaying trace profiles
 
-use super::with_state;
-use super::{processing::ActivityInfo, State};
-use crate::ui::display::duration::display_duration;
-use clang_time_trace::{ActivityTraceId, ClangTraceLoadError, Duration};
+use crate::ui::{
+    display::duration::display_duration,
+    tui::{processing::ActivityInfo, with_state, State},
+};
+use clang_time_trace::{ActivityTraceId, Duration};
 use cursive::{
     view::{Nameable, Resizable, View},
     views::{Dialog, LinearLayout, OnEventView, TextView, ViewRef},
-    Cursive, CursiveRunnable,
+    Cursive,
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::{cell::RefCell, cmp::Ordering, path::Path, rc::Rc, sync::Arc};
+use std::{cell::RefCell, cmp::Ordering, num::NonZeroU32, path::Path, rc::Rc, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 /// Load and display a time-trace profile
-pub fn profile(cursive: &mut CursiveRunnable, trace_path: impl AsRef<Path>) {
+pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
     // Load the trace, take note of how many other layers we have
     let layers_below_profile = cursive.screen().len();
+    let cb_sink = cursive.cb_sink().clone();
+    let wait_state = start_wait_for_input(cursive);
     with_state(cursive, |state| {
         state.layers_below_profile = layers_below_profile;
         state.loading_trace = true;
-        state.processing_thread.start_load_trace(trace_path)
+        state
+            .processing_thread
+            .start_load_trace(trace_path, move |result| {
+                cb_sink
+                    .send(Box::new(move |cursive| {
+                        // Close wait dialog
+                        end_wait_for_input(cursive, wait_state);
+
+                        // Handle trace loading errors
+                        if let Err(error) = result {
+                            cursive.add_layer(
+                                Dialog::text(format!("Failed to process input: {error}"))
+                                    .button("Quit", Cursive::quit),
+                            );
+                        }
+
+                        // Query the list of root activities and deduce the global percentage norm
+                        let (root_activities, global_percent_norm) = with_state(cursive, |state| {
+                            state.loading_trace = false;
+                            let root_activities = state.processing_thread.get_root_activities();
+                            let global_percent_norm = percent_norm(
+                                root_activities
+                                    .iter()
+                                    .map(|activity| activity.duration)
+                                    .sum::<Duration>(),
+                            );
+                            (root_activities, global_percent_norm)
+                        });
+
+                        // TODO: Show activity summary on S
+
+                        // Display the hierarchical profile
+                        show_hierarchical_profile(
+                            cursive,
+                            "<profile root>".into(),
+                            global_percent_norm,
+                            root_activities,
+                            |state| state.processing_thread.get_all_activities(),
+                        );
+                    }))
+                    .expect("Failed to send callback to main thread");
+            });
     });
-    if let Err(error) = wait_for_input(cursive) {
-        cursive.add_layer(
-            Dialog::text(format!("Failed to process input: {error}")).button("Quit", Cursive::quit),
-        );
-        cursive.run();
-        return;
-    }
-
-    // Query the list of root activities and deduce the global percentage norm
-    let (root_activities, global_percent_norm) = with_state(cursive, |state| {
-        state.loading_trace = false;
-        let root_activities = state.processing_thread.get_root_activities();
-        let global_percent_norm = percent_norm(
-            root_activities
-                .iter()
-                .map(|activity| activity.duration)
-                .sum::<Duration>(),
-        );
-        (root_activities, global_percent_norm)
-    });
-
-    // TODO: Show activity summary on S
-
-    // Display the hierarchical profile
-    show_hierarchical_profile(
-        cursive,
-        "<profile root>".into(),
-        global_percent_norm,
-        root_activities,
-        |state| state.processing_thread.get_all_activities(),
-    );
-
-    // Start the cursive event loop
-    cursive.run()
 }
 
 /// Truth that profiling is in progress
@@ -73,39 +83,36 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
 
     // Update TUI state and extract required data from it, or just return if no
     // profile is being displayed yet.
-    let (new_duration_display, profile_stack, sort_config) =
-        match super::with_state(cursive, |state| {
-            // Determine the next duration display or return None if no profile
-            // is being displayed (it means clang data is still being loaded)
-            let new_duration_display = match state.display_config.duration_display? {
-                DurationDisplay::Percentage(_, PercentageReference::Global) => {
-                    DurationDisplay::Percentage(
-                        Finite::<Duration>::from_inner(0.0),
-                        PercentageReference::Parent,
-                    )
-                }
-                DurationDisplay::Percentage(_, PercentageReference::Parent) => {
-                    DurationDisplay::Time
-                }
-                DurationDisplay::Time => DurationDisplay::Percentage(
-                    state.global_percent_norm.expect(
-                        "Global percent norm should be initialized before duration display is",
-                    ),
-                    PercentageReference::Global,
-                ),
-            };
-            state.display_config.duration_display = Some(new_duration_display);
-
-            // Also bubble up a copy of the profile stack and sort configuration
-            Some((
-                new_duration_display,
-                state.profile_stack.clone(),
-                state.display_config.sort_config,
-            ))
-        }) {
-            Some(tuple) => tuple,
-            None => return,
+    let (new_duration_display, profile_stack, sort_config) = match with_state(cursive, |state| {
+        // Determine the next duration display or return None if no profile
+        // is being displayed (it means clang data is still being loaded)
+        let new_duration_display = match state.display_config.duration_display? {
+            DurationDisplay::Percentage(_, PercentageReference::Global) => {
+                DurationDisplay::Percentage(
+                    Finite::<Duration>::from_inner(0.0),
+                    PercentageReference::Parent,
+                )
+            }
+            DurationDisplay::Percentage(_, PercentageReference::Parent) => DurationDisplay::Time,
+            DurationDisplay::Time => DurationDisplay::Percentage(
+                state
+                    .global_percent_norm
+                    .expect("Global percent norm should be initialized before duration display is"),
+                PercentageReference::Global,
+            ),
         };
+        state.display_config.duration_display = Some(new_duration_display);
+
+        // Also bubble up a copy of the profile stack and sort configuration
+        Some((
+            new_duration_display,
+            state.profile_stack.clone(),
+            state.display_config.sort_config,
+        ))
+    }) {
+        Some(tuple) => tuple,
+        None => return,
+    };
 
     // Update all the profile layers that are currently being displayed
     for_each_profile_layer(
@@ -173,42 +180,45 @@ pub struct ProfileDisplay {
     duration_display: Option<DurationDisplay>,
 }
 
-/// Load the ClangTrace with a pretty loading screen
-fn wait_for_input(cursive: &mut CursiveRunnable) -> Result<(), ClangTraceLoadError> {
+/// Display a pretty loading screen  a pretty loading screen
+fn start_wait_for_input(cursive: &mut Cursive) -> WaitForInputState {
     // Set up the loading screen
     let old_layers = cursive.screen().len();
-    cursive.add_layer(Dialog::text("Processing input data...").button("Abort", Cursive::quit));
+    cursive.add_layer(Dialog::text("Processing time trace...").button("Abort", Cursive::quit));
 
-    // Initiate the cursive event loop
+    // Enable autorefresh so Cursive promptly takes notice of the callback
     let old_fps = cursive.fps();
     cursive.set_autorefresh(true);
-    let mut runner = cursive.runner();
-    runner.refresh();
-    let result = loop {
-        // Process TUI events
-        runner.step();
 
-        // Abort input processing if instructed to do so
-        if !runner.is_running() {
-            std::mem::drop(runner);
-            std::process::abort()
-        }
+    // Return saved Cursive state
+    WaitForInputState {
+        old_fps,
+        old_layers,
+    }
+}
 
-        // Otherwise check how the input processing is going
-        match super::with_state(&mut runner, |state| {
-            state.processing_thread.try_extract_load_result()
-        }) {
-            None => continue,
-            Some(result) => break result,
-        }
-    };
+/// Saved Cursive state returned by start_wait_for_input, to be passed back to
+/// end_wait_for_input for a return to the original Cursive state.
+struct WaitForInputState {
+    /// Cursive FPS setting at the beginning of the wait
+    old_fps: Option<NonZeroU32>,
 
-    // Reset cursive state before returning
-    cursive.set_fps(old_fps.map(|u| u32::from(u)).unwrap_or(0));
-    while cursive.screen().len() > old_layers {
+    /// Number of cursive layers displayed at the beginning of the wait
+    old_layers: usize,
+}
+
+/// Callback to clean up after start_wait_for_input
+///
+/// This is to be called after the ClangTrace has been loaded by the processing
+/// thread, taking as a parameter the saved Cursive state that was emitted by
+/// start_wait_for_input. It will return to the Cursive state before
+/// start_wait_for_input was called.
+///
+fn end_wait_for_input(cursive: &mut Cursive, state: WaitForInputState) {
+    cursive.set_fps(state.old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    while cursive.screen().len() > state.old_layers {
         cursive.pop_layer();
     }
-    result
 }
 
 /// Display a hierarchical profile
@@ -320,7 +330,7 @@ fn register_profile(
     activity_infos: &[ActivityInfo],
     description_width: u16,
 ) -> (ProfileDisplay, Box<[Arc<str>]>, String) {
-    super::with_state(cursive, |state| {
+    with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
         let duration_display = state
@@ -477,14 +487,14 @@ fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
                 let stripped_description = activity.description.strip_prefix('+')?;
                 Some((activity.id, stripped_description.into(), activity.duration))
             })
-            .expect("Failed to retrieve cursive layer")
+            .expect("Failed to access trace profile view")
         {
             Some(tuple) => tuple,
             None => return,
         };
 
         // Query the activity's direct children
-        let activity_children = super::with_state(cursive, |state| {
+        let activity_children = with_state(cursive, |state| {
             state
                 .processing_thread
                 .get_direct_children(activity_trace_id)
@@ -512,7 +522,7 @@ fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
 fn sort_other_profiles(cursive: &mut Cursive, column: HierarchicalColumn, order: Ordering) {
     // Update TUI state and extract required info from it
     let mut column_name = column.name();
-    let (past_views, duration_display) = super::with_state(cursive, |state| {
+    let (past_views, duration_display) = with_state(cursive, |state| {
         // Update sort config for future views
         state.display_config.sort_config.order[column_name as usize] = order;
         state.display_config.sort_config.key = column_name;
