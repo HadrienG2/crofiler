@@ -230,18 +230,16 @@ fn worker(
             Instruction::LoadTrace(path, callback) => {
                 parsed_arg_cache.clear();
                 description_cache.clear();
-                trace = Some({
-                    match ClangTrace::from_file(path) {
-                        Ok(trace) => {
-                            callback(Ok(()));
-                            trace
-                        }
-                        Err(e) => {
-                            callback(Err(e));
-                            panic!("Failed to load ClangTrace")
-                        }
+                trace = match ClangTrace::from_file(path) {
+                    Ok(trace) => {
+                        callback(Ok(()));
+                        Some(trace)
                     }
-                });
+                    Err(e) => {
+                        callback(Err(e));
+                        None
+                    }
+                };
             }
 
             // Describe the trace

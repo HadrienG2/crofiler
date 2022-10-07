@@ -2,7 +2,10 @@
 
 use crate::ui::{
     display::duration::display_duration,
-    tui::{processing::ActivityInfo, with_state, State},
+    tui::{
+        processing::{ActivityInfo, ProcessingThread},
+        with_state, State,
+    },
 };
 use clang_time_trace::{ActivityTraceId, Duration};
 use cursive::{
@@ -12,24 +15,36 @@ use cursive::{
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::{cell::RefCell, cmp::Ordering, num::NonZeroU32, path::Path, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    cmp::Ordering,
+    num::NonZeroU32,
+    path::Path,
+    rc::Rc,
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
+};
 use unicode_width::UnicodeWidthStr;
 
 /// Load and display a time-trace profile
 pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
     // Load the trace, take note of how many other layers we have
-    let layers_below_profile = cursive.screen().len();
+    let (wait_state, canceled) = start_wait_for_input(cursive);
     let cb_sink = cursive.cb_sink().clone();
-    let wait_state = start_wait_for_input(cursive);
     with_state(cursive, |state| {
-        state.layers_below_profile = layers_below_profile;
-        state.loading_trace = true;
         state
             .processing_thread
             .start_load_trace(trace_path, move |result| {
                 cb_sink
                     .send(Box::new(move |cursive| {
-                        // Close wait dialog
+                        // Check if the load was canceled, if so do nothing
+                        if canceled.load(atomic::Ordering::Relaxed) {
+                            return;
+                        }
+
+                        // Restore cursive state altered by the loading screen
                         end_wait_for_input(cursive, wait_state);
 
                         // Handle trace loading errors
@@ -38,11 +53,11 @@ pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
                                 Dialog::text(format!("Failed to process input: {error}"))
                                     .button("Quit", Cursive::quit),
                             );
+                            return;
                         }
 
                         // Query the list of root activities and deduce the global percentage norm
                         let (root_activities, global_percent_norm) = with_state(cursive, |state| {
-                            state.loading_trace = false;
                             let root_activities = state.processing_thread.get_root_activities();
                             let global_percent_norm = percent_norm(
                                 root_activities
@@ -180,31 +195,70 @@ pub struct ProfileDisplay {
     duration_display: Option<DurationDisplay>,
 }
 
-/// Display a pretty loading screen  a pretty loading screen
-fn start_wait_for_input(cursive: &mut Cursive) -> WaitForInputState {
-    // Set up the loading screen
-    let old_layers = cursive.screen().len();
-    cursive.add_layer(Dialog::text("Processing time trace...").button("Abort", Cursive::quit));
+/// Start displaying a pretty loading screen
+///
+/// Returns a WaitForInputState token that should be passed back to
+/// end_wait_for_input at the end of the loading process along with an
+/// AtomicBool that tells whether the user has canceled the loading process.
+///
+fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<AtomicBool>) {
+    // Set up loading screen state
+    let layers_below_profile = cursive.screen().len();
+    with_state(cursive, |state| {
+        state.layers_below_profile = layers_below_profile;
+        state.loading_trace = true;
+    });
 
-    // Enable autorefresh so Cursive promptly takes notice of the callback
+    // Make sure Cursive promptly takes notice of the completion callback
     let old_fps = cursive.fps();
     cursive.set_autorefresh(true);
+    let state = WaitForInputState { old_fps };
+
+    // Set up a cancelation mechanism for this loading screen
+    // We shouldn't use state.loading_trace for this because then the following
+    // race condition can occur:
+    //
+    // - User starts loading a trace
+    // - User change their mind and cancel the load
+    // - User starts loading another trace
+    // - First load completes and displays on screen instead of being dropped
+    //
+    let canceled = Arc::new(AtomicBool::new(false));
+    let canceled2 = canceled.clone();
+
+    // Set up the loading screen and its cancelation mechanism
+    //
+    // Cancelation does not kill the processing thread, because that would
+    // leak all system resources it's holding. Instead, a new processing thread
+    // is started, and the old processing thread is left to terminate
+    // gracefully in the background. This will admittedly waste a few seconds of
+    // CPU time, but the alternative of making the trace loading process
+    // interruptible would be much more complex at the code level.
+    //
+    cursive.add_layer(
+        Dialog::text("Processing time trace...").button("Abort", move |cursive| {
+            canceled2.store(true, atomic::Ordering::Relaxed);
+            end_wait_for_input(cursive, state);
+            if cursive.screen().is_empty() {
+                cursive.quit();
+            } else {
+                with_state(cursive, |state| {
+                    state.processing_thread = ProcessingThread::start();
+                });
+            }
+        }),
+    );
 
     // Return saved Cursive state
-    WaitForInputState {
-        old_fps,
-        old_layers,
-    }
+    (state, canceled)
 }
 
 /// Saved Cursive state returned by start_wait_for_input, to be passed back to
 /// end_wait_for_input for a return to the original Cursive state.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct WaitForInputState {
     /// Cursive FPS setting at the beginning of the wait
     old_fps: Option<NonZeroU32>,
-
-    /// Number of cursive layers displayed at the beginning of the wait
-    old_layers: usize,
 }
 
 /// Callback to clean up after start_wait_for_input
@@ -215,8 +269,12 @@ struct WaitForInputState {
 /// start_wait_for_input was called.
 ///
 fn end_wait_for_input(cursive: &mut Cursive, state: WaitForInputState) {
+    let old_layers = with_state(cursive, |state| {
+        state.loading_trace = false;
+        state.layers_below_profile
+    });
     cursive.set_fps(state.old_fps.map(|u| u32::from(u)).unwrap_or(0));
-    while cursive.screen().len() > state.old_layers {
+    while cursive.screen().len() > old_layers {
         cursive.pop_layer();
     }
 }
