@@ -73,21 +73,7 @@ fn exit_current_layer(cursive: &mut Cursive) {
     let num_layers = cursive.screen().len();
     if num_layers > 1 {
         let should_pop = super::with_state(cursive, |state| {
-            // The normal UI layer stack goes roughly like this...
-            // - Full build profiling (optional)
-            // - Trace profile layers
-            // - Dialogs (help, backtrace, quit prompt...)
-            // ...but to complicate matters a bit, in place of profile layers,
-            // there are occasionally progress dialogs that Esc shouldn't close.
-            //
-            // This can actually only happen during trace loading because for
-            // full build ops the progress dialog is the bottom layer, which
-            // exit_current_layer would never pop anyway.
-            //
-            // We handle this by asserting that no dialog should come atop those
-            // and tracking whether a trace is in the process of being loaded.
-            //
-            if state.loading_trace {
+            if state.no_escape {
                 return false;
             }
             if num_layers == state.profile_stack.len() + state.layers_below_profile {

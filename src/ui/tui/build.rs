@@ -4,15 +4,11 @@ use crate::{
     build::{
         clang,
         commands::{CompilationDatabase, DatabaseLoadError},
-        profile::{
-            self,
-            cmakeperf::{self, CollectStep},
-            BuildProfile, ProfileLoadError,
-        },
+        profile::{self, cmakeperf, BuildProfile, ProfileLoadError},
     },
     ui::{
         display::path::truncate_path_iter,
-        tui::{trace, CreatePrompt},
+        tui::{trace, with_state, CreatePrompt},
     },
     CliArgs,
 };
@@ -24,7 +20,7 @@ use cursive::{
 use cursive_table_view::{TableView, TableViewItem};
 use std::{
     cmp::Ordering,
-    io,
+    io::{self, BufRead},
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -155,7 +151,7 @@ pub fn is_profiling(cursive: &mut Cursive) -> bool {
 ///
 fn measure_profile(
     cursive: &mut CursiveRunnable,
-    path: &Path,
+    output_path: &Path,
     compilation_database: &CompilationDatabase,
 ) -> bool {
     // Check for cmakeperf availability
@@ -181,16 +177,48 @@ fn measure_profile(
         return false;
     }
 
+    // If a cmakeperf output already exists, back it up
+    let backup_path = output_path.with_extension("bak");
+    match std::fs::rename(output_path, &backup_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(other) => {
+            error(
+                cursive,
+                format!("Failed to back up previous build profile: {other}"),
+            );
+            return false;
+        }
+    }
+
+    // If cmakeperf fails, we'll restore the backup if there is one or delete
+    // the incomplete output file if there is no backup
+    let restore_or_delete =
+        |cursive: &mut CursiveRunnable| match std::fs::rename(backup_path, output_path)
+            .or_else(|_| std::fs::remove_file(output_path))
+        {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(other) => error(
+                cursive,
+                format!("Failed to clean up after cmakeperf: {other}"),
+            ),
+        };
+
     // Start cmakeperf
-    let mut collect = match cmakeperf::Collect::start(path) {
-        Ok(collect) => collect,
+    let (mut collect, mut stdout) = match cmakeperf::Collect::start(output_path) {
+        Ok(tuple) => tuple,
         Err(e) => {
             error(cursive, format!("Failed to start cmakeperf: {e}"));
+            restore_or_delete(cursive);
             return false;
         }
     };
 
-    // Set up progress dialog
+    // Set up the progress dialog
+    with_state(cursive, |state| {
+        state.no_escape = true;
+    });
     let cb_sink = cursive.cb_sink().clone();
     let outcome = Arc::new(Mutex::new(None));
     let outcome2 = outcome.clone();
@@ -206,55 +234,85 @@ fn measure_profile(
                         // then one line per compilation database entry processed
                         .max(compilation_database.entries().count() + 1)
                         .with_task(move |counter| {
+                            let mut line_buffer = String::new();
                             loop {
-                                let outcome = match collect.wait_next_step() {
-                                    Ok(CollectStep::FileCompiled) => {
+                                line_buffer.clear();
+                                let outcome = match stdout.read_line(&mut line_buffer) {
+                                    Ok(0) => Ok(()),
+                                    Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+                                    Ok(_nonzero) => {
                                         counter.tick(1);
+                                        log::info!("cmakeperf output: {}", line_buffer.trim());
                                         continue;
                                     }
-                                    Ok(CollectStep::Finished) => Ok(()),
-                                    Err(e) => Err(e),
+                                    Err(other_error) => Err(other_error),
                                 };
-                                *outcome2.lock().expect("Failed to acquire mutex") = Some(outcome);
+                                *outcome2.lock().expect("Main thread has panicked") = Some(outcome);
                                 break;
                             }
                             cb_sink
-                                .send(Box::new(|cursive| cursive.quit()))
+                                .send(Box::new(Cursive::quit))
                                 .expect("Failed to exit cursive");
                         }),
                 ),
         )
         .button("Abort", Cursive::quit),
     );
-
-    // Measure the profile, handle errors
     let old_fps = cursive.fps();
     cursive.set_autorefresh(true);
     cursive.run();
     cursive.set_fps(old_fps.map(|u| u32::from(u)).unwrap_or(0));
-    let error_message_or_abort = match outcome.lock() {
+    with_state(cursive, |state| {
+        state.no_escape = false;
+    });
+
+    // Once we reach this point, the data collection process may either be done,
+    // have errored out, or have been aborted by the user. We now need to
+    // discriminate these various scenarios and react accordingly.
+    let error_message = match outcome.lock() {
         Ok(mut guard) => match guard.take() {
-            Some(Ok(())) => return true,
+            // Monitoring thread read process stdout through to the end, at this
+            // point joining the process should be a trivial formality.
+            Some(Ok(())) => match collect.finish() {
+                // Note that we keep the profile backup around in case the
+                // measurement was successful. That makes sense because
+                // full-build profiles are tiny on disk and extremely expensive
+                // to measure, so being able to go back to the old profile in
+                // case the user is unsatisfied with this one is a good idea.
+                Ok(()) => return true,
+                Err(e) => Some(format!("Failed to join cmakeperf process: {e}")),
+            },
+
+            // The monitoring thread errored out. I can't think of a sane
+            // situation where this should happen, but let's handle it anyway...
             Some(Err(e)) => Some(format!("Failed to collect build profile: {e}")),
+
+            // The user has requested that data collection be aborted
             None => None,
         },
-        Err(e) => Some(format!("Build profile collection thread panicked: {e}")),
-    };
-    let should_abort = if let Some(message) = error_message_or_abort {
-        error(cursive, message);
-        false
-    } else {
-        true
-    };
 
-    // Try to delete partially generated files, it does not matter if that
-    // cleanup operation fails (it may legitimately do so)
-    std::mem::drop(std::fs::remove_file(path));
-    if should_abort {
-        std::process::abort()
-    } else {
-        return false;
+        // The thread monitoring the data collection stdout has panicked
+        Err(e) => Some(format!("Build profile monitoring thread panicked: {e}")),
+    };
+    if let Some(message) = error_message {
+        error(cursive, message);
     }
+
+    // Next, try to kill the data collection process. This may race with the
+    // process completing normally in the background, which is fine, but other
+    // errors are not fine.
+    match collect.kill() {
+        Ok(()) => {}
+        Err(e)
+            if e.kind() == io::ErrorKind::InvalidInput || e.kind() == io::ErrorKind::NotFound => {}
+        Err(other) => error(cursive, format!("Failed to kill cmakeperf: {other}")),
+    }
+
+    // After that, try to restore our backup of the previous build profile, if
+    // it (still) exists, or failing that to at least delete any incomplete
+    // profile produced by cmakeperf so we don't read it next time.
+    restore_or_delete(cursive);
+    false
 }
 
 /// Display the full-build profile, let user explore it and analyze traces

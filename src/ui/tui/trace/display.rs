@@ -65,6 +65,8 @@ pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
                                     .map(|activity| activity.duration)
                                     .sum::<Duration>(),
                             );
+                            state.global_percent_norm = Some(global_percent_norm);
+                            state.display_config.duration_display = None;
                             (root_activities, global_percent_norm)
                         });
 
@@ -206,7 +208,7 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
     let layers_below_profile = cursive.screen().len();
     with_state(cursive, |state| {
         state.layers_below_profile = layers_below_profile;
-        state.loading_trace = true;
+        state.no_escape = true;
     });
 
     // Make sure Cursive promptly takes notice of the completion callback
@@ -215,7 +217,7 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
     let state = WaitForInputState { old_fps };
 
     // Set up a cancelation mechanism for this loading screen
-    // We shouldn't use state.loading_trace for this because then the following
+    // We shouldn't abuse state.no_escape for this because then the following
     // race condition can occur:
     //
     // - User starts loading a trace
@@ -270,7 +272,7 @@ struct WaitForInputState {
 ///
 fn end_wait_for_input(cursive: &mut Cursive, state: WaitForInputState) {
     let old_layers = with_state(cursive, |state| {
-        state.loading_trace = false;
+        state.no_escape = false;
         state.layers_below_profile
     });
     cursive.set_fps(state.old_fps.map(|u| u32::from(u)).unwrap_or(0));
@@ -395,12 +397,10 @@ fn register_profile(
             .display_config
             .duration_display
             .get_or_insert_with(|| {
-                // Check out the global percentage norm. If it's not been
-                // initialized yet, it means we are the first (toplevel)
-                // profile, and thus our local norm is the global norm.
-                let global_percent_norm = *state
+                // Check out the global percentage norm
+                let global_percent_norm = state
                     .global_percent_norm
-                    .get_or_insert(layer.parent_percent_norm);
+                    .expect("Global percent norm should be set at this point");
 
                 // Default to a percentage of the clang execution time
                 DurationDisplay::Percentage(global_percent_norm, PercentageReference::Global)

@@ -37,7 +37,7 @@ pub fn run(args: CliArgs) {
         profile_stack: Vec::new(),
         showing_full_build: false,
         layers_below_profile: 0,
-        loading_trace: false,
+        no_escape: false,
         display_config: Default::default(),
     });
 
@@ -118,11 +118,19 @@ pub struct State {
     /// Showing a full-build profile below the trace profiling layers
     showing_full_build: bool,
 
-    /// Number of UI layers below the profile_stack
+    /// Number of UI layers below the profile_stack (if any)
+    ///
+    /// Used to map from cursive.screen.len() to profile_stack indices.
+    ///
     layers_below_profile: usize,
 
-    /// Truth that trace data is being loaded
-    loading_trace: bool,
+    /// Truth that Esc shouldn't just close the current dialog
+    ///
+    /// This is used for asynchronous processing dialogs where aborting the
+    /// process requires fancier logic than the Esc handler can deal with. In
+    /// that case, a dedicated Abort button is always provided.
+    ///
+    no_escape: bool,
 
     /// Current profile display configuration
     display_config: ProfileDisplay,

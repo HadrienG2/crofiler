@@ -5,9 +5,9 @@
 //! as encapsulated as possible.
 
 use crate::build::commands::CompilationDatabase;
-use log::info;
+
 use std::{
-    io::{self, BufRead, BufReader, ErrorKind, Read},
+    io::{self, BufReader, Read},
     path::Path,
     process::{Child, ChildStdout, Command, ExitStatus, Stdio},
 };
@@ -24,20 +24,11 @@ pub fn find() -> io::Result<ExitStatus> {
 }
 
 /// Ongoing build profile collection
-pub struct Collect {
-    /// Child cmakeperf process
-    child: Child,
-
-    /// Buffering stdout reader
-    stdout: BufReader<ChildStdout>,
-
-    /// Line buffer
-    buf: String,
-}
+pub struct Collect(Child);
 //
 impl Collect {
     /// Start collecting a build profile to a specified location
-    pub fn start(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn start(path: impl AsRef<Path>) -> io::Result<(Self, BufReader<ChildStdout>)> {
         let mut child = Command::new(PROGRAM)
             .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
             .arg(path.as_ref())
@@ -52,54 +43,29 @@ impl Collect {
                 .take()
                 .expect("Should succeed because stdout is Stdio::piped()"),
         );
-        Ok(Self {
-            child,
-            stdout,
-            buf: String::new(),
-        })
+        Ok((Self(child), stdout))
     }
 
-    /// Wait for the next step in the build profile collection process
-    ///
-    /// It is an error to call wait_next_step() again after a Finished or error
-    /// has been emitted, which can result in a panic.
-    ///
-    pub fn wait_next_step(&mut self) -> Result<CollectStep, CollectError> {
-        self.buf.clear();
-        match self.stdout.read_line(&mut self.buf) {
-            Err(e) if e.kind() == ErrorKind::BrokenPipe => return self.finish(),
-            Ok(0) => return self.finish(),
-            other => other?,
-        };
-        info!("cmakeperf output: {}", self.buf.trim());
-        Ok(CollectStep::FileCompiled)
+    /// Abort the data collection process
+    pub fn kill(&mut self) -> io::Result<()> {
+        self.0.kill()
     }
 
-    /// An stdout read failed, check out the final process status
-    pub fn finish(&mut self) -> Result<CollectStep, CollectError> {
-        let exit_status = self.child.wait()?;
+    /// Wait for the process to complete and check out the final process status
+    pub fn finish(&mut self) -> Result<(), CollectError> {
+        let exit_status = self.0.wait()?;
         if !exit_status.success() {
             let mut stderr = self
-                .child
+                .0
                 .stderr
                 .take()
                 .expect("Should succeed because we finish only once");
-            self.buf.clear();
-            stderr.read_to_string(&mut self.buf)?;
-            let stderr: &str = &self.buf;
-            return Err(CollectError::BadExit(exit_status, stderr.into()));
+            let mut buf = String::new();
+            stderr.read_to_string(&mut buf)?;
+            return Err(CollectError::BadExit(exit_status, buf.into()));
         }
-        Ok(CollectStep::Finished)
+        Ok(())
     }
-}
-//
-/// Step in the cmakeperf profile collection process
-pub enum CollectStep {
-    /// Done compiling a source file
-    FileCompiled,
-
-    /// Successfully finished measuring the build profile
-    Finished,
 }
 //
 /// Error in the cmakeperf profile collection process
