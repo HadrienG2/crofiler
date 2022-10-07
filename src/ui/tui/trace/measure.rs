@@ -191,7 +191,7 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
     std::thread::spawn(move || {
         // Wait for clang to finish or for the cancelation signal to be sent
         let wait_result = loop {
-            const RESPONSE_TIME: Duration = Duration::from_millis(30);
+            const RESPONSE_TIME: Duration = Duration::from_millis(1000 / 30);
             let wait_result = clang.wait_timeout(RESPONSE_TIME);
             match wait_result {
                 Ok(None) => {
