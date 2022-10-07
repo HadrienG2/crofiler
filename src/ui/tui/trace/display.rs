@@ -275,7 +275,7 @@ fn end_wait_for_input(cursive: &mut Cursive, state: WaitForInputState) {
         state.no_escape = false;
         state.layers_below_profile
     });
-    cursive.set_fps(state.old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    cursive.set_fps(state.old_fps.map(u32::from).unwrap_or(0));
     while cursive.screen().len() > old_layers {
         cursive.pop_layer();
     }

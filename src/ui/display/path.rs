@@ -73,7 +73,7 @@ const MIN_FILENAME_WIDTH: usize = 15;
 /// order to produce a truncated path of the specified length
 ///
 /// Return the number of selected components at the front and the back
-fn select_components<'a>(
+fn select_components(
     mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
     mut cols: usize,
 ) -> (usize, usize) {
@@ -142,7 +142,7 @@ fn select_components<'a>(
 }
 
 /// Display the set of path components selected by select_components
-fn display_components<'a>(
+fn display_components(
     mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
     (accepted_front, accepted_back): (usize, usize),
 ) -> Box<str> {

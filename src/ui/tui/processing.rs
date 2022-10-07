@@ -325,6 +325,10 @@ fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> Box<[
 }
 
 /// Describe a list of activities
+#[cfg_attr(
+    not(feature = "unstable_interner_stats"),
+    allow(clippy::let_and_return)
+)]
 fn describe_activities(
     trace: &mut ClangTrace,
     parsed_arg_cache: &mut HashMap<ActivityTraceId, ParsedActivityArgument>,

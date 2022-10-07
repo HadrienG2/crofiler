@@ -61,11 +61,11 @@ pub fn run(args: CliArgs) {
         let payload = panic_info.payload();
         let payload_str = payload
             .downcast_ref::<String>()
-            .map(|s: &String| -> &str { &s })
+            .map(|s: &String| -> &str { s })
             .or_else(|| {
                 payload
                     .downcast_ref::<&'static str>()
-                    .map(|s| -> &str { &s })
+                    .map(|s: &&'static str| -> &str { s })
             });
 
         // Log what we know

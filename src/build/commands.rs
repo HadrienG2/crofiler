@@ -57,11 +57,7 @@ impl Entry {
         let mut result = PathBuf::from(&*self.directory);
 
         // Parse arguments, extract file name and (assumed relative) path
-        let rel_output = self
-            .args()
-            .skip_while(|arg| arg.as_ref() != "-o")
-            .skip(1)
-            .next()?;
+        let rel_output = self.args().skip_while(|arg| arg.as_ref() != "-o").nth(1)?;
         let rel_output = Path::new(rel_output.as_ref());
         let file_name = rel_output.file_name()?;
 

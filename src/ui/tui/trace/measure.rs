@@ -24,7 +24,7 @@ use wait_timeout::ChildExt;
 pub fn show_wizard(
     cursive: &mut Cursive,
     compilation_database: &CompilationDatabase,
-    rel_path: Box<Path>,
+    rel_path: &Path,
     clangpp: &str,
     time_trace_granularity: Option<u64>,
 ) {
@@ -302,7 +302,7 @@ fn end_measure(cursive: &mut Cursive, state: MeasureState) {
         state.no_escape = false;
         state.layers_below_profile
     });
-    cursive.set_fps(state.old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    cursive.set_fps(state.old_fps.map(u32::from).unwrap_or(0));
     while cursive.screen().len() > old_layers {
         cursive.pop_layer();
     }

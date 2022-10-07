@@ -261,7 +261,7 @@ fn measure_profile(
     let old_fps = cursive.fps();
     cursive.set_autorefresh(true);
     cursive.run();
-    cursive.set_fps(old_fps.map(|u| u32::from(u)).unwrap_or(0));
+    cursive.set_fps(old_fps.map(u32::from).unwrap_or(0));
     with_state(cursive, |state| {
         state.no_escape = false;
     });
@@ -378,7 +378,7 @@ fn display_profile(
         trace::measure::show_wizard(
             cursive,
             &compilation_database,
-            rel_path,
+            &rel_path,
             clangpp.as_ref(),
             time_trace_granularity,
         );
@@ -444,7 +444,7 @@ impl TableViewItem<ProfileColumn> for profile::Unit {
                 .zip(other.wall_time())
                 .map(|(x, y)| x.partial_cmp(&y).expect("Failed to compare wall-time"))
                 .expect("Wall-time should be present if this is probed"),
-            ProfileColumn::RelPath(_cols) => self.rel_path().cmp(&other.rel_path()),
+            ProfileColumn::RelPath(_cols) => self.rel_path().cmp(other.rel_path()),
         }
     }
 }
