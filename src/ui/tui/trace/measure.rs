@@ -124,20 +124,17 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
 
     // If clang fails, we'll restore the backup if there is one or delete
     // the incomplete output file if there is no backup
-    let backup_path_2 = backup_path.clone();
-    let output_path_2 = output_path.clone();
-    let restore_or_delete =
-        move |cursive: &mut Cursive| match std::fs::rename(backup_path_2, &output_path_2)
-            .or_else(|_| std::fs::remove_file(&output_path_2))
-        {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(other) => {
-                cursive.add_layer(Dialog::info(format!(
-                    "Failed to clean up after clang: {other}"
-                )));
-            }
-        };
+    // This returns an error message to be displayed if this went wrong.
+    let restore_or_delete = move |backup_path: &Path, output_path: &Path| match std::fs::rename(
+        backup_path,
+        output_path,
+    )
+    .or_else(|_| std::fs::remove_file(output_path))
+    {
+        Ok(()) => None,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(other) => Some(format!("Failed to clean up after clang: {other}")),
+    };
 
     // Start clang
     let mut clang = match command
@@ -149,7 +146,9 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
         Ok(clang) => clang,
         Err(e) => {
             cursive.add_layer(Dialog::info(format!("Failed to start clang: {e}")));
-            restore_or_delete(cursive);
+            if let Some(error) = restore_or_delete(&backup_path, &output_path) {
+                cursive.add_layer(Dialog::info(error));
+            }
             return;
         }
     };
@@ -180,16 +179,10 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
 
     // Set up the measurement screen
     cursive.add_layer(
-        Dialog::text("Measuring time trace, please minimize system activity...").button(
-            "Abort",
-            move |cursive| {
-                canceled2.store(true, Ordering::Relaxed);
-                end_measure(cursive, state);
-                if cursive.screen().is_empty() {
-                    cursive.quit();
-                }
-            },
-        ),
+        Dialog::text("Measuring time trace, please minimize system activity...")
+            .button("Abort", move |_cursive| {
+                canceled2.store(true, Ordering::Relaxed)
+            }),
     );
 
     // Start a thread that measures a clang time-trace and arranges for the
@@ -198,7 +191,7 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
     std::thread::spawn(move || {
         // Wait for clang to finish or for the cancelation signal to be sent
         let wait_result = loop {
-            const RESPONSE_TIME: Duration = Duration::from_secs(1);
+            const RESPONSE_TIME: Duration = Duration::from_millis(30);
             let wait_result = clang.wait_timeout(RESPONSE_TIME);
             match wait_result {
                 Ok(None) => {
@@ -211,6 +204,9 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
                 other => break other,
             }
         };
+        cb_sink
+            .send(Box::new(move |cursive| end_measure(cursive, state)))
+            .expect("Failed to send callback to main thread");
 
         // Handle success and failure
         let error_message = match wait_result {
@@ -219,10 +215,6 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
                 // Proceed with trace loading and display
                 cb_sink
                     .send(Box::new(move |cursive| {
-                        // Close progress dialog
-                        end_measure(cursive, state);
-
-                        // Open the trace loading dialog
                         trace::display::show_loader(cursive, output_path);
                     }))
                     .expect("Failed to send callback to main thread");
@@ -262,6 +254,8 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
             // Failed to await process, exit through the error path
             Err(e) => Some(format!("Failed to await clang: {e}")),
         };
+
+        // We're on the failure/abort path, so start by displaying any error messages
         if let Some(message) = error_message {
             cb_sink
                 .send(Box::new(move |cursive| {
@@ -271,8 +265,19 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
         }
 
         // Bring back our backup or delete any partial output from clang
+        if let Some(error) = restore_or_delete(&backup_path, &output_path) {
+            cb_sink
+                .send(Box::new(|cursive| cursive.add_layer(Dialog::info(error))))
+                .expect("Failed to send callback to main thread");
+        }
+
+        // Tell cursive to exit in case all windows were closed
         cb_sink
-            .send(Box::new(restore_or_delete))
+            .send(Box::new(move |cursive| {
+                if cursive.screen().is_empty() {
+                    cursive.quit();
+                }
+            }))
             .expect("Failed to send callback to main thread");
     });
 }
@@ -304,6 +309,10 @@ fn end_measure(cursive: &mut Cursive, state: MeasureState) {
 }
 
 /// Generate an error message for a failing Child process
+///
+/// Ignore failure to extract info from stdout and stderr as that's difficult
+/// to handle and ultimately these are just nice-to-have details.
+///
 fn child_failure_message(mut child: Child, error_status: ExitStatus) -> String {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
