@@ -216,6 +216,7 @@ fn measure_profile(
     };
 
     // Set up the progress dialog
+    let layers_below_profile = cursive.screen().len();
     with_state(cursive, |state| {
         state.no_escape = true;
     });
@@ -261,6 +262,9 @@ fn measure_profile(
     let old_fps = cursive.fps();
     cursive.set_autorefresh(true);
     cursive.run();
+    while cursive.screen().len() > layers_below_profile {
+        cursive.pop_layer();
+    }
     cursive.set_fps(old_fps.map(u32::from).unwrap_or(0));
     with_state(cursive, |state| {
         state.no_escape = false;
