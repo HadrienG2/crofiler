@@ -49,10 +49,9 @@ pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
 
                         // Handle trace loading errors
                         if let Err(error) = result {
-                            cursive.add_layer(
-                                Dialog::text(format!("Failed to process input: {error}"))
-                                    .button("Quit", Cursive::quit),
-                            );
+                            cursive.add_layer(Dialog::info(format!(
+                                "Failed to process input: {error}"
+                            )));
                             return;
                         }
 

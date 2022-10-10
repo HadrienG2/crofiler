@@ -11,11 +11,12 @@ pub fn duration_norm<'a>(roots: impl Iterator<Item = ActivityTrace<'a>>) -> Dura
 }
 
 /// Breakdown of self-duration by activity type, ordered by decreasing duration
-pub fn activity_type_breakdown(trace: &ClangTrace) -> Box<[(&str, Duration)]> {
-    let mut profile = HashMap::<_, Duration>::new();
+pub fn activity_type_breakdown(trace: &ClangTrace) -> Box<[(Box<str>, Duration)]> {
+    let mut profile = HashMap::<Box<str>, Duration>::new();
     for activity_trace in trace.all_activities() {
-        *profile.entry(activity_trace.activity().name()).or_default() +=
-            activity_trace.self_duration();
+        *profile
+            .entry(activity_trace.activity().name().into())
+            .or_default() += activity_trace.self_duration();
     }
     let mut profile = profile.into_iter().collect::<Box<[_]>>();
     profile.sort_unstable_by(|(_, d1), (_, d2)| {
@@ -128,7 +129,7 @@ mod tests {
             for ((expected_name, expected_duration), (actual_name, actual_duration)) in
                 expected.iter().zip(actual.iter())
             {
-                assert_eq!(actual_name, expected_name);
+                assert_eq!(&&**actual_name, expected_name);
                 assert_close(*actual_duration, *expected_duration);
             }
         });

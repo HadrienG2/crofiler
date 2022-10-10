@@ -13,11 +13,11 @@ use unicode_width::UnicodeWidthStr;
 ///
 pub fn display_activity_desc(
     mut output: impl io::Write,
-    activity_id: ActivityId,
+    activity_id: &ActivityId,
     activity_arg: &ActivityArgument,
     mut max_cols: u16,
 ) -> Result<(), ActivityDescError> {
-    let activity_name: &str = activity_id.into();
+    let activity_name = activity_id.name();
     let has_argument = *activity_arg != ActivityArgument::Nothing;
 
     // Can we display at least ActivityName + (…) if there are parameters?

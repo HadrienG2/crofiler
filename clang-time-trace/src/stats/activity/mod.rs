@@ -8,7 +8,12 @@ use super::ArgParseError;
 use crate::ctf::{events::duration::DurationEvent, Duration, Timestamp, TraceEvent};
 use phf::phf_map;
 use serde_json as json;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+    rc::Rc,
+};
 use thiserror::Error;
 
 /// Clang activity with timing information
@@ -110,13 +115,13 @@ pub struct Activity {
 //
 impl Activity {
     /// Activity identifier that is cheap to compare or use as a hashmap key
-    pub fn id(&self) -> ActivityId {
-        self.id
+    pub fn id(&self) -> &ActivityId {
+        &self.id
     }
 
     /// Textual name of the activity, as featured in the JSON data
-    pub fn name(&self) -> &'static str {
-        self.id.into()
+    pub fn name(&self) -> &str {
+        self.id.name()
     }
 
     /// Get the un-parsed argument of the activity
@@ -142,7 +147,7 @@ impl Activity {
     ) -> Result<Self, ActivityParseError> {
         // Handling of activity name
         let (id, arg_type) = if let Some(activity) = ACTIVITIES.get(&name) {
-            *activity
+            activity.clone()
         } else {
             return Err(ActivityParseError::UnknownActivity(
                 name.clone(),
@@ -245,13 +250,39 @@ impl Activity {
 macro_rules! generate_activities {
     ($($string:literal => ($enum:ident, $arg:ident)),* $(,)?) => {
         /// Clang activity identifier
-        #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, strum::IntoStaticStr, strum::Display)]
+        #[derive(Clone, Debug, Hash, Eq, PartialEq, strum::AsRefStr)]
         pub enum ActivityId {
+            /// Unknown clang activity
+            //
+            // Double boxing is used to keep memory overhead down to a single
+            // machine word, in exchange for poorer CPU performance in this case
+            // which should stay rare as new activities should be identified quickly
+            //
+            #[strum(to_string = "UnknownActivity")]
+            UnknownActivity(Box<Box<str>>),
+
             $(
                 #[doc = $string]
                 #[strum(to_string = $string)]
                 $enum
             ),*
+        }
+        //
+        impl ActivityId {
+            /// Activity name, as featured in clang time-trace events
+            pub fn name(&self) -> &str {
+                if let ActivityId::UnknownActivity(name) = self {
+                    &name
+                } else {
+                    self.as_ref()
+                }
+            }
+        }
+        //
+        impl Display for ActivityId {
+            fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+                write!(f, "{}", self.name())
+            }
         }
 
         /// Map from a clang activity name to its identifier and argument type
@@ -519,13 +550,13 @@ mod tests {
 
     #[test]
     fn nullary_activities() {
-        let nullary_test = |id, arg_parser| {
+        let nullary_test = |id: &ActivityId, arg_parser| {
             // Determine activity name and associated Activity struct
-            let name = <&str>::from(id);
             let activity = Activity {
-                id,
+                id: id.clone(),
                 arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None),
             };
+            let name = activity.name();
             test_valid_activity(None, &activity);
             test_valid_activity(Some(HashMap::new()), &activity);
 
@@ -535,7 +566,7 @@ mod tests {
                 assert_eq!(
                     Activity::parse(name.into(), Some(args.clone()),),
                     Err(ActivityParseError::BadArguments(
-                        id,
+                        id.clone(),
                         ArgParseError::UnexpectedKeys(args)
                     ))
                 );
@@ -543,7 +574,7 @@ mod tests {
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentType::Nothing {
-                nullary_test(*activity_id, activity_parser.clone());
+                nullary_test(activity_id, activity_parser.clone());
             }
         }
     }
@@ -560,7 +591,7 @@ mod tests {
             test_valid_activity(Some(HashMap::new()), &activity_wo_args);
         } else {
             let missing_arg_error = Err(ActivityParseError::BadArguments(
-                expected.id(),
+                expected.id().clone(),
                 ArgParseError::MissingKey("detail"),
             ));
             assert_eq!(Activity::parse(name.clone(), None), missing_arg_error);
@@ -576,7 +607,7 @@ mod tests {
         assert_eq!(
             Activity::parse(name.clone(), Some(bad_arg_value),),
             Err(ActivityParseError::BadArguments(
-                expected.id(),
+                expected.id().clone(),
                 ArgParseError::UnexpectedValue("detail", bad_value)
             ))
         );
@@ -587,7 +618,7 @@ mod tests {
         assert_eq!(
             Activity::parse(name, Some(bad_arg.clone()),),
             Err(ActivityParseError::BadArguments(
-                expected.id(),
+                expected.id().clone(),
                 ArgParseError::UnexpectedKeys(maplit::hashmap! { "wat".into() => json::json!("") })
             ))
         );
@@ -595,12 +626,12 @@ mod tests {
 
     #[test]
     fn string_activities() {
-        let string_test = |id| {
+        let string_test = |id: &ActivityId| {
             const MOCK_ARG: &str = "X86 DAG->DAG Instruction Selection";
             unary_test(
                 MOCK_ARG,
                 Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(
                         ActivityArgumentType::String,
                         Some(MOCK_ARG.into()),
@@ -611,20 +642,20 @@ mod tests {
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentType::String {
-                string_test(*activity_id);
+                string_test(activity_id);
             }
         }
     }
 
     #[test]
     fn path_activities() {
-        let path_test = |id| {
+        let path_test = |id: &ActivityId| {
             const MOCK_PATH: &str =
                 "/mnt/acts/Core/include/Acts/TrackFinder/CombinatorialKalmanFilter.hpp";
             unary_test(
                 MOCK_PATH,
                 Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(
                         ActivityArgumentType::FilePath,
                         Some(MOCK_PATH.into()),
@@ -635,19 +666,19 @@ mod tests {
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentType::FilePath {
-                path_test(*activity_id);
+                path_test(activity_id);
             }
         }
     }
 
     #[test]
     fn entity_activities() {
-        let entity_test = |id| {
+        let entity_test = |id: &ActivityId| {
             const MOCK_ENTITY: &str = "Acts::Test::MeasurementCreator";
             unary_test(
                 MOCK_ENTITY,
                 Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(
                         ActivityArgumentType::CppEntity,
                         Some(MOCK_ENTITY.into()),
@@ -658,23 +689,23 @@ mod tests {
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentType::CppEntity {
-                entity_test(*activity_id);
+                entity_test(activity_id);
             }
         }
     }
 
     #[test]
     fn mangled_activities() {
-        let mangled_test = |id, parser: ActivityArgumentType| {
+        let mangled_test = |id: &ActivityId, parser: ActivityArgumentType| {
             const MOCK_SYMBOL: &str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
             unary_test(
                 MOCK_SYMBOL,
                 Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(parser, Some(MOCK_SYMBOL.into())),
                 },
                 (parser == ActivityArgumentType::MangledSymbolOpt).then_some(Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(parser, None),
                 }),
             );
@@ -684,23 +715,23 @@ mod tests {
             if *activity_parser == ActivityArgumentType::MangledSymbol
                 || *activity_parser == ActivityArgumentType::MangledSymbolOpt
             {
-                mangled_test(*activity_id, *activity_parser);
+                mangled_test(activity_id, *activity_parser);
             }
         }
     }
 
     #[test]
     fn unnamed_activities() {
-        let unnamed_test = |id, parser: ActivityArgumentType| {
+        let unnamed_test = |id: &ActivityId, parser: ActivityArgumentType| {
             const MOCK_LOOP: &str = "<unnamed loop>";
             unary_test(
                 MOCK_LOOP,
                 Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(parser, Some(MOCK_LOOP.into())),
                 },
                 (parser == ActivityArgumentType::UnnamedLoopOpt).then_some(Activity {
-                    id,
+                    id: id.clone(),
                     arg: RawActivityArgument::new(parser, None),
                 }),
             );
@@ -709,7 +740,7 @@ mod tests {
             if *activity_parser == ActivityArgumentType::UnnamedLoop
                 || *activity_parser == ActivityArgumentType::UnnamedLoopOpt
             {
-                unnamed_test(*activity_id, *activity_parser);
+                unnamed_test(activity_id, *activity_parser);
             }
         }
     }

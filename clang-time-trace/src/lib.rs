@@ -556,7 +556,7 @@ mod tests {
             .all_activities()
             .zip(expected_activities.iter().cloned())
         {
-            assert_eq!(activity_trace.activity().id(), expected_activity);
+            assert_eq!(activity_trace.activity().id(), &expected_activity);
             assert_eq!(activity_trace.start(), expected_start);
             assert_eq!(activity_trace.duration(), expected_duration);
             assert!(
@@ -571,7 +571,7 @@ mod tests {
             .last()
             .expect("Already checked there is >1 activity");
         assert_matches!(root_iter.next(), Some(root) => {
-            assert_eq!(root.activity().id(), *root_activity);
+            assert_eq!(root.activity().id(), root_activity);
             assert_eq!(root.start(), *root_start);
             assert_eq!(root.duration(), *root_duration);
         });
@@ -705,7 +705,7 @@ mod tests {
             .all_activities()
             .zip(expected_activities.iter().cloned())
         {
-            assert_eq!(activity_trace.activity().id(), expected_activity);
+            assert_eq!(activity_trace.activity().id(), &expected_activity);
             assert!(
                 activity_trace.activity().raw_argument()
                     == &RawActivityArgument::new(ActivityArgumentType::Nothing, None)
@@ -720,7 +720,7 @@ mod tests {
             .last()
             .expect("Already checked there is >1 activity");
         assert_matches!(root_iter.next(), Some(root) => {
-            assert_eq!(root.activity().id(), *root_activity);
+            assert_eq!(root.activity().id(), root_activity);
             assert_eq!(root.start(), *root_start);
             assert_eq!(root.duration(), *root_duration);
         });

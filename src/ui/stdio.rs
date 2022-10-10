@@ -251,7 +251,7 @@ fn hierarchical_profile_tree(
 /// Display an activity trace, ideally with associated profiling information
 fn display_activity(
     mut output: impl io::Write,
-    activity_id: ActivityId,
+    activity_id: &ActivityId,
     activity_arg: &ActivityArgument,
     max_cols: u16,
     duration: Duration,
