@@ -364,6 +364,7 @@ generate_activities! {
     "AlignmentFromAssumptionsPass" => (AlignmentFromAssumptionsPass, MangledSymbol),
     "CoroCleanupPass" => (CoroCleanupPass, MangledSymbol),
     "AnnotationRemarksPass" => (AnnotationRemarksPass, MangledSymbol),
+    "RecomputeGlobalsAAPass" => (RecomputeGlobalsAAPass, FilePath),
 }
 
 /// What can go wrong while parsing an Activity
