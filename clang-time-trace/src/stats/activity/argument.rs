@@ -1,10 +1,10 @@
 //! Facilities for handling clang activity arguments
 
 use crate::{ClangTrace, InternedPath, PathError, PathKey};
-use cpp_demangle::{DemangleOptions, ParseOptions, Symbol};
+use cpp_demangle::{DemangleOptions, ParseOptions, Symbol as MangledSymbol};
 use cpparser::{nom, EntityKey, EntityParser, EntityView};
 use log::{info, warn};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 use thiserror::Error;
 
 /// Tuned 10x above maximum observed requirement
@@ -66,9 +66,9 @@ impl RawActivityArgument {
         let detail_opt = || detail.borrow_mut().take();
         let detail = || detail_opt().expect("Presence should be checked upstream");
         //
-        let mut mangled_arg =
-            |parser: &mut EntityParser| -> Result<ParsedMangledSymbol, ActivityArgumentError> {
-                Self::parse_mangled_symbol(detail(), parser, demangling_buf)
+        let mut symbol_arg =
+            |parser: &mut EntityParser| -> Result<ParsedSymbol, ActivityArgumentError> {
+                Self::parse_symbol(detail(), parser, demangling_buf)
             };
         //
         let parse_unnamed_loop_arg =
@@ -90,13 +90,11 @@ impl RawActivityArgument {
                 Self::parse_entity(&detail(), parser).map(ParsedActivityArgument::CppEntity)
             }
 
-            ActivityArgumentType::MangledSymbol => {
-                mangled_arg(parser).map(ParsedActivityArgument::MangledSymbol)
-            }
+            ActivityArgumentType::Symbol => symbol_arg(parser).map(ParsedActivityArgument::Symbol),
 
-            ActivityArgumentType::MangledSymbolOpt => {
+            ActivityArgumentType::SymbolOpt => {
                 if has_detail() {
-                    mangled_arg(parser).map(ParsedActivityArgument::MangledSymbol)
+                    symbol_arg(parser).map(ParsedActivityArgument::Symbol)
                 } else {
                     Ok(ParsedActivityArgument::Nothing)
                 }
@@ -126,21 +124,21 @@ impl RawActivityArgument {
         })
     }
 
-    /// Parse a "detail" argument payload that contains a mangled C++ symbol
-    fn parse_mangled_symbol(
+    /// Parse a "detail" argument payload that contains a C++ symbol
+    fn parse_symbol(
         symbol: Rc<str>,
         parser: &mut EntityParser,
         demangling_buf: &mut String,
-    ) -> Result<ParsedMangledSymbol, ActivityArgumentError> {
-        let mut parse_demangled = |entity: Rc<str>| -> ParsedMangledSymbol {
+    ) -> Result<ParsedSymbol, ActivityArgumentError> {
+        let mut parse_demangled = |entity: Rc<str>| -> ParsedSymbol {
             if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
-                ParsedMangledSymbol::Parsed(parsed)
+                ParsedSymbol::Parsed(parsed)
             } else {
-                ParsedMangledSymbol::Demangled(entity)
+                ParsedSymbol::Demangled(entity)
             }
         };
 
-        let demangling_result = match Symbol::new_with_options(
+        let demangling_result = match MangledSymbol::new_with_options(
             &*symbol,
             &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
         )
@@ -161,25 +159,25 @@ impl RawActivityArgument {
             // should not reject but actually does reject before giving up
             Ok(Err(_)) | Err(_) => match &*symbol {
                 "main" | "__clang_call_terminate" => parse_demangled(symbol),
-                _ => ParsedMangledSymbol::Mangled(symbol),
+                _ => ParsedSymbol::MaybeMangled(symbol),
             },
         };
 
         match &demangling_result {
-            ParsedMangledSymbol::Parsed(_) => {}
+            ParsedSymbol::Parsed(_) => {}
 
             // Clang unfortunately occasionally emits mangled symbols that are
             // ill-formed (e.g. function parameters without types). cpp_demangle
             // will usually survive these, but produce output that we cannot
             // parse. Since this is a "normal" situation, an error is excessive,
             // but a warning seems warranted.
-            ParsedMangledSymbol::Demangled(d) => warn!("Failed to parse demangled symbol {d:?}"),
+            ParsedSymbol::Demangled(d) => warn!("Failed to parse demangled symbol {d:?}"),
 
             // Some of the symbols emitted by clang are not mangled
             // (e.g. __cxx_global_var_init.1), and this is fine and expected, so
             // we don't want to flag these as warnings. But clang may also emit
             // ill-formed mangled symbols, so this event is still worth logging.
-            ParsedMangledSymbol::Mangled(m) => info!("Failed to demangle symbol {m:?}"),
+            ParsedSymbol::MaybeMangled(m) => info!("Failed to demangle symbol {m:?}"),
         }
 
         Ok(demangling_result)
@@ -211,17 +209,94 @@ pub enum ActivityArgumentType {
     /// A C++ entity (class, function, ...)
     CppEntity,
 
-    /// A C++ mangled symbol
-    MangledSymbol,
+    /// A binary file symbol
+    Symbol,
 
-    /// Either a C++ mangled symbol or nothing
-    MangledSymbolOpt,
+    /// Either a binary file symbol or nothing
+    SymbolOpt,
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
 
     /// Either the "<unnamed loop>" constant string or nothing
     UnnamedLoopOpt,
+}
+//
+impl ActivityArgumentType {
+    /// Try to infer the activity argument type for an activity with a detail argument
+    pub(crate) fn infer_from_detail(detail: &str) -> Self {
+        // Let's get rid of the easy grammars first
+        if detail.starts_with("_Z")
+            || detail == "main"
+            || detail.starts_with("__cxx_global_var_init")
+            || detail.starts_with("_GLOBAL__sub_I_")
+        {
+            // clang uses the Itanium ABI for C++ name mangling, so mangled
+            // symbols will start with "_Z". We also treat the few non-mangled
+            // symbols emitted by the compiler as mangled for simplicity
+            return ActivityArgumentType::Symbol;
+        } else if detail == "<unnamed loop>" {
+            // Always true by definition
+            return ActivityArgumentType::UnnamedLoop;
+        } else if Path::new(detail).is_absolute() {
+            // Has been true of every path emitted by Clang to date
+            return ActivityArgumentType::FilePath;
+        }
+
+        // Alas, now we must discriminate between two very
+        // flexible/complicated grammars:
+        //
+        // 1. Simple information text, e.g. "X86 DAG->DAG Instruction Selection"
+        // 3. C++ entity name
+        //
+        // It is basically impossible to tell whether we're dealing with a C++
+        // entity without invoking a C++ parser, which is expensive, so that
+        // will be our default case when things does not look like info text.
+        //
+        if !detail
+            .chars()
+            .next()
+            .expect("detail is not empty if detail_arg() returned Ok")
+            .is_uppercase()
+        {
+            return ActivityArgumentType::CppEntity;
+        }
+        let mut can_be_string = true;
+        'words: for word in detail.split(' ') {
+            if word == "&" || word == "memcmp()" {
+                continue;
+            }
+            let mut chars = word.chars();
+            let first = chars.next();
+            let last = chars.next_back();
+            for side in first.into_iter().chain(last) {
+                if !side.is_alphanumeric() {
+                    can_be_string = false;
+                    break 'words;
+                }
+            }
+            let mut dash_before = false;
+            let mut caps_before = false;
+            for middle in chars {
+                let dash_before = std::mem::replace(&mut dash_before, middle == '-');
+                let caps_before = std::mem::replace(&mut caps_before, middle.is_uppercase());
+                if !(middle.is_alphanumeric()
+                    || middle == '-'
+                    || (middle == '>' && dash_before)
+                    || middle == '/'
+                    || middle == '_' && caps_before)
+                {
+                    can_be_string = false;
+                    break 'words;
+                }
+            }
+        }
+        if can_be_string {
+            ActivityArgumentType::String
+        } else {
+            ActivityArgumentType::CppEntity
+        }
+    }
 }
 
 /// Stored data about an activity's argument
@@ -239,8 +314,8 @@ pub enum ParsedActivityArgument {
     /// A C++ entity (class, function, ...)
     CppEntity(EntityKey),
 
-    /// A C++ mangled symbol
-    MangledSymbol(ParsedMangledSymbol),
+    /// A C++ symbol, likely mangled
+    Symbol(ParsedSymbol),
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
@@ -254,9 +329,7 @@ impl ParsedActivityArgument {
             ParsedActivityArgument::String(s) => ActivityArgument::String(&*s),
             ParsedActivityArgument::FilePath(p) => ActivityArgument::FilePath(trace.file_path(*p)),
             ParsedActivityArgument::CppEntity(e) => ActivityArgument::CppEntity(trace.entity(*e)),
-            ParsedActivityArgument::MangledSymbol(m) => {
-                ActivityArgument::MangledSymbol(m.resolve(trace))
-            }
+            ParsedActivityArgument::Symbol(m) => ActivityArgument::Symbol(m.resolve(trace)),
             ParsedActivityArgument::UnnamedLoop => ActivityArgument::UnnamedLoop,
         }
     }
@@ -277,44 +350,44 @@ pub enum ActivityArgument<'trace> {
     /// A C++ entity (class, function, ...)
     CppEntity(EntityView<'trace>),
 
-    /// A C++ mangled symbol
-    MangledSymbol(MangledSymbol<'trace>),
+    /// A C++ symbol, likely mangled
+    Symbol(Symbol<'trace>),
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
 }
 
-/// Stored data about a mangled C++ symbol that we tried to demangle and parse
+/// Stored data about a C++ symbol that we tried to demangle and parse
 ///
-/// See MangledSymbol for more documentation
+/// See Symbol for more documentation
 ///
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ParsedMangledSymbol {
-    /// Symbol was successfully mangled and interned
+pub enum ParsedSymbol {
+    /// Symbol was successfully demangled and interned
     Parsed(EntityKey),
 
     /// The symbol was demangled, but could not be parsed into an AST
     Demangled(Rc<str>),
 
     /// Demangling failed and the symbol was kept in its original form.
-    Mangled(Rc<str>),
+    MaybeMangled(Rc<str>),
 }
 //
-impl ParsedMangledSymbol {
+impl ParsedSymbol {
     /// Resolve the full mangled symbol data
-    pub fn resolve<'a>(&'a self, trace: &'a ClangTrace) -> MangledSymbol<'a> {
+    pub fn resolve<'a>(&'a self, trace: &'a ClangTrace) -> Symbol<'a> {
         match self {
-            ParsedMangledSymbol::Parsed(key) => MangledSymbol::Parsed(trace.entity(*key)),
-            ParsedMangledSymbol::Demangled(s) => MangledSymbol::Demangled(&*s),
-            ParsedMangledSymbol::Mangled(s) => MangledSymbol::Mangled(&*s),
+            ParsedSymbol::Parsed(key) => Symbol::Parsed(trace.entity(*key)),
+            ParsedSymbol::Demangled(s) => Symbol::Demangled(&*s),
+            ParsedSymbol::MaybeMangled(s) => Symbol::MaybeMangled(&*s),
         }
     }
 }
 //
 /// A mangled C++ symbol that we tried to demangle and parse
 #[derive(PartialEq)]
-pub enum MangledSymbol<'trace> {
-    /// Symbol was successfully mangled and interned
+pub enum Symbol<'trace> {
+    /// Symbol was successfully demangled and interned
     Parsed(EntityView<'trace>),
 
     /// The symbol was demangled, but could not be parsed into an AST
@@ -331,7 +404,7 @@ pub enum MangledSymbol<'trace> {
     /// - __cxx_global_var_init(.<number>)?
     /// - _GLOBAL__sub_I_<source file>
     ///
-    Mangled(&'trace str),
+    MaybeMangled(&'trace str),
 }
 
 /// What can go wrong while parsing an Activity's argument
@@ -414,14 +487,12 @@ mod tests {
 
     #[test]
     fn parse_symbol() {
-        // Commonalities betwwen mangled symbol tests
-        let test_mangled_symbol =
-            |entity_parser: &mut EntityParser,
-             symbol: &str,
-             expected_parse: ParsedMangledSymbol| {
+        // Commonalities betwwen symbol tests
+        let test_symbol =
+            |entity_parser: &mut EntityParser, symbol: &str, expected_parse: ParsedSymbol| {
                 for arg_type in [
-                    ActivityArgumentType::MangledSymbol,
-                    ActivityArgumentType::MangledSymbolOpt,
+                    ActivityArgumentType::Symbol,
+                    ActivityArgumentType::SymbolOpt,
                 ] {
                     assert_eq!(
                         RawActivityArgument {
@@ -429,33 +500,31 @@ mod tests {
                             detail: Some(symbol.into())
                         }
                         .parse_impl(&mut *entity_parser, &mut String::new()),
-                        Ok(ParsedActivityArgument::MangledSymbol(
-                            expected_parse.clone()
-                        ))
+                        Ok(ParsedActivityArgument::Symbol(expected_parse.clone()))
                     );
                 }
             };
         let mut parser = EntityParser::new();
 
-        // Mangled symbol that demangles
+        // Symbol that demangles
         const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
         let key = parser
             .parse_entity("Acts::Test::comb_kalman_filter_zero_field::test_method()")
             .expect("Known-good parse, shouldn't fail");
-        test_mangled_symbol(&mut parser, VALID, ParsedMangledSymbol::Parsed(key));
+        test_symbol(&mut parser, VALID, ParsedSymbol::Parsed(key));
 
-        // Mangled symbol that doesn't demangle
+        // Symbol that doesn't demangle
         const INVALID: &'static str = "__cxx_global_var_init.1";
-        test_mangled_symbol(
+        test_symbol(
             &mut parser,
             INVALID,
-            ParsedMangledSymbol::Mangled(INVALID.into()),
+            ParsedSymbol::MaybeMangled(INVALID.into()),
         );
 
-        // Optional mangled symbol that isn't present
+        // Optional symbol that isn't present
         assert_eq!(
             RawActivityArgument {
-                arg_type: ActivityArgumentType::MangledSymbolOpt,
+                arg_type: ActivityArgumentType::SymbolOpt,
                 detail: None
             }
             .parse_impl(&mut parser, &mut String::new()),
@@ -489,5 +558,42 @@ mod tests {
             .parse_impl(&mut EntityParser::new(), &mut String::new()),
             Ok(ParsedActivityArgument::Nothing)
         );
+    }
+
+    #[test]
+    fn infer_type_from_detail() {
+        let inferred_type = ActivityArgumentType::infer_from_detail;
+        use ActivityArgumentType::*;
+
+        assert_eq!(
+            inferred_type(
+                "_ZNSt6vectorIfSaIfEE6insertEN9__gnu_cxx17__normal_iteratorIPKfS1_EERS4_"
+            ),
+            Symbol
+        );
+        assert_eq!(inferred_type("__cxx_global_var_init"), Symbol);
+        assert_eq!(inferred_type("__cxx_global_var_init.8"), Symbol);
+        assert_eq!(inferred_type("main"), Symbol);
+        assert_eq!(
+            inferred_type("_GLOBAL__sub_I_AdaptiveMultiVertexFinderTests.cpp"),
+            Symbol
+        );
+
+        assert_eq!(inferred_type("<unnamed loop>"), UnnamedLoop);
+
+        assert_eq!(inferred_type("/test.cpp"), FilePath);
+
+        assert_eq!(
+            inferred_type("Prologue/Epilogue Insertion & Frame Finalization"),
+            String
+        );
+        assert_eq!(inferred_type("Expand memcmp() to load/stores"), String);
+        assert_eq!(inferred_type("Post-Dominator Tree Construction"), String);
+        assert_eq!(inferred_type("X86 DAG->DAG Instruction Selection"), String);
+        assert_eq!(inferred_type("Lower AMX type for load/store"), String);
+        assert_eq!(inferred_type("Live DEBUG_VALUE analysis"), String);
+
+        assert_eq!(inferred_type("double"), CppEntity);
+        assert_eq!(inferred_type("ZeroFieldKalmanAlignment_invoker"), CppEntity);
     }
 }

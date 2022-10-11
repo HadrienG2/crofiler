@@ -1,6 +1,6 @@
 //! Utilities for displaying clang activities
 
-use clang_time_trace::{ActivityArgument, ActivityId, CustomDisplay, MangledSymbol};
+use clang_time_trace::{ActivityArgument, ActivityId, CustomDisplay, Symbol};
 use std::io;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
@@ -42,15 +42,14 @@ pub fn display_activity_desc(
             super::display_string(&mut output, "<unnamed loop>", max_cols)?;
         }
         ActivityArgument::String(s)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Demangled(s))
-        | ActivityArgument::MangledSymbol(MangledSymbol::Mangled(s)) => {
+        | ActivityArgument::Symbol(Symbol::Demangled(s))
+        | ActivityArgument::Symbol(Symbol::MaybeMangled(s)) => {
             super::display_string(&mut output, s, max_cols)?;
         }
         ActivityArgument::FilePath(p) => {
             write!(output, "{}", super::path::truncate_path(p, max_cols))?;
         }
-        ActivityArgument::CppEntity(e)
-        | ActivityArgument::MangledSymbol(MangledSymbol::Parsed(e)) => {
+        ActivityArgument::CppEntity(e) | ActivityArgument::Symbol(Symbol::Parsed(e)) => {
             write!(output, "{}", e.bounded_display(max_cols))?;
         }
         ActivityArgument::Nothing => unreachable!(),
@@ -76,7 +75,7 @@ mod tests {
     use crate::tests::TEST_TRACE;
     use assert_matches::assert_matches;
     use clang_time_trace::{
-        ActivityArgumentType, ActivityTraceId, ParsedActivityArgument, ParsedMangledSymbol,
+        ActivityArgumentType, ActivityTraceId, ParsedActivityArgument, ParsedSymbol,
     };
 
     use super::*;
@@ -180,21 +179,21 @@ mod tests {
                             }
                         }
 
-                        ActivityArgumentType::MangledSymbol => {
+                        ActivityArgumentType::Symbol => {
                             if !first_mangled_arg.is_some() || !first_demangled_arg.is_some() || !first_parsed_mangled_arg.is_some() {
                                 let raw_arg = trace.activity_trace(id).activity().raw_argument().clone();
                                 let parsed_arg = raw_arg.parse(&mut trace).unwrap();
-                                if let ParsedActivityArgument::MangledSymbol(m) = &parsed_arg {
+                                if let ParsedActivityArgument::Symbol(m) = &parsed_arg {
                                     match m {
-                                        ParsedMangledSymbol::Parsed(_) if first_parsed_mangled_arg.is_none() => {
+                                        ParsedSymbol::Parsed(_) if first_parsed_mangled_arg.is_none() => {
                                             first_parsed_mangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }
-                                        ParsedMangledSymbol::Demangled(_) if first_demangled_arg.is_none() => {
+                                        ParsedSymbol::Demangled(_) if first_demangled_arg.is_none() => {
                                             first_demangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }
-                                        ParsedMangledSymbol::Mangled(_) if first_mangled_arg.is_none() => {
+                                        ParsedSymbol::MaybeMangled(_) if first_mangled_arg.is_none() => {
                                             first_mangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }

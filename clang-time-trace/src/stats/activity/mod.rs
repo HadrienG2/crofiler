@@ -143,46 +143,71 @@ impl Activity {
     /// Parse from useful bits of Duration events
     fn parse(
         name: Box<str>,
-        mut args: Option<HashMap<Box<str>, json::Value>>,
+        args: Option<HashMap<Box<str>, json::Value>>,
     ) -> Result<Self, ActivityParseError> {
-        // Handling of activity name
-        let (id, arg_type) = if let Some(activity) = ACTIVITIES.get(&name) {
-            activity.clone()
-        } else {
-            return Err(ActivityParseError::UnknownActivity(
-                name.clone(),
-                args.take(),
-            ));
-        };
+        // Do we know this activity?
+        let (id, arg_result) = if let Some((id, arg_type)) = ACTIVITIES.get(&name).cloned() {
+            // If so, parse its argument according to what we know about it
+            let args = RefCell::new(args);
+            let detail_arg = || -> Result<RawActivityArgument, ArgParseError> {
+                Self::parse_detail_arg(args.borrow_mut().take())
+                    .map(|detail| RawActivityArgument::new(arg_type, Some(detail)))
+            };
+            //
+            let arg_result = match arg_type {
+                ActivityArgumentType::Nothing => Self::parse_empty_args(args.borrow_mut().take())
+                    .map(|()| RawActivityArgument::new(arg_type, None)),
 
-        // Interior mutability to allow multiple mutable borrows
-        let args = RefCell::new(args);
-
-        // Handling of activities' "detail" argument
-        let detail_arg = || -> Result<RawActivityArgument, ArgParseError> {
-            Self::parse_detail_arg(args.borrow_mut().take())
-                .map(|detail| RawActivityArgument::new(arg_type, Some(detail)))
-        };
-        //
-        let arg_result = match arg_type {
-            ActivityArgumentType::Nothing => Self::parse_empty_args(args.borrow_mut().take())
-                .map(|()| RawActivityArgument::new(arg_type, None)),
-
-            ActivityArgumentType::String
-            | ActivityArgumentType::FilePath
-            | ActivityArgumentType::CppEntity
-            | ActivityArgumentType::MangledSymbol
-            | ActivityArgumentType::UnnamedLoop => detail_arg(),
-
-            ActivityArgumentType::MangledSymbolOpt | ActivityArgumentType::UnnamedLoopOpt => {
-                match detail_arg() {
-                    Ok(detail_arg) => Ok(detail_arg),
-                    Err(ArgParseError::MissingKey("detail")) => {
-                        Ok(RawActivityArgument::new(arg_type, None))
+                ActivityArgumentType::String
+                | ActivityArgumentType::FilePath
+                | ActivityArgumentType::CppEntity
+                | ActivityArgumentType::Symbol
+                | ActivityArgumentType::UnnamedLoop => {
+                    let detail_arg = detail_arg();
+                    if let Ok(arg) = &detail_arg {
+                        let inferred_type = arg
+                            .detail()
+                            .map(|detail| ActivityArgumentType::infer_from_detail(&detail))
+                            .unwrap_or(ActivityArgumentType::Nothing);
+                        if inferred_type != arg.arg_type() {
+                            log::info!(
+                                "Argument of known type {arg:?} was wrongly \
+                                inferred to be of type {inferred_type:?}, \
+                                type inference rules should be updated if possible"
+                            );
+                        }
                     }
-                    Err(e) => Err(e),
+                    detail_arg
                 }
-            }
+
+                ActivityArgumentType::SymbolOpt | ActivityArgumentType::UnnamedLoopOpt => {
+                    match detail_arg() {
+                        Ok(detail_arg) => Ok(detail_arg),
+                        Err(ArgParseError::MissingKey("detail")) => {
+                            Ok(RawActivityArgument::new(arg_type, None))
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
+            };
+            (id, arg_result)
+        } else {
+            // Otherwise, infer argument type using best-effort heuristics
+            log::error!("Encountered unknown activity {name:?} with arguments {args:?}...");
+            let id = ActivityId::UnknownActivity(Box::new(name));
+            let arg_result = match Self::parse_detail_arg(args) {
+                Ok(detail) => {
+                    let arg_type = ActivityArgumentType::infer_from_detail(&*detail);
+                    log::error!("...inferred to have argument type {arg_type:?}");
+                    Ok(RawActivityArgument::new(arg_type, Some(detail)))
+                }
+                Err(ArgParseError::MissingKey("detail")) => Ok(RawActivityArgument::new(
+                    ActivityArgumentType::Nothing,
+                    None,
+                )),
+                Err(e) => Err(e),
+            };
+            (id, arg_result)
         };
         match arg_result {
             Ok(arg) => Ok(Self { id, arg }),
@@ -307,7 +332,7 @@ generate_activities! {
     "PerformPendingInstantiations" => (PerformPendingInstantiations, Nothing),
     "Frontend" => (Frontend, Nothing),
     "RunPass" => (RunPass, String),
-    "OptFunction" => (OptFunction, MangledSymbol),
+    "OptFunction" => (OptFunction, Symbol),
     "PerFunctionPasses" => (PerFunctionPasses, Nothing),
     "RunLoopPass" => (RunLoopPass, String),
     "OptModule" => (OptModule, FilePath),
@@ -316,95 +341,91 @@ generate_activities! {
     "Backend" => (Backend, Nothing),
     "ExecuteCompiler" => (ExecuteCompiler, Nothing),
     "InferFunctionAttrsPass" => (InferFunctionAttrsPass, FilePath),
-    "PassManager<llvm::Function>" => (FunctionPassManager, MangledSymbolOpt),
-    "SROAPass" => (SROAPass, MangledSymbol),
+    "PassManager<llvm::Function>" => (FunctionPassManager, SymbolOpt),
+    "SROAPass" => (SROAPass, Symbol),
     "ModuleToFunctionPassAdaptor" => (ModuleToFunctionPassAdaptor, FilePath),
     "IPSCCPPass" => (IPSCCPPass, FilePath),
     "CalledValuePropagationPass" => (CalledValuePropagationPass, FilePath),
     "GlobalOptPass" => (GlobalOptPass, FilePath),
-    "PromotePass" => (PromotePass, MangledSymbol),
+    "PromotePass" => (PromotePass, Symbol),
     "DeadArgumentEliminationPass" => (DeadArgumentEliminationPass, FilePath),
-    "InstCombinePass" => (InstCombinePass, MangledSymbol),
+    "InstCombinePass" => (InstCombinePass, Symbol),
     "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => (ModuleGlobalsAAPass, FilePath),
     "CGSCCToFunctionPassAdaptor" => (CGSCCToFunctionPassAdaptor, Nothing),
     "DevirtSCCRepeatedPass" => (DevirtSCCRepeatedPass, Nothing),
-    "FunctionToLoopPassAdaptor" => (FunctionToLoopPassAdaptor, MangledSymbol),
+    "FunctionToLoopPassAdaptor" => (FunctionToLoopPassAdaptor, Symbol),
     "InlinerPass" => (InlinerPass, Nothing),
-    "JumpThreadingPass" => (JumpThreadingPass, MangledSymbol),
+    "JumpThreadingPass" => (JumpThreadingPass, Symbol),
     "LoopFullUnrollPass" => (LoopFullUnrollPass, UnnamedLoop),
     "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>" => (LoopAnalysisManager, Nothing),
-    "GVNPass" => (GVNPass, MangledSymbol),
-    "EarlyCSEPass" => (EarlyCSEPass, MangledSymbol),
-    "MemCpyOptPass" => (MemCpyOptPass, MangledSymbol),
-    "CorrelatedValuePropagationPass" => (CorrelatedValuePropagationPass, MangledSymbol),
-    "SimplifyCFGPass" => (SimplifyCFGPass, MangledSymbol),
-    "TailCallElimPass" => (TailCallElimPass, MangledSymbol),
-    "ReassociatePass" => (ReassociatePass, MangledSymbol),
+    "GVNPass" => (GVNPass, Symbol),
+    "EarlyCSEPass" => (EarlyCSEPass, Symbol),
+    "MemCpyOptPass" => (MemCpyOptPass, Symbol),
+    "CorrelatedValuePropagationPass" => (CorrelatedValuePropagationPass, Symbol),
+    "SimplifyCFGPass" => (SimplifyCFGPass, Symbol),
+    "TailCallElimPass" => (TailCallElimPass, Symbol),
+    "ReassociatePass" => (ReassociatePass, Symbol),
     "LoopRotatePass" => (LoopRotatePass, UnnamedLoop),
     "LICMPass" => (LICMPass, UnnamedLoopOpt),
-    "SCCPPass" => (SCCPPass, MangledSymbol),
-    "BDCEPass" => (BDCEPass, MangledSymbol),
-    "ADCEPass" => (ADCEPass, MangledSymbol),
-    "DSEPass" => (DSEPass, MangledSymbol),
+    "SCCPPass" => (SCCPPass, Symbol),
+    "BDCEPass" => (BDCEPass, Symbol),
+    "ADCEPass" => (ADCEPass, Symbol),
+    "DSEPass" => (DSEPass, Symbol),
     "IndVarSimplifyPass" => (IndVarSimplifyPass, UnnamedLoop),
     "PostOrderFunctionAttrsPass" => (PostOrderFunctionAttrsPass, Nothing),
-    "LoopSimplifyPass" => (LoopSimplifyPass, MangledSymbol),
+    "LoopSimplifyPass" => (LoopSimplifyPass, Symbol),
     "LoopInstSimplifyPass" => (LoopInstSimplifyPass, UnnamedLoop),
     "ModuleToPostOrderCGSCCPassAdaptor" => (ModuleToPostOrderCGSCCPassAdaptor, FilePath),
     "ModuleInlinerWrapperPass" => (ModuleInlinerWrapperPass, FilePath),
     "GlobalDCEPass" => (GlobalDCEPass, FilePath),
     "EliminateAvailableExternallyPass" => (EliminateAvailableExternallyPass, FilePath),
     "ReversePostOrderFunctionAttrsPass" => (ReversePostOrderFunctionAttrsPass, FilePath),
-    "SLPVectorizerPass" => (SLPVectorizerPass, MangledSymbol),
-    "Float2IntPass" => (Float2IntPass, MangledSymbol),
-    "LoopVectorizePass" => (LoopVectorizePass, MangledSymbol),
-    "LowerConstantIntrinsicsPass" => (LowerConstantIntrinsicsPass, MangledSymbol),
-    "LoopUnrollPass" => (LoopUnrollPass, MangledSymbol),
-    "LoopSinkPass" => (LoopSinkPass, MangledSymbol),
-    "InstSimplifyPass" => (InstSimplifyPass, MangledSymbol),
-    "LoopLoadEliminationPass" => (LoopLoadEliminationPass, MangledSymbol),
-    "InjectTLIMappings" => (InjectTLIMappings, MangledSymbol),
-    "VectorCombinePass" => (VectorCombinePass, MangledSymbol),
+    "SLPVectorizerPass" => (SLPVectorizerPass, Symbol),
+    "Float2IntPass" => (Float2IntPass, Symbol),
+    "LoopVectorizePass" => (LoopVectorizePass, Symbol),
+    "LowerConstantIntrinsicsPass" => (LowerConstantIntrinsicsPass, Symbol),
+    "LoopUnrollPass" => (LoopUnrollPass, Symbol),
+    "LoopSinkPass" => (LoopSinkPass, Symbol),
+    "InstSimplifyPass" => (InstSimplifyPass, Symbol),
+    "LoopLoadEliminationPass" => (LoopLoadEliminationPass, Symbol),
+    "InjectTLIMappings" => (InjectTLIMappings, Symbol),
+    "VectorCombinePass" => (VectorCombinePass, Symbol),
     "CGProfilePass" => (CGProfilePass, FilePath),
     "ConstantMergePass" => (ConstantMergePass, FilePath),
     "RelLookupTableConverterPass" => (RelLookupTableConverterPass, FilePath),
     "Optimizer" => (Optimizer, Nothing),
-    "LibCallsShrinkWrapPass" => (LibCallsShrinkWrapPass, MangledSymbol),
-    "LCSSAPass" => (LCSSAPass, MangledSymbol),
+    "LibCallsShrinkWrapPass" => (LibCallsShrinkWrapPass, Symbol),
+    "LCSSAPass" => (LCSSAPass, Symbol),
     "LoopDeletionPass" => (LoopDeletionPass, UnnamedLoop),
-    "DivRemPairsPass" => (DivRemPairsPass, MangledSymbol),
+    "DivRemPairsPass" => (DivRemPairsPass, Symbol),
     "DebugConstGlobalVariable" => (DebugConstGlobalVariable, CppEntity),
     "Annotation2MetadataPass" => (Annotation2MetadataPass, FilePath),
     "ForceFunctionAttrsPass" => (ForceFunctionAttrsPass, FilePath),
-    "LowerExpectIntrinsicPass" => (LowerExpectIntrinsicPass, MangledSymbol),
-    "CoroEarlyPass" => (CoroEarlyPass, MangledSymbol),
+    "LowerExpectIntrinsicPass" => (LowerExpectIntrinsicPass, Symbol),
+    "CoroEarlyPass" => (CoroEarlyPass, Symbol),
     "OpenMPOptPass" => (OpenMPOptPass, FilePath),
-    "InvalidateAnalysisPass<llvm::AAManager>" => (InvalidateAliasAnalysisPass, MangledSymbol),
+    "InvalidateAnalysisPass<llvm::AAManager>" => (InvalidateAliasAnalysisPass, Symbol),
     "RequireAnalysisPass<llvm::ProfileSummaryAnalysis, llvm::Module>" => (RequireModuleProfileSummaryAnalysisPass, FilePath),
     "OpenMPOptCGSCCPass" => (OpenMPOptCGSCCPass, Nothing),
-    "SpeculativeExecutionPass" => (SpeculativeExecutionPass, MangledSymbol),
-    "RequireAnalysisPass<llvm::OptimizationRemarkEmitterAnalysis, llvm::Function>" => (RequireFunctionOptimizationRemarkEmissionPass, MangledSymbol),
-    "MergedLoadStoreMotionPass" => (MergedLoadStoreMotionPass, MangledSymbol),
-    "CoroElidePass" => (CoroElidePass, MangledSymbol),
+    "SpeculativeExecutionPass" => (SpeculativeExecutionPass, Symbol),
+    "RequireAnalysisPass<llvm::OptimizationRemarkEmitterAnalysis, llvm::Function>" => (RequireFunctionOptimizationRemarkEmissionPass, Symbol),
+    "MergedLoadStoreMotionPass" => (MergedLoadStoreMotionPass, Symbol),
+    "CoroElidePass" => (CoroElidePass, Symbol),
     "CoroSplitPass" => (CoroSplitPass, Nothing),
     "LoopSimplifyCFGPass" => (LoopSimplifyCFGPass, UnnamedLoop),
     "SimpleLoopUnswitchPass" => (SimpleLoopUnswitchPass, UnnamedLoop),
     "LoopIdiomRecognizePass" => (LoopIdiomRecognizePass, UnnamedLoop),
-    "LoopDistributePass" => (LoopDistributePass, MangledSymbol),
-    "WarnMissedTransformationsPass" => (WarnMissedTransformationsPass, MangledSymbol),
-    "AlignmentFromAssumptionsPass" => (AlignmentFromAssumptionsPass, MangledSymbol),
-    "CoroCleanupPass" => (CoroCleanupPass, MangledSymbol),
-    "AnnotationRemarksPass" => (AnnotationRemarksPass, MangledSymbol),
+    "LoopDistributePass" => (LoopDistributePass, Symbol),
+    "WarnMissedTransformationsPass" => (WarnMissedTransformationsPass, Symbol),
+    "AlignmentFromAssumptionsPass" => (AlignmentFromAssumptionsPass, Symbol),
+    "CoroCleanupPass" => (CoroCleanupPass, Symbol),
+    "AnnotationRemarksPass" => (AnnotationRemarksPass, Symbol),
     "RecomputeGlobalsAAPass" => (RecomputeGlobalsAAPass, FilePath),
 }
 
 /// What can go wrong while parsing an Activity
 #[derive(Error, Debug, PartialEq)]
 pub enum ActivityParseError {
-    /// Encountered an unexpected activity name
-    #[error("encountered unknown activity {0:?} with arguments {1:?}")]
-    UnknownActivity(Box<str>, Option<HashMap<Box<str>, json::Value>>),
-
     /// Failed to parse activity arguments
     #[error("failed to process arguments of activity {0} ({1})")]
     BadArguments(ActivityId, ArgParseError),
@@ -544,7 +565,10 @@ mod tests {
         let activity = Box::<str>::from("ThisIsMadness");
         assert_eq!(
             Activity::parse(activity.clone(), None),
-            Err(ActivityParseError::UnknownActivity(activity, None))
+            Ok(Activity {
+                id: ActivityId::UnknownActivity(Box::new(activity)),
+                arg: RawActivityArgument::new(ActivityArgumentType::Nothing, None)
+            })
         );
     }
 
@@ -704,7 +728,7 @@ mod tests {
                     id: id.clone(),
                     arg: RawActivityArgument::new(parser, Some(MOCK_SYMBOL.into())),
                 },
-                (parser == ActivityArgumentType::MangledSymbolOpt).then_some(Activity {
+                (parser == ActivityArgumentType::SymbolOpt).then_some(Activity {
                     id: id.clone(),
                     arg: RawActivityArgument::new(parser, None),
                 }),
@@ -712,8 +736,8 @@ mod tests {
         };
 
         for (activity_id, activity_parser) in ACTIVITIES.values() {
-            if *activity_parser == ActivityArgumentType::MangledSymbol
-                || *activity_parser == ActivityArgumentType::MangledSymbolOpt
+            if *activity_parser == ActivityArgumentType::Symbol
+                || *activity_parser == ActivityArgumentType::SymbolOpt
             {
                 mangled_test(activity_id, *activity_parser);
             }

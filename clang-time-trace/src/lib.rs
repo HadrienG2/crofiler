@@ -31,8 +31,8 @@ pub use self::{
     stats::{
         activity::{
             argument::{
-                ActivityArgument, ActivityArgumentError, ActivityArgumentType, MangledSymbol,
-                ParsedActivityArgument, ParsedMangledSymbol, RawActivityArgument,
+                ActivityArgument, ActivityArgumentError, ActivityArgumentType,
+                ParsedActivityArgument, ParsedSymbol, RawActivityArgument, Symbol,
             },
             Activity, ActivityId, ActivityParseError, ActivityStatParseError,
         },
@@ -772,26 +772,6 @@ mod tests {
                 });
             }
         )
-    }
-
-    #[test]
-    fn invalid_activity_stat() {
-        assert_matches!(
-            // Invalid name
-            expect_err!(ClangTrace::from_str(
-                r#"{
-    "traceEvents": [{
-        "ph": "X",
-        "pid": 1,
-        "tid": 0,
-        "ts": 1.3,
-        "dur": 6787.7,
-        "name": "WhatIsThisThing"
-    }]
-}"#
-            )),
-            ClangTraceParseError::ActivityStatParseError(_)
-        );
     }
 
     #[test]
