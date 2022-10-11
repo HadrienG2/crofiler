@@ -90,7 +90,7 @@ fn exit_current_layer(cursive: &mut Cursive) {
 /// Interactive backtrace dialog
 fn backtrace_dialog(cursive: &mut Cursive) -> Option<Dialog> {
     let mut select = SelectView::new();
-    super::with_state(cursive, |state| {
+    let layers_below_profile = super::with_state(cursive, |state| {
         select.add_all(
             state
                 .profile_stack
@@ -98,14 +98,15 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Option<Dialog> {
                 .enumerate()
                 .rev()
                 .map(|(idx, profile)| (String::from(profile.table_name()), idx)),
-        )
+        );
+        state.layers_below_profile
     });
     if select.is_empty() {
         return None;
     }
-    select.set_on_submit(|cursive, idx| {
+    select.set_on_submit(move |cursive, idx| {
         let screen = cursive.screen_mut();
-        while screen.len() > idx + 1 {
+        while screen.len() > idx + 1 + layers_below_profile {
             screen.pop_layer();
         }
         super::with_state(cursive, |state| state.profile_stack.truncate(idx + 1));
