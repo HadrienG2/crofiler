@@ -168,7 +168,7 @@ fn integer(s: &str) -> IResult<LiteralValue> {
 /// Parser recognizing C-style character literals
 fn character(s: &str) -> IResult<char> {
     use nom::{
-        character::complete::{anychar, char},
+        character::complete::{anychar, char, hex_digit1, oct_digit1},
         combinator::opt,
         sequence::{delimited, preceded},
     };
@@ -183,7 +183,14 @@ fn character(s: &str) -> IResult<char> {
         .or(char('n').value('\n'))
         .or(char('\''))
         .or(char('"'))
-        .or(char('\\'));
+        .or(char('\\'))
+        .or(oct_digit1.map_res(|s: &str| u8::from_str_radix(s, 8).map(|b| b as char)))
+        .or(preceded(
+            char('x').or(char('u')).or(char('U')),
+            hex_digit1
+                .map_res(|s: &str| u32::from_str_radix(s, 16))
+                .map_res(|u| char::from_u32(u).ok_or(())),
+        ));
     delimited(
         prefix.and(char('\'')),
         preceded(char('\\'), escape_sequence).or(anychar),
@@ -257,6 +264,16 @@ mod tests {
         test_character_str('\t');
         test_character_str('\n');
         test_character_str('\'');
+        assert_eq!(super::character("\\123"), Ok(("", 0o123 as char)));
+        assert_eq!(super::character("\\x33"), Ok(("", 0x33 as char)));
+        assert_eq!(
+            super::character("\\u1234"),
+            Ok(("", char::from_u32(0x1234).unwrap()))
+        );
+        assert_eq!(
+            super::character("\\U543210"),
+            Ok(("", char::from_u32(0x543210).unwrap()))
+        );
     }
 
     #[test]
