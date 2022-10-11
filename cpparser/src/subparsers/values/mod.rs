@@ -17,6 +17,7 @@ use crate::{
             usage::{NewExpression, NewExpressionView},
             Operator, OperatorView,
         },
+        types::{TypeKey, TypeView},
     },
     EntityParser, IResult,
 };
@@ -156,9 +157,16 @@ impl EntityParser {
 
         let ellipsis = tag("...").value(ValueHeader::Ellipsis);
 
+        let sizeof = delimited(tag("sizeof("), |s| self.parse_type_like_imut(s), char(')'))
+            .map(ValueHeader::SizeOf);
+        let declval = delimited(tag("declval("), |s| self.parse_type_like_imut(s), char(')'))
+            .map(ValueHeader::DeclVal);
+
         literal
             .or(new_expression)
-            // Must come after new_expression as it matches the new keyword
+            .or(sizeof)
+            .or(declval)
+            // Must come after sizeof and declaval as it matches the keywords
             .or(id_expression)
             .or(unary_op)
             // Must come after unary_op to match casts as intended
@@ -372,6 +380,12 @@ pub(crate) enum ValueHeader {
 
     /// Ellipsis sign ... (used in fold expressions)
     Ellipsis,
+
+    /// sizeof() operator
+    SizeOf(TypeKey),
+
+    /// declval() operator
+    DeclVal(TypeKey),
 }
 //
 impl From<Literal> for ValueHeader {
@@ -418,6 +432,12 @@ pub enum ValueHeaderView<'entities> {
 
     /// Ellipsis sign ... (used in fold expressions)
     Ellipsis,
+
+    /// sizeof() operator
+    SizeOf(TypeView<'entities>),
+
+    /// declval() operator
+    DeclVal(TypeView<'entities>),
 }
 //
 impl<'entities> ValueHeaderView<'entities> {
@@ -432,6 +452,8 @@ impl<'entities> ValueHeaderView<'entities> {
             ValueHeader::NewExpression(ne) => Self::NewExpression(entities.new_expression(ne)),
             ValueHeader::IdExpression(id) => Self::IdExpression(entities.id_expression(id)),
             ValueHeader::Ellipsis => Self::Ellipsis,
+            ValueHeader::SizeOf(t) => Self::SizeOf(entities.type_like(t)),
+            ValueHeader::DeclVal(t) => Self::DeclVal(entities.type_like(t)),
         }
     }
 }
@@ -451,6 +473,8 @@ impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
             Self::NewExpression(n) => n.recursion_depth(),
             Self::IdExpression(i) => i.recursion_depth(),
             Self::Ellipsis => 0,
+            Self::SizeOf(t) => t.recursion_depth(),
+            Self::DeclVal(t) => t.recursion_depth(),
         }
     }
 
@@ -470,6 +494,16 @@ impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
             Self::NewExpression(n) => n.display_impl(f, state),
             Self::IdExpression(i) => i.display_impl(f, state),
             Self::Ellipsis => write!(f, "..."),
+            Self::SizeOf(t) | Self::DeclVal(t) => {
+                let keyword = if let Self::SizeOf(_) = self {
+                    "sizeof"
+                } else {
+                    "declval"
+                };
+                write!(f, "{keyword}(")?;
+                t.display_impl(f, state)?;
+                write!(f, ")")
+            }
         }
     }
 }
@@ -680,6 +714,14 @@ mod tests {
 
         // Ellipsis (as in fold expressions)
         check_value_header(&mut parser, "...", ValueHeader::Ellipsis, &["..."]);
+
+        // sizeof operator
+        expected = ValueHeader::SizeOf(unwrap_parse(parser.parse_type_like("U")));
+        check_value_header(&mut parser, "sizeof(U)", expected, &["sizeof(U)"]);
+
+        // declval operator
+        expected = ValueHeader::SizeOf(unwrap_parse(parser.parse_type_like("Lol")));
+        check_value_header(&mut parser, "declval(Lol)", expected, &["declval(Lol)"]);
     }
 
     #[test]
