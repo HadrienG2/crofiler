@@ -24,7 +24,7 @@ impl EntityParser {
         s: &'source str,
     ) -> IResult<'source, (Operator, Option<TemplateParameters>)> {
         use nom::{
-            character::complete::{char, multispace0},
+            character::complete::{multispace0, multispace1},
             combinator::opt,
             sequence::preceded,
         };
@@ -36,18 +36,19 @@ impl EntityParser {
             .or(|s| self.parse_arith_and_templates_imut(s, 3));
 
         // The other operator parses don't care about template parameters
-        let template_oblivious = (call_or_index.or(|s| self.parse_custom_literal_imut(s)))
-            .or(preceded(
-                char(' '),
-                new.or(super::delete)
-                    .or(super::co_await)
-                    // Must come last as it matches keywords
-                    .or((|s| self.parse_type_like_imut(s)).map(Operator::Conversion)),
-            ))
-            .and(preceded(
-                multispace0,
-                opt(|s| self.parse_template_parameters_imut(s)),
-            ));
+        let template_oblivious = (call_or_index
+            .or(preceded(multispace0, |s| self.parse_custom_literal_imut(s))))
+        .or(preceded(
+            multispace1,
+            new.or(super::delete)
+                .or(super::co_await)
+                // Must come last as it matches keywords
+                .or((|s| self.parse_type_like_imut(s)).map(Operator::Conversion)),
+        ))
+        .and(preceded(
+            multispace0,
+            opt(|s| self.parse_template_parameters_imut(s)),
+        ));
 
         // And for an operator overload, we need the operator keyword...
         preceded(
@@ -223,7 +224,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            parser.parse_operator_overload("operator co_await"),
+            parser.parse_operator_overload("operator\tco_await"),
             Ok(("", (Operator::CoAwait, None)))
         );
 
