@@ -29,59 +29,73 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     // Parser for keywords that can appear in legacy names
     let keyword = EntityParser::keywords_parser([
         (
+            "float",
+            LegacyNameBuilder {
+                base: Some(Base::Float),
+                ..Default::default()
+            },
+        ),
+        (
             "double",
             LegacyNameBuilder {
                 base: Some(Base::Double),
-                signedness: None,
-                size: None,
+                ..Default::default()
             },
         ),
         (
             "long",
             LegacyNameBuilder {
-                base: None,
-                signedness: None,
                 size: Some(Size::Long),
+                ..Default::default()
             },
         ),
         (
             "unsigned",
             LegacyNameBuilder {
-                base: None,
                 signedness: Some(Signedness::Unsigned),
-                size: None,
+                ..Default::default()
             },
         ),
         (
             "char",
             LegacyNameBuilder {
                 base: Some(Base::Char),
-                signedness: None,
-                size: None,
+                ..Default::default()
             },
         ),
         (
             "int",
             LegacyNameBuilder {
                 base: Some(Base::Int),
-                signedness: None,
-                size: None,
+                ..Default::default()
+            },
+        ),
+        (
+            "__int128",
+            LegacyNameBuilder {
+                base: Some(Base::Int128),
+                ..Default::default()
             },
         ),
         (
             "signed",
             LegacyNameBuilder {
-                base: None,
                 signedness: Some(Signedness::Signed),
-                size: None,
+                ..Default::default()
             },
         ),
         (
             "short",
             LegacyNameBuilder {
-                base: None,
-                signedness: None,
                 size: Some(Size::Short),
+                ..Default::default()
+            },
+        ),
+        (
+            "_Complex",
+            LegacyNameBuilder {
+                complex: true,
+                ..Default::default()
             },
         ),
     ]);
@@ -155,6 +169,12 @@ pub enum LegacyName {
     /// "unsigned long long int"
     UnsignedLongLong,
 
+    /// "__int128"
+    SignedInt128,
+
+    /// "unsigned __int128"
+    UnsignedInt128,
+
     /// "char"
     Char,
 
@@ -164,11 +184,23 @@ pub enum LegacyName {
     /// "unsigned char"
     UnsignedChar,
 
+    /// "float"
+    Float,
+
     /// "double"
     Double,
 
     /// "long double"
     LongDouble,
+
+    /// "float _Complex"
+    FloatComplex,
+
+    /// "double _Complex"
+    DoubleComplex,
+
+    /// "long double _Complex"
+    LongDoubleComplex,
 }
 //
 impl Display for LegacyName {
@@ -182,11 +214,17 @@ impl Display for LegacyName {
             Self::UnsignedLong => "unsigned long",
             Self::SignedLongLong => "long long",
             Self::UnsignedLongLong => "unsigned long long",
+            Self::SignedInt128 => "__int128",
+            Self::UnsignedInt128 => "unsigned __int128",
             Self::Char => "char",
             Self::SignedChar => "signed char",
             Self::UnsignedChar => "unsigned char",
+            Self::Float => "float",
             Self::Double => "double",
             Self::LongDouble => "long double",
+            Self::FloatComplex => "float _Complex",
+            Self::DoubleComplex => "double _Complex",
+            Self::LongDoubleComplex => "long double _Complex",
         };
         write!(f, "{s}")
     }
@@ -203,49 +241,81 @@ struct LegacyNameBuilder {
 
     /// How long the type should be
     size: Option<Size>,
+
+    /// Whether this is a C-style complex number
+    complex: bool,
 }
 //
 impl LegacyNameBuilder {
     fn build(self) -> LegacyName {
         match self {
             LegacyNameBuilder {
+                base: Some(Base::Float),
+                signedness: None,
+                size: None,
+                complex,
+            } => if complex { LegacyName::FloatComplex } else { LegacyName::Float },
+
+            LegacyNameBuilder {
+                base: Some(Base::Float),
+                signedness,
+                size,
+                complex: _,
+            } => panic!(
+                "Invalid size or signedness qualifier (resp. {size:?} and {signedness:?}) on type float"
+            ),
+
+            LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness: None,
                 size: None,
-            } => LegacyName::Double,
+                complex,
+            } => if complex { LegacyName::DoubleComplex } else { LegacyName::Double },
 
             LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness: None,
                 size: Some(Size::Long),
-            } => LegacyName::LongDouble,
+                complex,
+            } => if complex { LegacyName::LongDoubleComplex } else { LegacyName::LongDouble },
 
             LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness,
                 size,
+                complex: _,
             } => panic!(
                 "Invalid size or signedness qualifier (resp. {size:?} and {signedness:?}) on type double"
             ),
 
-            // From here, base can't be Double ===
+            // From here, base can't be a floating-point type ===
+
+            LegacyNameBuilder {
+                complex: true,
+                ..
+            } => panic!(
+                "Invalid use of _Complex qualifier not targeting a floating-point type"
+            ),
 
             LegacyNameBuilder {
                 base: Some(Base::Char),
                 signedness: None,
                 size: None,
+                complex: false,
             } => LegacyName::Char,
 
             LegacyNameBuilder {
                 base: Some(Base::Char),
                 signedness: Some(Signedness::Signed),
                 size: None,
+                complex: false,
             } => LegacyName::SignedChar,
 
             LegacyNameBuilder {
                 base: Some(Base::Char),
                 signedness: Some(Signedness::Unsigned),
                 size: None,
+                complex: false,
             } => LegacyName::UnsignedChar,
 
             LegacyNameBuilder {
@@ -254,30 +324,57 @@ impl LegacyNameBuilder {
                 ..
             } => panic!("Invalid size qualifier {sz:?} on type char"),
 
-            // From here, base can't be Char or Double, so it has to be Int
+            LegacyNameBuilder {
+                base: Some(Base::Int128),
+                signedness: None,
+                size: None,
+                complex: false,
+            } => LegacyName::SignedInt128,
 
             LegacyNameBuilder {
-                base: _,
+                base: Some(Base::Int128),
+                signedness: Some(Signedness::Signed),
+                size: None,
+                complex: false,
+            } => LegacyName::SignedInt128,
+
+            LegacyNameBuilder {
+                base: Some(Base::Int128),
                 signedness: Some(Signedness::Unsigned),
                 size: None,
+                complex: false,
+            } => LegacyName::UnsignedInt128,
+
+            LegacyNameBuilder {
+                base: Some(Base::Int128),
+                size: Some(sz),
+                ..
+            } => panic!("Invalid size qualifier {sz:?} on type __int128"),
+
+            // From here, base can't be Char, __int128 or floating-point, so it has to be Int
+
+            LegacyNameBuilder {
+                signedness: Some(Signedness::Unsigned),
+                size: None,
+                ..
             } => LegacyName::UnsignedInt,
 
             LegacyNameBuilder {
-                base: _,
                 signedness: Some(Signedness::Unsigned),
                 size: Some(Size::Short),
+                ..
             } => LegacyName::UnsignedShort,
 
             LegacyNameBuilder {
-                base: _,
                 signedness: Some(Signedness::Unsigned),
                 size: Some(Size::Long),
+                ..
             } => LegacyName::UnsignedLong,
 
             LegacyNameBuilder {
-                base: _,
                 signedness: Some(Signedness::Unsigned),
                 size: Some(Size::LongLong),
+                ..
             } => LegacyName::UnsignedLongLong,
 
             // From here, unsigned integers are done, only signed ones remain
@@ -286,30 +383,27 @@ impl LegacyNameBuilder {
                 base: None,
                 signedness: None,
                 size: None,
+                complex: false,
             } => unreachable!("Should be forbidden by fold_many1"),
 
             LegacyNameBuilder {
-                base: _,
-                signedness: _,
                 size: Some(Size::Short),
+                ..
             } => LegacyName::SignedShort,
 
             LegacyNameBuilder {
-                base: _,
-                signedness: _,
                 size: None,
+                ..
             } => LegacyName::SignedInt,
 
             LegacyNameBuilder {
-                base: _,
-                signedness: _,
                 size: Some(Size::Long),
+                ..
             } => LegacyName::SignedLong,
 
             LegacyNameBuilder {
-                base: _,
-                signedness: _,
                 size: Some(Size::LongLong),
+                ..
             } => LegacyName::SignedLongLong,
         }
     }
@@ -349,6 +443,12 @@ enum Base {
 
     /// "char" (usually a byte)
     Char,
+
+    /// "__int128" (compiler extension)
+    Int128,
+
+    /// "float" (usually IEEE-754 binary32)
+    Float,
 
     /// "double" (usually IEEE-754 binary64)
     Double,
@@ -397,11 +497,21 @@ mod tests {
         test_legacy_name("unsigned long long int", UnsignedLongLong);
         test_legacy_name("long int unsigned long", UnsignedLongLong);
 
+        test_legacy_name("__int128", SignedInt128);
+        test_legacy_name("signed __int128", SignedInt128);
+
+        test_legacy_name("unsigned __int128", UnsignedInt128);
+
         test_legacy_name("char", Char);
         test_legacy_name("signed char", SignedChar);
         test_legacy_name("unsigned char", UnsignedChar);
 
+        test_legacy_name("float", Float);
         test_legacy_name("double", Double);
         test_legacy_name("long double", LongDouble);
+
+        test_legacy_name("float _Complex", FloatComplex);
+        test_legacy_name("double _Complex", DoubleComplex);
+        test_legacy_name("long double _Complex", LongDoubleComplex);
     }
 }
