@@ -87,7 +87,7 @@ impl EntityParser {
         use nom::{
             character::complete::{char, multispace0},
             combinator::opt,
-            sequence::{delimited, preceded, separated_pair},
+            sequence::{delimited, preceded, separated_pair, tuple},
         };
         use nom_supreme::tag::complete::tag;
 
@@ -100,17 +100,29 @@ impl EntityParser {
         let mut reference = Self::parse_reference.map(DeclOperator::Reference);
 
         // Basic pointer declarator
+        let restrict = || EntityParser::keywords_parser(["__restrict", "__restrict__", "restrict"]);
+        let cv_restrict = || {
+            tuple((
+                Self::parse_cv.terminated(multispace0),
+                opt(restrict().terminated(multispace0)).map(|opt| opt.is_some()),
+                Self::parse_cv,
+            ))
+            .map(|(cv1, restrict, cv2)| (cv1 | cv2, restrict))
+        };
         let mut basic_pointer =
-            preceded(char('*').and(multispace0), Self::parse_cv).map(|cv| DeclOperator::Pointer {
-                path: self.scope_sequences.entry().intern().into(),
-                cv,
+            preceded(char('*').and(multispace0), cv_restrict()).map(|(cv, restrict)| {
+                DeclOperator::Pointer {
+                    path: self.scope_sequences.entry().intern().into(),
+                    cv,
+                    restrict,
+                }
             });
 
         // The member pointer declarator is very exotic (2/1M parses) and harder to
         // parse so we don't unify it with basic_pointer.
         let nested_star = (|s| self.parse_nested_name_specifier_imut(s)).terminated(char('*'));
-        let mut member_pointer = separated_pair(nested_star, multispace0, Self::parse_cv)
-            .map(|(path, cv)| DeclOperator::Pointer { path, cv });
+        let mut member_pointer = separated_pair(nested_star, multispace0, cv_restrict())
+            .map(|(path, (cv, restrict))| DeclOperator::Pointer { path, cv, restrict });
 
         // Array declarator
         let array = delimited(
@@ -181,8 +193,11 @@ pub enum DeclOperator {
         /// Nested name specifier (for pointer-to-member)
         path: NestedNameSpecifier,
 
-        /// Const and volatile qualifiers,
+        /// Const and volatile qualifiers
         cv: ConstVolatile,
+
+        /// Restrict qualifier
+        restrict: bool,
     },
 
     /// Reference declarator
@@ -232,6 +247,9 @@ pub enum DeclOperatorView<'entities> {
 
         /// Const and volatile qualifiers,
         cv: ConstVolatile,
+
+        /// Restrict qualifier
+        restrict: bool,
     },
 
     /// Reference declarator
@@ -255,9 +273,10 @@ impl<'entities> DeclOperatorView<'entities> {
     pub(crate) fn new(op: DeclOperator, entities: &'entities EntityParser) -> Self {
         match op {
             DeclOperator::ConstVolatile(cv) => Self::ConstVolatile(cv),
-            DeclOperator::Pointer { path, cv } => Self::Pointer {
+            DeclOperator::Pointer { path, cv, restrict } => Self::Pointer {
                 path: entities.nested_name_specifier(path),
                 cv,
+                restrict,
             },
             DeclOperator::Reference(r) => Self::Reference(r),
             DeclOperator::Array(v) => Self::Array(v.map(|v| entities.value_like(v))),
@@ -290,7 +309,7 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
         match self {
             Self::ConstVolatile(cv) => write!(f, " {cv}")?,
-            Self::Pointer { path, cv } => {
+            Self::Pointer { path, cv, restrict } => {
                 if path.is_rooted() || !path.scopes().is_empty() {
                     write!(f, " ")?;
                     path.display_impl(f, state)?;
@@ -298,6 +317,9 @@ impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
                 write!(f, "*")?;
                 if *cv != ConstVolatile::default() {
                     write!(f, " {cv}")?;
+                }
+                if *restrict {
+                    write!(f, " restrict")?;
                 }
             }
             Self::Reference(r) => write!(f, "{r}")?,
@@ -377,6 +399,7 @@ mod tests {
         let mut expected = DeclOperator::Pointer {
             path: nested_name_specifier(&mut parser, ""),
             cv: ConstVolatile::default(),
+            restrict: false,
         };
         check_decl_operator(&mut parser, "*", expected, &["*"]);
 
@@ -384,8 +407,36 @@ mod tests {
         expected = DeclOperator::Pointer {
             path: nested_name_specifier(&mut parser, ""),
             cv: ConstVolatile::CONST,
+            restrict: false,
         };
         check_decl_operator(&mut parser, "*const", expected, &["* const"]);
+
+        // Pointer with restrict qualifier
+        expected = DeclOperator::Pointer {
+            path: nested_name_specifier(&mut parser, ""),
+            cv: ConstVolatile::default(),
+            restrict: true,
+        };
+        check_decl_operator(&mut parser, "*restrict", expected, &["* restrict"]);
+
+        // Pointer with CV and restrict qualifier
+        expected = DeclOperator::Pointer {
+            path: nested_name_specifier(&mut parser, ""),
+            cv: ConstVolatile::CONST | ConstVolatile::VOLATILE,
+            restrict: true,
+        };
+        check_decl_operator(
+            &mut parser,
+            "*const __restrict volatile",
+            expected,
+            &["* const volatile restrict"],
+        );
+        check_decl_operator(
+            &mut parser,
+            "* volatile const __restrict__",
+            expected,
+            &["* const volatile restrict"],
+        );
 
         // Basic pointer to member
         let check_simple_member_ptr =
@@ -403,6 +454,7 @@ mod tests {
                     DeclOperator::Pointer {
                         path: expected_path,
                         cv: expected_cv,
+                        restrict: false,
                     },
                     &[&display1, &display2],
                 );
