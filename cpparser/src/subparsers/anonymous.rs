@@ -20,46 +20,45 @@ impl EntityParser {
         tag("<unknown>").value(()).parse(s)
     }
 
-    /// Parser for arbitrary lambda representations
-    pub fn parse_lambda<'source>(&mut self, s: &'source str) -> IResult<'source, Lambda> {
-        self.parse_lambda_imut(s)
+    /// Parser for anonymous types including lambdas
+    pub fn parse_anonymous<'source>(
+        &mut self,
+        s: &'source str,
+    ) -> IResult<'source, AnonymousEntity> {
+        self.parse_anonymous_imut(s)
     }
 
-    /// Access a previously parsed lambda
-    pub fn lambda(&self, l: Lambda) -> LambdaView {
-        LambdaView::new(l, self)
+    /// Access a previously parsed anonymous entity
+    pub fn anonymous(&self, a: AnonymousEntity) -> AnonymousEntityView {
+        AnonymousEntityView::new(a, self)
     }
 
-    /// Implementation of parse_lambda with internal mutability
-    pub(crate) fn parse_lambda_imut<'source>(&self, s: &'source str) -> IResult<'source, Lambda> {
-        ((|s| self.parse_clang_lambda_imut(s)).map(Lambda::Clang))
-            .or((|s| self.parse_libiberty_lambda_imut(s)).map(Lambda::Libiberty))
-            .parse(s)
+    /// Implementation of parse_anonymous with internal mutability
+    pub(crate) fn parse_anonymous_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, AnonymousEntity> {
+        match s.as_bytes().first() {
+            Some(b'(') => ((|s| self.parse_clang_lambda_imut(s)).map(AnonymousEntity::ClangLambda))
+                .or((|s| self.parse_clang_anonymous_imut(s)).map(AnonymousEntity::ClangOther))
+                .parse(s),
+            _ => ((|s| self.parse_libiberty_lambda_imut(s)).map(AnonymousEntity::LibibertyLambda))
+                .or((|s| self.parse_libiberty_unnamed_imut(s))
+                    .map(AnonymousEntity::LibibertyUnnamed))
+                .parse(s),
+        }
     }
 
     /// Parser for clang lambda types `(lambda at <file path>:<line>:<col>)`
-    ///
-    /// This will fail if the file path contains a ':' sign other than a
-    /// Windows-style disk designator at the start, because I have no idea how
-    /// to handle this inherent grammar ambiguity better...
-    ///
     fn parse_clang_lambda_imut<'source>(&self, s: &'source str) -> IResult<'source, ClangLambda> {
-        use nom::{
-            bytes::complete::{tag, take_till1},
-            character::complete::{anychar, char, u32},
-            combinator::{opt, recognize},
-            sequence::{delimited, separated_pair},
-        };
-
-        let location = separated_pair(u32, char(':'), u32);
-
-        let disk_designator = anychar.and(char(':'));
-        let path_str = recognize(opt(disk_designator).and(take_till1(|c| c == ':')));
-        let path = path_str.map(|path| self.intern_path_imut(path));
-
-        let file_location = separated_pair(path, char(':'), location);
-        let lambda = file_location.map(|(file, location)| ClangLambda { file, location });
-        delimited(tag("(lambda at "), lambda, char(')'))(s)
+        use nom::{bytes::complete::tag, character::complete::char, sequence::delimited};
+        delimited(
+            tag("(lambda at "),
+            |s| self.parse_source_location_imut(s),
+            char(')'),
+        )
+        .map(ClangLambda)
+        .parse(s)
     }
 
     /// Access a previously parsed clang-style lambda
@@ -90,19 +89,11 @@ impl EntityParser {
         LibibertyLambdaView::new(l, self)
     }
 
-    /// Parser for other anonymous clang entities called `(anonymous <stuff>)`
-    pub fn parse_anonymous<'source>(
-        &mut self,
-        s: &'source str,
-    ) -> IResult<'source, AnonymousEntity> {
-        self.parse_anonymous_imut(s)
-    }
-
-    /// Implementation of parse_anonymous using internal mutability
-    pub(crate) fn parse_anonymous_imut<'source>(
+    /// Parser for anonymous clang entities like `(anonymous <stuff>)`
+    pub(crate) fn parse_clang_anonymous_imut<'source>(
         &self,
         s: &'source str,
-    ) -> IResult<'source, AnonymousEntity> {
+    ) -> IResult<'source, ClangAnonymousEntity> {
         use nom::{
             character::complete::char,
             combinator::opt,
@@ -110,25 +101,161 @@ impl EntityParser {
         };
         use nom_supreme::tag::complete::tag;
         delimited(
-            tag("(anonymous"),
-            opt(preceded(char(' '), |s| self.parse_identifier_imut(s))),
+            char('(').and(tag("anonymous").or(tag("unnamed"))),
+            opt(preceded(char(' '), |s| self.parse_identifier_imut(s)))
+                .and(opt(preceded(tag(" at "), |s| {
+                    self.parse_source_location_imut(s)
+                }))),
             char(')'),
-        )(s)
+        )
+        .map(|(identifier, location)| ClangAnonymousEntity {
+            identifier,
+            location,
+        })
+        .parse(s)
     }
 
-    /// Access a previously parsed anonymous entity
-    pub fn anonymous(&self, a: AnonymousEntity) -> AnonymousEntityView {
-        AnonymousEntityView::new(a, self)
+    /// Access a previously parsed anonymous clang entity
+    pub(crate) fn clang_anonymous(&self, a: ClangAnonymousEntity) -> ClangAnonymousEntityView {
+        ClangAnonymousEntityView::new(a, self)
+    }
+
+    /// Parser for a libiberty-style anonymous type
+    pub(crate) fn parse_libiberty_unnamed_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, LibibertyUnnamedType> {
+        use nom::{
+            character::complete::{char, u32},
+            sequence::delimited,
+        };
+        use nom_supreme::tag::complete::tag;
+        delimited(tag("{unnamed type#"), u32, char('}'))
+            .map(LibibertyUnnamedType)
+            .parse(s)
+    }
+
+    /// Parser for source code locations `<file path>:<line>:<col>`
+    ///
+    /// This will fail if the file path contains a ':' sign other than a
+    /// Windows-style disk designator at the start, because I have no idea how
+    /// to handle this inherent grammar ambiguity better...
+    ///
+    fn parse_source_location_imut<'source>(
+        &self,
+        s: &'source str,
+    ) -> IResult<'source, SourceLocation> {
+        use nom::{
+            bytes::complete::take_till1,
+            character::complete::{anychar, char, u32},
+            combinator::{opt, recognize},
+            sequence::separated_pair,
+        };
+
+        let location = separated_pair(u32, char(':'), u32);
+
+        let disk_designator = anychar.and(char(':'));
+        let path_str = recognize(opt(disk_designator).and(take_till1(|c| c == ':')));
+        let path = path_str.map(|path| self.intern_path_imut(path));
+
+        let source_location = separated_pair(path, char(':'), location);
+        source_location
+            .map(|(file, location)| SourceLocation { file, location })
+            .parse(s)
+    }
+
+    /// Access a previously parsed source code location
+    pub(crate) fn source_location(&self, sl: SourceLocation) -> SourceLocationView {
+        SourceLocationView::new(sl, self)
     }
 }
 
-/// Clang-style lambda featuring source location description
+/// Anonymous entities including lambdas
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct ClangLambda {
-    /// Source file in which the lambda is declared
+pub enum AnonymousEntity {
+    /// Clang-style lambda with source location description `(lambda at ...)`
+    ClangLambda(ClangLambda),
+
+    /// Clang-style non-lambda anonymous entity `(anonymous <stuff>)`
+    ClangOther(ClangAnonymousEntity),
+
+    /// Libiberty-style lambda with parameter types and numeric ID `{lambda(...)#1}`
+    LibibertyLambda(LibibertyLambda),
+
+    /// Libiberty-style unnamed type `{unamed type#123}`
+    LibibertyUnnamed(LibibertyUnnamedType),
+}
+//
+impl Default for AnonymousEntity {
+    fn default() -> Self {
+        Self::ClangOther(ClangAnonymousEntity::default())
+    }
+}
+
+/// View of a lambda function
+#[derive(PartialEq)]
+pub enum AnonymousEntityView<'entities> {
+    /// Clang-style lambda with source location description `(lambda at ...)`
+    ClangLambda(ClangLambdaView<'entities>),
+
+    /// Clang-style non-lambda anonymous entity `(anonymous <stuff>)`
+    ClangOther(ClangAnonymousEntityView<'entities>),
+
+    /// Libiberty-style lambda with parameter types and numeric ID `{lambda(...)#1}`
+    LibibertyLambda(LibibertyLambdaView<'entities>),
+
+    /// Libiberty-style unnamed type `{unamed type#123}`
+    LibibertyUnnamed(LibibertyUnnamedType),
+}
+//
+impl<'entities> AnonymousEntityView<'entities> {
+    /// Set up a lambda view
+    pub(crate) fn new(inner: AnonymousEntity, entities: &'entities EntityParser) -> Self {
+        match inner {
+            AnonymousEntity::ClangLambda(c) => Self::ClangLambda(entities.clang_lambda(c)),
+            AnonymousEntity::ClangOther(o) => Self::ClangOther(entities.clang_anonymous(o)),
+            AnonymousEntity::LibibertyLambda(l) => {
+                Self::LibibertyLambda(entities.libiberty_lambda(l))
+            }
+            AnonymousEntity::LibibertyUnnamed(u) => Self::LibibertyUnnamed(u),
+        }
+    }
+}
+//
+impl<'entities> Display for AnonymousEntityView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        self.display_impl(f, &DisplayState::default())
+    }
+}
+//
+impl<'entities> CustomDisplay for AnonymousEntityView<'entities> {
+    fn recursion_depth(&self) -> usize {
+        match self {
+            // FIXME: Bring in simplified path display from crofiler
+            Self::ClangLambda(_) => 0,
+            Self::ClangOther(_) => 0,
+            Self::LibibertyLambda(l) => l.recursion_depth(),
+            Self::LibibertyUnnamed(_) => 0,
+        }
+    }
+
+    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
+        match self {
+            Self::ClangLambda(c) => write!(f, "{c}"),
+            Self::ClangOther(o) => write!(f, "{o}"),
+            Self::LibibertyLambda(l) => l.display_impl(f, state),
+            Self::LibibertyUnnamed(u) => write!(f, "{u}"),
+        }
+    }
+}
+
+/// A location within the source code
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SourceLocation {
+    /// Source file in which the object of interest is located
     file: PathKey,
 
-    /// Declaration location within the file
+    /// Object location within the file
     location: (Line, Column),
 }
 //
@@ -137,6 +264,50 @@ pub type Line = u32;
 //
 /// Column number within a file
 pub type Column = u32;
+
+/// View of a source code location
+pub struct SourceLocationView<'entities> {
+    /// Wrapped ClangLambda
+    inner: SourceLocation,
+
+    /// Underlying interned entity storage
+    entities: &'entities EntityParser,
+}
+//
+impl<'entities> SourceLocationView<'entities> {
+    /// Build a source location view
+    pub fn new(inner: SourceLocation, entities: &'entities EntityParser) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Source file in which the lambda is declared
+    pub fn file(&self) -> InternedPath {
+        self.entities.path(self.inner.file)
+    }
+
+    /// Declaration location within the file
+    pub fn location(&self) -> (Line, Column) {
+        self.inner.location
+    }
+}
+//
+impl<'entities> PartialEq for SourceLocationView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
+    }
+}
+//
+impl<'entities> Display for SourceLocationView<'entities> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let file = self.file();
+        let (line, column) = self.location();
+        write!(f, "{file}:{line}:{column}")
+    }
+}
+
+/// Clang-style lambda featuring source location description
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ClangLambda(SourceLocation);
 
 /// View of a clang-style lambda location description
 pub struct ClangLambdaView<'entities> {
@@ -153,14 +324,9 @@ impl<'entities> ClangLambdaView<'entities> {
         Self { inner, entities }
     }
 
-    /// Source file in which the lambda is declared
-    pub fn file(&self) -> InternedPath {
-        self.entities.path(self.inner.file)
-    }
-
-    /// Declaration location within the file
-    pub fn location(&self) -> (Line, Column) {
-        self.inner.location
+    /// Source code location in which the lambda is declared
+    pub fn source_location(&self) -> SourceLocationView {
+        self.entities.source_location(self.inner.0)
     }
 }
 //
@@ -172,8 +338,7 @@ impl<'entities> PartialEq for ClangLambdaView<'entities> {
 //
 impl<'entities> Display for ClangLambdaView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let (line, column) = self.location();
-        write!(f, "(lambda at {}:{line}:{column})", self.file())
+        write!(f, "(lambda at {})", self.source_location())
     }
 }
 
@@ -237,80 +402,80 @@ impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
     }
 }
 
-/// Lambda function
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Lambda {
-    /// Clang-style lambda with source location description
-    Clang(ClangLambda),
+/// Anonymous clang entity
+///
+/// This models clang's use of `(anonymous)`, `(anonymous <something>)` and
+/// `(anonymous <something> at <source location>)` to point to C++ entities that
+/// don't have names, with "anonymous" sometimes replaced with "unnamed".
+///
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct ClangAnonymousEntity {
+    /// What we're talking about (namespace, class, enum, union...)
+    identifier: Option<IdentifierKey>,
 
-    /// Libiberty-style lambda with parameter types and numeric ID
-    Libiberty(LibibertyLambda),
+    /// Where in the source code that thing is located
+    location: Option<SourceLocation>,
 }
 
-/// View of a lambda function
-#[derive(PartialEq)]
-pub enum LambdaView<'entities> {
-    /// Clang-style lambda with source location description
-    Clang(ClangLambdaView<'entities>),
+/// View of an anonymous clang entity
+pub struct ClangAnonymousEntityView<'entities> {
+    /// Wrapped AnonymousClangEntity
+    inner: ClangAnonymousEntity,
 
-    /// Libiberty-style lambda with parameter types and numeric ID
-    Libiberty(LibibertyLambdaView<'entities>),
+    /// Underlying interned entity storage
+    entities: &'entities EntityParser,
 }
 //
-impl<'entities> LambdaView<'entities> {
-    /// Set up a lambda view
-    pub(crate) fn new(inner: Lambda, entities: &'entities EntityParser) -> Self {
-        match inner {
-            Lambda::Clang(c) => Self::Clang(entities.clang_lambda(c)),
-            Lambda::Libiberty(l) => Self::Libiberty(entities.libiberty_lambda(l)),
-        }
+impl<'entities> ClangAnonymousEntityView<'entities> {
+    /// Build an anonymous entity view
+    pub fn new(inner: ClangAnonymousEntity, entities: &'entities EntityParser) -> Self {
+        Self { inner, entities }
+    }
+
+    /// Clarify what we're talking about (namespace, class, enum, union...), if
+    /// clang provided this information
+    pub fn identifier(&self) -> Option<IdentifierView> {
+        self.inner
+            .identifier
+            .map(|identifier| self.entities.identifier(identifier))
+    }
+
+    /// Clarify where the entity is located in source code (if clang told us)
+    pub fn source_location(&self) -> Option<SourceLocationView> {
+        self.inner
+            .location
+            .map(|location| self.entities.source_location(location))
     }
 }
 //
-impl<'entities> Display for LambdaView<'entities> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        self.display_impl(f, &DisplayState::default())
+impl<'entities> PartialEq for ClangAnonymousEntityView<'entities> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> CustomDisplay for LambdaView<'entities> {
-    fn recursion_depth(&self) -> usize {
-        match self {
-            // FIXME: Bring in simplified path display from crofiler
-            Self::Clang(_) => 0,
-            Self::Libiberty(l) => l.recursion_depth(),
-        }
-    }
-
-    fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error> {
-        match self {
-            Self::Clang(c) => write!(f, "{c}"),
-            Self::Libiberty(l) => l.display_impl(f, state),
-        }
-    }
-}
-
-/// Anonymous clang entity (known as `(anonymous)` or `(anonymous <something>)`)
-pub type AnonymousEntity = Option<IdentifierKey>;
-
-/// View of an anonymous clang entity (known as `(anonymous)` or `(anonymous <something>)`)
-#[derive(PartialEq)]
-pub struct AnonymousEntityView<'entities>(pub Option<IdentifierView<'entities>>);
-//
-impl<'entities> AnonymousEntityView<'entities> {
-    /// Build a new-expression view
-    pub fn new(inner: AnonymousEntity, entities: &'entities EntityParser) -> Self {
-        Self(inner.map(|id| entities.identifier(id)))
-    }
-}
-//
-impl<'entities> Display for AnonymousEntityView<'entities> {
+impl<'entities> Display for ClangAnonymousEntityView<'entities> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "(anonymous")?;
-        if let Some(id) = &self.0 {
-            write!(f, " {id}")?
+        if let Some(id) = self.identifier() {
+            write!(f, " {id}")?;
+        } else if self.inner.location.is_some() {
+            write!(f, " entity")?;
+        }
+        if let Some(location) = self.source_location() {
+            write!(f, " at {location}")?;
         }
         write!(f, ")")
+    }
+}
+
+/// Libiberty-style anonymous type `{unnamed type#N}`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct LibibertyUnnamedType(u32);
+//
+impl Display for LibibertyUnnamedType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{{unnamed type#{}}}", self.0)
     }
 }
 
@@ -328,36 +493,39 @@ mod tests {
         );
     }
 
+    fn test_location(parser: &mut EntityParser) -> (String, SourceLocation) {
+        let file_path = if cfg!(target_os = "windows") {
+            "c:/source.cpp"
+        } else {
+            "/path/to/source.cpp"
+        };
+        let expected = SourceLocation {
+            file: parser.intern_path(file_path),
+            location: (123, 45),
+        };
+        let location = format!("{file_path}:123:45");
+        (location, expected)
+    }
+
+    #[test]
+    fn source_location() {
+        let mut parser = EntityParser::new();
+        let (location, expected) = test_location(&mut parser);
+        assert_eq!(
+            parser.parse_source_location_imut(&location),
+            Ok(("", expected))
+        );
+        assert_eq!(parser.source_location(expected).to_string(), location);
+    }
+
     #[test]
     fn clang_lambda() {
         let mut parser = EntityParser::new();
-        if cfg!(target_os = "windows") {
-            let expected = ClangLambda {
-                file: parser.intern_path("c:/source.cpp"),
-                location: (123, 45),
-            };
-            assert_eq!(
-                parser.parse_clang_lambda_imut("(lambda at c:/source.cpp:123:45)"),
-                Ok(("", expected))
-            );
-            assert_eq!(
-                parser.clang_lambda(expected).to_string(),
-                "(lambda at c:/source.cpp:123:45)",
-            )
-        } else {
-            let expected = ClangLambda {
-                file: parser.intern_path("/path/to/source.cpp"),
-                location: (123, 45),
-            };
-            assert_eq!(
-                parser.parse_clang_lambda_imut("(lambda at /path/to/source.cpp:123:45)"),
-                Ok(("", expected))
-            );
-            assert_eq!(
-                parser.clang_lambda(expected).to_string(),
-                "(lambda at /path/to/source.cpp:123:45)",
-            )
-        }
+        let (location_str, location) = test_location(&mut parser);
+        let lambda = format!("(lambda at {location_str})");
+        let expected = ClangLambda(location);
+        assert_eq!(parser.parse_clang_lambda_imut(&lambda), Ok(("", expected)));
+        assert_eq!(parser.clang_lambda(expected).to_string(), lambda);
     }
 
     #[test]
@@ -378,20 +546,97 @@ mod tests {
     }
 
     #[test]
-    fn anonymous() {
+    fn clang_anonymous() {
         let mut parser = EntityParser::new();
         let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
-        let check_anonymous = |parser: &mut EntityParser, input, expected| {
-            assert_eq!(parser.parse_anonymous(input), Ok(("", expected)));
-            assert_eq!(format!("{}", parser.anonymous(expected)), input);
+        let check_anonymous = |parser: &mut EntityParser, input, expected, output| {
+            assert_eq!(parser.parse_clang_anonymous_imut(input), Ok(("", expected)));
+            assert_eq!(format!("{}", parser.clang_anonymous(expected)), output);
+        };
+        let check_anonymous_bijective = |parser: &mut EntityParser, input, expected| {
+            check_anonymous(parser, input, expected, input);
         };
 
-        check_anonymous(&mut parser, "(anonymous)", None);
+        check_anonymous_bijective(&mut parser, "(anonymous)", Default::default());
+        check_anonymous(&mut parser, "(unnamed)", Default::default(), "(anonymous)");
 
-        let mut expected = Some(identifier(&mut parser, "class"));
-        check_anonymous(&mut parser, "(anonymous class)", expected);
+        let mut expected = ClangAnonymousEntity {
+            identifier: Some(identifier(&mut parser, "class")),
+            location: None,
+        };
+        check_anonymous_bijective(&mut parser, "(anonymous class)", expected);
+        expected = ClangAnonymousEntity {
+            identifier: Some(identifier(&mut parser, "namespace")),
+            location: None,
+        };
+        check_anonymous(
+            &mut parser,
+            "(unnamed namespace)",
+            expected,
+            "(anonymous namespace)",
+        );
 
-        expected = Some(identifier(&mut parser, "namespace"));
-        check_anonymous(&mut parser, "(anonymous namespace)", expected);
+        let (location_str, location) = test_location(&mut parser);
+        let anonymous = format!("(anonymous struct at {location_str})");
+        let expected = ClangAnonymousEntity {
+            identifier: Some(identifier(&mut parser, "struct")),
+            location: Some(location),
+        };
+        check_anonymous_bijective(&mut parser, &anonymous, expected);
+    }
+
+    #[test]
+    fn libiberty_unnamed() {
+        let parser = EntityParser::new();
+        let expected = LibibertyUnnamedType(42);
+        assert_eq!(
+            parser.parse_libiberty_unnamed_imut("{unnamed type#42}"),
+            Ok(("", expected))
+        );
+        assert_eq!(format!("{expected}"), "{unnamed type#42}");
+    }
+
+    #[test]
+    fn anonymous() {
+        let mut parser = EntityParser::new();
+        let (location_str, _location) = test_location(&mut parser);
+
+        {
+            let clang_lambda = format!("(lambda at {location_str})");
+            let expected = AnonymousEntity::ClangLambda(unwrap_parse(
+                parser.parse_clang_lambda_imut(&clang_lambda),
+            ));
+            assert_eq!(parser.parse_anonymous(&clang_lambda), Ok(("", expected)));
+        }
+
+        {
+            let libiberty_lambda = "{lambda()#1}";
+            let expected = AnonymousEntity::LibibertyLambda(unwrap_parse(
+                parser.parse_libiberty_lambda_imut(&libiberty_lambda),
+            ));
+            assert_eq!(
+                parser.parse_anonymous(&libiberty_lambda),
+                Ok(("", expected))
+            );
+        }
+
+        {
+            let clang_anonymous = "(anonymous)";
+            let expected = AnonymousEntity::ClangOther(unwrap_parse(
+                parser.parse_clang_anonymous_imut(clang_anonymous),
+            ));
+            assert_eq!(parser.parse_anonymous(clang_anonymous), Ok(("", expected)));
+        }
+
+        {
+            let libiberty_unnamed = "{unnamed type#666}";
+            let expected = AnonymousEntity::LibibertyUnnamed(unwrap_parse(
+                parser.parse_libiberty_unnamed_imut(libiberty_unnamed),
+            ));
+            assert_eq!(
+                parser.parse_anonymous(libiberty_unnamed),
+                Ok(("", expected))
+            );
+        }
     }
 }

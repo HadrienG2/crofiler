@@ -3,7 +3,7 @@
 use crate::{
     display::{CustomDisplay, DisplayState},
     subparsers::{
-        anonymous::{AnonymousEntity, AnonymousEntityView, Lambda, LambdaView},
+        anonymous::{AnonymousEntity, AnonymousEntityView},
         names::atoms::{IdentifierKey, IdentifierView},
         operators::{self, Operator, OperatorView},
         templates::{TemplateParameters, TemplateParametersView},
@@ -70,9 +70,8 @@ impl EntityParser {
         )
         .map(UnqualifiedId::Decltype);
 
-        // Anonymous entities to which clang gives a name
-        let mut lambda = (|s| self.parse_lambda_imut(s)).map(UnqualifiedId::Lambda);
-        let anonymous = (|s| self.parse_anonymous_imut(s)).map(UnqualifiedId::Anonymous);
+        // Anonymous entities to which clang and libiberty give a name
+        let mut anonymous = (|s| self.parse_anonymous_imut(s)).map(UnqualifiedId::Anonymous);
 
         // Operator and decltype must go before named because named matches keywords
         //
@@ -83,8 +82,7 @@ impl EntityParser {
         // destructor or not. Branches other than _ are ordered by decreasing freq.
         //
         match s.as_bytes().first() {
-            Some(b'{') => lambda.parse(s),
-            Some(b'(') => lambda.or(anonymous).parse(s),
+            Some(b'{') | Some(b'(') => anonymous.parse(s),
             Some(b'd') => decltype.or(named(false)).parse(s),
             Some(b'o') => operator.or(named(false)).parse(s),
             Some(b'~') => named(true).parse(&s[1..]),
@@ -130,10 +128,7 @@ pub enum UnqualifiedId {
     /// A decltype(<value>) expression
     Decltype(ValueKey),
 
-    /// A lambda function, with source location information
-    Lambda(Lambda),
-
-    /// Another kind of anonymous entity from clang
+    /// Some anonymous entity from clang (lambda or other kind of unnamed type)
     Anonymous(AnonymousEntity),
 }
 //
@@ -159,12 +154,6 @@ impl From<Operator> for UnqualifiedId {
             operator,
             template_parameters: None,
         }
-    }
-}
-//
-impl From<Lambda> for UnqualifiedId {
-    fn from(l: Lambda) -> Self {
-        Self::Lambda(l)
     }
 }
 //
@@ -201,9 +190,6 @@ pub enum UnqualifiedIdView<'entities> {
     /// A decltype(<value>) expression
     Decltype(ValueView<'entities>),
 
-    /// A lambda function, with source location information
-    Lambda(LambdaView<'entities>),
-
     /// Another kind of anonymous entity from clang
     Anonymous(AnonymousEntityView<'entities>),
 }
@@ -229,7 +215,6 @@ impl<'entities> UnqualifiedIdView<'entities> {
                 template_parameters: template_parameters.map(|tp| entities.template_parameters(tp)),
             },
             UnqualifiedId::Decltype(value) => Self::Decltype(entities.value_like(value)),
-            UnqualifiedId::Lambda(lambda) => Self::Lambda(entities.lambda(lambda)),
             UnqualifiedId::Anonymous(anonymous) => Self::Anonymous(entities.anonymous(anonymous)),
         }
     }
@@ -256,7 +241,6 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
                 .max(template_parameters.recursion_depth()),
             // FIXME: Add decltype to list of elidable recursions
             Self::Decltype(value) => value.recursion_depth(),
-            Self::Lambda(lambda) => lambda.recursion_depth(),
             Self::Anonymous(_) => 0,
         }
     }
@@ -287,8 +271,7 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
                 value.display_impl(f, state)?;
                 write!(f, ")")
             }
-            Self::Lambda(lambda) => lambda.display_impl(f, state),
-            Self::Anonymous(anonymous) => write!(f, "{anonymous}"),
+            Self::Anonymous(anonymous) => anonymous.display_impl(f, state),
         }
     }
 }
@@ -361,18 +344,9 @@ pub mod tests {
         expected = UnqualifiedId::Decltype(unwrap_parse(parser.parse_value_like("42", true, true)));
         check_unqualified_id(&mut parser, "decltype(42)", expected, &["decltype(42)"]);
 
-        // Clang-style lambda
-        let lambda = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_lambda(s));
-        expected = lambda(&mut parser, "(lambda at /path/to/stuff.h:9876:54)").into();
-        check_unqualified_id(
-            &mut parser,
-            "(lambda at /path/to/stuff.h:9876:54)",
-            expected,
-            &["(lambda at /path/to/stuff.h:9876:54)"],
-        );
-
         // Libiberty-style lambda
-        expected = lambda(&mut parser, "{lambda(auto:1)#1}").into();
+        let anonymous = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_anonymous(s));
+        expected = anonymous(&mut parser, "{lambda(auto:1)#1}").into();
         check_unqualified_id(
             &mut parser,
             "{lambda(auto:1)#1}",
@@ -380,8 +354,8 @@ pub mod tests {
             &["{lambda(…)#1}", "{lambda(auto:1)#1}"],
         );
 
-        // Anonymous entity
-        expected = unwrap_parse(parser.parse_anonymous("(anonymous class)")).into();
+        // Clang-style anonymous entity
+        expected = anonymous(&mut parser, "(anonymous class)").into();
         check_unqualified_id(
             &mut parser,
             "(anonymous class)",
