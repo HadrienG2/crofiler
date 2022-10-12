@@ -272,6 +272,7 @@ dependencies = [
  "nom-supreme",
  "pretty_assertions",
  "reffers",
+ "thiserror",
  "unicode-width",
  "unicode-xid",
 ]

@@ -6,6 +6,7 @@ use crate::{EntityParser, IResult};
 use nom::Parser;
 use nom_supreme::ParserExt;
 use std::fmt::{self, Display, Formatter};
+use thiserror::Error;
 
 impl EntityParser {
     /// Parser for legacy C-style type specifiers that can have spaces in them
@@ -104,39 +105,38 @@ pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     move |s| {
         fold_many1(
             (&keyword).terminated(multispace0),
-            LegacyNameBuilder::default,
-            |mut acc, item| {
-                assert!(
-                    acc.base.is_none() || item.base.is_none(),
-                    "Incompatible base qualifiers {:?} and {:?}",
-                    acc.base,
-                    item.base
-                );
+            || Ok(LegacyNameBuilder::default()),
+            |acc, item| {
+                let mut acc = acc?;
+
+                if let (Some(base1), Some(base2)) = (acc.base, item.base) {
+                    return Err(ParseError::IncompatibleBase(base1, base2));
+                }
                 acc.base = acc.base.or(item.base);
 
-                assert!(
-                    acc.signedness.is_none() || item.signedness.is_none(),
-                    "Incompatible signedness qualifiers {:?} and {:?}",
-                    acc.signedness,
-                    item.signedness
-                );
+                if let (Some(sign1), Some(sign2)) = (acc.signedness, item.signedness) {
+                    return Err(ParseError::IncompatibleSignedness(sign1, sign2));
+                }
                 acc.signedness = acc.signedness.or(item.signedness);
 
-                if let (Some(Size::Long), Some(Size::Long)) = (acc.size, item.size) {
-                    acc.size = Some(Size::LongLong);
-                } else {
-                    assert!(
-                        acc.size.is_none() || item.size.is_none(),
-                        "Incompatible size qualifiers {:?} and {:?}",
-                        acc.size,
-                        item.size
-                    );
-                    acc.size = acc.size.or(item.size);
+                if acc.complex && item.complex {
+                    return Err(ParseError::DuplicateComplex);
                 }
-                acc
+                acc.complex |= item.complex;
+
+                match (acc.size, item.size) {
+                    (Some(Size::Long), Some(Size::Long)) => acc.size = Some(Size::LongLong),
+                    (Some(size1), Some(size2)) => {
+                        return Err(ParseError::IncompatibleSizes(size1, size2))
+                    }
+                    _ => acc.size = acc.size.or(item.size),
+                }
+
+                Ok(acc)
             },
         )
-        .map(LegacyNameBuilder::build)
+        .map_res(|x| x)
+        .map_res(LegacyNameBuilder::build)
         .parse(s)
     }
 }
@@ -247,55 +247,77 @@ struct LegacyNameBuilder {
 }
 //
 impl LegacyNameBuilder {
-    fn build(self) -> LegacyName {
-        match self {
+    fn build(self) -> Result<LegacyName, ParseError> {
+        let res = match self {
             LegacyNameBuilder {
                 base: Some(Base::Float),
                 signedness: None,
                 size: None,
                 complex,
-            } => if complex { LegacyName::FloatComplex } else { LegacyName::Float },
+            } => {
+                if complex {
+                    LegacyName::FloatComplex
+                } else {
+                    LegacyName::Float
+                }
+            }
 
             LegacyNameBuilder {
                 base: Some(Base::Float),
                 signedness,
                 size,
                 complex: _,
-            } => panic!(
-                "Invalid size or signedness qualifier (resp. {size:?} and {signedness:?}) on type float"
-            ),
+            } => {
+                return Err(ParseError::IncompatibleBaseSizeSignedness(
+                    Base::Float,
+                    size,
+                    signedness,
+                ))
+            }
 
             LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness: None,
                 size: None,
                 complex,
-            } => if complex { LegacyName::DoubleComplex } else { LegacyName::Double },
+            } => {
+                if complex {
+                    LegacyName::DoubleComplex
+                } else {
+                    LegacyName::Double
+                }
+            }
 
             LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness: None,
                 size: Some(Size::Long),
                 complex,
-            } => if complex { LegacyName::LongDoubleComplex } else { LegacyName::LongDouble },
+            } => {
+                if complex {
+                    LegacyName::LongDoubleComplex
+                } else {
+                    LegacyName::LongDouble
+                }
+            }
 
             LegacyNameBuilder {
                 base: Some(Base::Double),
                 signedness,
                 size,
                 complex: _,
-            } => panic!(
-                "Invalid size or signedness qualifier (resp. {size:?} and {signedness:?}) on type double"
-            ),
+            } => {
+                return Err(ParseError::IncompatibleBaseSizeSignedness(
+                    Base::Double,
+                    size,
+                    signedness,
+                ))
+            }
 
             // From here, base can't be a floating-point type ===
-
-            LegacyNameBuilder {
-                complex: true,
-                ..
-            } => panic!(
-                "Invalid use of _Complex qualifier not targeting a floating-point type"
-            ),
+            LegacyNameBuilder { complex: true, .. } => {
+                return Err(ParseError::IncompatibleComplexInt(self.base))
+            }
 
             LegacyNameBuilder {
                 base: Some(Base::Char),
@@ -322,7 +344,7 @@ impl LegacyNameBuilder {
                 base: Some(Base::Char),
                 size: Some(sz),
                 ..
-            } => panic!("Invalid size qualifier {sz:?} on type char"),
+            } => return Err(ParseError::IncompatibleBaseSize(Base::Char, sz)),
 
             LegacyNameBuilder {
                 base: Some(Base::Int128),
@@ -349,10 +371,9 @@ impl LegacyNameBuilder {
                 base: Some(Base::Int128),
                 size: Some(sz),
                 ..
-            } => panic!("Invalid size qualifier {sz:?} on type __int128"),
+            } => return Err(ParseError::IncompatibleBaseSize(Base::Int128, sz)),
 
             // From here, base can't be Char, __int128 or floating-point, so it has to be Int
-
             LegacyNameBuilder {
                 signedness: Some(Signedness::Unsigned),
                 size: None,
@@ -378,7 +399,6 @@ impl LegacyNameBuilder {
             } => LegacyName::UnsignedLongLong,
 
             // From here, unsigned integers are done, only signed ones remain
-
             LegacyNameBuilder {
                 base: None,
                 signedness: None,
@@ -391,10 +411,7 @@ impl LegacyNameBuilder {
                 ..
             } => LegacyName::SignedShort,
 
-            LegacyNameBuilder {
-                size: None,
-                ..
-            } => LegacyName::SignedInt,
+            LegacyNameBuilder { size: None, .. } => LegacyName::SignedInt,
 
             LegacyNameBuilder {
                 size: Some(Size::Long),
@@ -405,7 +422,8 @@ impl LegacyNameBuilder {
                 size: Some(Size::LongLong),
                 ..
             } => LegacyName::SignedLongLong,
-        }
+        };
+        Ok(res)
     }
 }
 
@@ -452,6 +470,40 @@ enum Base {
 
     /// "double" (usually IEEE-754 binary64)
     Double,
+}
+
+/// Errors that can occur while parsing legacy types
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+enum ParseError {
+    /// Incompatible base types were specified
+    #[error("incompatible base types: {0:?} and {1:?}")]
+    IncompatibleBase(Base, Base),
+
+    /// Incompatible type sizes were specified
+    #[error("incompatible sizes: {0:?} and {1:?}")]
+    IncompatibleSizes(Size, Size),
+
+    /// Incompatible signednesses were specified
+    #[error("incompatible signednesses: {0:?} and {1:?}")]
+    IncompatibleSignedness(Signedness, Signedness),
+
+    /// Redundant _Complex qualifier
+    #[error("invalid repetition of _Complex qualifier")]
+    DuplicateComplex,
+
+    /// Bad qualifiers for a certain base type
+    #[error(
+        "incompatible size ({1:?}) and/or signedness ({2:?}) qualifier(s) for base type {1:?}"
+    )]
+    IncompatibleBaseSizeSignedness(Base, Option<Size>, Option<Signedness>),
+
+    /// Applied _Complex qualifier to a non-floating-point type
+    #[error("_Complex qualifier is invalid for non-floating-point base type {0:?}")]
+    IncompatibleComplexInt(Option<Base>),
+
+    /// Applied a size qualifier to a non-resizable type
+    #[error("Applied size qualifier {1:?} to non-resizable base {0:?}")]
+    IncompatibleBaseSize(Base, Size),
 }
 
 #[cfg(test)]

@@ -240,8 +240,8 @@ impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
                 .recursion_depth()
                 .max(template_parameters.recursion_depth()),
             // FIXME: Add decltype to list of elidable recursions
-            Self::Decltype(value) => value.recursion_depth(),
-            Self::Anonymous(_) => 0,
+            Self::Decltype(v) => v.recursion_depth(),
+            Self::Anonymous(a) => a.recursion_depth(),
         }
     }
 

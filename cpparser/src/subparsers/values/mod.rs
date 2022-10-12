@@ -720,7 +720,7 @@ mod tests {
         check_value_header(&mut parser, "sizeof(U)", expected, &["sizeof(U)"]);
 
         // declval operator
-        expected = ValueHeader::SizeOf(unwrap_parse(parser.parse_type_like("Lol")));
+        expected = ValueHeader::DeclVal(unwrap_parse(parser.parse_type_like("Lol")));
         check_value_header(&mut parser, "declval(Lol)", expected, &["declval(Lol)"]);
     }
 

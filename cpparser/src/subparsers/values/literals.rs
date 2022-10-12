@@ -256,7 +256,6 @@ mod tests {
                 let mut char_str = prefix.to_string();
                 write!(&mut char_str, "'{}'", c.escape_default())
                     .expect("Writing to a string cannot fail");
-                println!("{char_str}");
                 assert_eq!(super::character(&char_str), Ok(("", c)));
             }
         }
@@ -264,16 +263,13 @@ mod tests {
         test_character_str('\t');
         test_character_str('\n');
         test_character_str('\'');
-        assert_eq!(super::character("\\123"), Ok(("", 0o123 as char)));
-        assert_eq!(super::character("\\x33"), Ok(("", 0x33 as char)));
+        assert_eq!(super::character("'\\123'"), Ok(("", 0o123 as char)));
+        assert_eq!(super::character("'\\x33'"), Ok(("", 0x33 as char)));
         assert_eq!(
-            super::character("\\u1234"),
+            super::character("'\\u1234'"),
             Ok(("", char::from_u32(0x1234).unwrap()))
         );
-        assert_eq!(
-            super::character("\\U543210"),
-            Ok(("", char::from_u32(0x543210).unwrap()))
-        );
+        assert_eq!(super::character("'\\U1f4af'"), Ok(("", '💯')));
     }
 
     #[test]

@@ -9,6 +9,7 @@ clap = { version = "3.2", optional = true }
 nom = "7.1"
 nom-supreme = "0.8"
 reffers = "0.7"
+thiserror = "1.0"
 unicode-xid = { version = "0.2", optional = true }
 unicode-width = "0.1"
 
