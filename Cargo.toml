@@ -15,29 +15,74 @@ edition = "2021"
 unstable_interner_stats = []
 
 [dependencies]
+# Used to determine if connected to a TTY -> Interactive TUI, autosize
 atty = "0.2"
+
+# Used to explain what happened in crashes -> better debugging...
+backtrace = "0.3"
+
+# Used to format ISO dates from clang Unix timestamps
 chrono = "0.4"
+
+# Used to decode clang output
 clang-time-trace = { path = "clang-time-trace" }
+
+# Used for CLI options
 clap = { version = "3.2", features = ["derive"] }
+
+# Used to decode cmakeperf output
 csv = "1.1"
+
+# Used for TUI (general library)
 cursive = { version = "0.20", default-features = false, features = ["termion-backend"] }
+
+# Used for TUI (profile display)
 cursive_table_view = "0.14"
+
+# Saner floats, used to simplify TUI code
 decorum = "0.3"
+
+# Used for logging in stdio mode
 env_logger = "0.9"
+
+# Used for logging
 log = "0.4"
+
+# Used for lazy stuff: path separator, test trace...
 once_cell = "1.10"
+
+# Used for (de)serializing various formats
 serde = { version = "1.0", features = ["derive"] }
+
+# Used to decode CMake compilation database
 serde_json = "1.0"
+
+# Used to parse command arguments in CMake compilation database
 shlex = "1.1"
+
+# Used for logging in TUI mode
 syslog = "6.0"
+
+# Used for low-level terminal interaction, mostly teminal size
 termion = "1.5"
+
+# Used for typesetting hierarchical profiles in stdio mode
 termtree = "0.4"
+
+# Used to simplify error handling
 thiserror = "1.0"
+
+# Used to find appropriate points for cutting Unicode strings
 unicode-segmentation = "1.9"
+
+# Used to evaluate print width of strings
 unicode-width = "0.1"
+
+# Used for cancellable wait on worker processes
 wait-timeout = "0.2"
 
 [dev-dependencies]
+# Used to simplify tests
 assert_matches = "1.5"
 
 [profile.release]

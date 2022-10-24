@@ -67,13 +67,13 @@ pub fn run(args: CliArgs) {
                     .downcast_ref::<&'static str>()
                     .map(|s: &&'static str| -> &str { s })
             });
-
-        // Log what we know
         if let Some(payload_str) = payload_str {
-            error!("{message} with payload: {payload_str}");
-        } else {
-            error!("{message}");
+            write!(&mut message, " with payload: {payload_str}")
+                .expect("Write to String can't fail");
         }
+
+        // Log panic along with a backtrace
+        error!("{message}\n{:?}", backtrace::Backtrace::new());
 
         // Leave the rest up to the default panic hook
         default_panic_hook(panic_info);
