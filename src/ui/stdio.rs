@@ -4,6 +4,7 @@ use super::display::{
     activity::{self, ActivityDescError},
     duration::display_duration,
     metadata::metadata,
+    DisplayConfig,
 };
 use crate::{trace, CliArgs};
 use clang_time_trace::{
@@ -268,24 +269,37 @@ fn display_activity(
     let other_cols = max_cols.saturating_sub(trailer.width() as u16);
 
     // Try to display both the activity id and the profiling numbers
-    match activity::display_activity_desc(&mut output, activity_id, activity_arg, other_cols) {
-        Ok(()) => {
+    match activity::display_activity_desc(
+        &mut output,
+        activity_id,
+        activity_arg,
+        DisplayConfig::SingleLine {
+            max_cols: other_cols,
+        },
+    ) {
+        Ok(false) => {
             // Success, can just print out the profiling numbers
             write!(output, "{trailer}")
         }
         Err(ActivityDescError::NotEnoughCols(_)) => {
             // Not enough space for both, try to display activity ID alone
-            match activity::display_activity_desc(&mut output, activity_id, activity_arg, max_cols)
-            {
-                Ok(()) => Ok(()),
+            match activity::display_activity_desc(
+                &mut output,
+                activity_id,
+                activity_arg,
+                DisplayConfig::SingleLine { max_cols },
+            ) {
+                Ok(false) => Ok(()),
                 Err(ActivityDescError::IoError(e)) => Err(e),
                 Err(ActivityDescError::NotEnoughCols(_)) => {
                     // Seems the best we can do is an ellipsis placeholder...
                     write!(output, "…")
                 }
+                Ok(true) => unreachable!("No wrapping on single-line display"),
             }
         }
         Err(ActivityDescError::IoError(e)) => Err(e),
+        Ok(true) => unreachable!("No wrapping on single-line displays"),
     }
 }
 

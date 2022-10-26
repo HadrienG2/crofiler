@@ -1,6 +1,7 @@
 //! Generic utilities to display things
 
 use std::io;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub mod activity;
@@ -8,59 +9,91 @@ pub mod duration;
 pub mod metadata;
 pub mod path;
 
+/// Text display configuration
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DisplayConfig {
+    /// Output text should fit on the current line (no line feed, no overflow)
+    SingleLine {
+        /// Column budget for this display
+        max_cols: u16,
+    },
+
+    /// Output text is allowed to use multiple lines, either through the TUI's
+    /// automatic word wrapping or pretty-printing.
+    ///
+    /// Going above the column budget is preferred over inserting semantically
+    /// nonsensical line breaks. Either word wrapping or horizontal scrolling
+    /// will be enabled when that happens.
+    ///
+    MultiLine {
+        /// Total number of terminal columns available across the entire display
+        tot_cols: u16,
+
+        /// Number of terminal columns that were taken up on the first line
+        /// before this multiline display started
+        header_cols: u16,
+
+        /// Number of terminal columns that will be taken up on the last line
+        /// after this multiline display ends
+        trailer_cols: u16,
+    },
+}
+
 /// Truncate a string so that it only eats up n columns, by eating up the middle
 /// Assumes absence of line feeds in the input string.
-pub fn display_string(mut output: impl io::Write, input: &str, max_cols: u16) -> io::Result<()> {
-    // Handle trivial case
-    if input.width() <= max_cols.into() {
+pub fn display_string(
+    mut output: impl io::Write,
+    input: &str,
+    config: DisplayConfig,
+) -> io::Result<()> {
+    // Handle trivial cases
+    let max_cols = match config {
+        DisplayConfig::SingleLine { max_cols } => max_cols,
+        DisplayConfig::MultiLine { .. } => return write!(output, "{input}"),
+    } as usize;
+    if input.width() <= max_cols {
         return write!(output, "{input}");
     }
-    debug_assert!(input.chars().all(|c| c != '\r' && c != '\n'));
 
-    // Make sure the request makes sense, set up common infrastructure
+    // Make sure the request makes sense
+    debug_assert!(input.chars().all(|c| c != '\r' && c != '\n'));
     assert!(max_cols >= 1);
-    let bytes = input.as_bytes();
-    let mut last_good = "";
 
     // Split our column budget into a header and trailer
     let max_header_cols = (max_cols - 1) / 2;
     let mut header_cols = 0;
 
     // Find a terminal header with the right number of columns
-    let mut header_bytes = header_cols;
-    loop {
-        let header_candidate = std::str::from_utf8(&bytes[..header_bytes.into()]);
-        if let Ok(candidate) = header_candidate {
-            if candidate.width() > max_header_cols.into() {
-                break;
-            } else {
-                header_cols = candidate.width() as u16;
-                last_good = candidate;
-            }
+    let mut header_end = 0;
+    for (offset, grapheme) in input.grapheme_indices(true) {
+        let new_header_cols = header_cols + grapheme.width();
+        if new_header_cols <= max_header_cols {
+            header_cols = new_header_cols;
+            header_end = offset + grapheme.len();
+        } else {
+            break;
         }
-        header_bytes += 1;
     }
 
     // Start printing out the result accordingly
-    write!(output, "{last_good}…")?;
+    write!(output, "{}…", &input[..header_end])?;
 
     // Find a terminal trailer with the right amount of columns
     let max_trailer_cols = max_cols - 1 - header_cols;
-    let mut trailer_start = bytes.len() - usize::from(max_trailer_cols);
-    loop {
-        let trailer_candidate = std::str::from_utf8(&bytes[trailer_start..]);
-        if let Ok(candidate) = trailer_candidate {
-            if candidate.width() > max_trailer_cols.into() {
-                break;
-            } else {
-                last_good = candidate;
-            }
+    let mut trailer_cols = 0;
+    let mut trailer_start = input.len();
+    for (offset, grapheme) in input.grapheme_indices(true).rev() {
+        let new_trailer_cols = trailer_cols + grapheme.width();
+        if new_trailer_cols <= max_trailer_cols {
+            trailer_cols = new_trailer_cols;
+            trailer_start = offset;
+        } else {
+            break;
         }
-        trailer_start -= 1;
     }
 
     // Emit the result
-    write!(output, "{last_good}")
+    write!(output, "{}", &input[trailer_start..])
 }
 
 #[cfg(test)]
@@ -75,13 +108,39 @@ mod tests {
         let mut check_display = |max_cols, expected_display: &str| {
             display.clear();
             assert_matches!(
-                super::display_string(&mut display, MOCK_STR, max_cols),
+                super::display_string(
+                    &mut display,
+                    MOCK_STR,
+                    DisplayConfig::SingleLine { max_cols }
+                ),
                 Ok(())
             );
             assert_eq!(
                 display,
                 expected_display.as_bytes(),
                 "Expected display {:?} (width = {}), got display {:?} (width = {:?})",
+                expected_display,
+                expected_display.width(),
+                std::str::from_utf8(&display),
+                std::str::from_utf8(&display).map(|s| s.width())
+            );
+            display.clear();
+            assert_matches!(
+                super::display_string(
+                    &mut display,
+                    MOCK_STR,
+                    DisplayConfig::MultiLine {
+                        tot_cols: max_cols,
+                        header_cols: 1,
+                        trailer_cols: 2
+                    }
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                display,
+                MOCK_STR.as_bytes(),
+                "Expected multiline display {:?} (width = {}), got display {:?} (width = {:?})",
                 expected_display,
                 expected_display.width(),
                 std::str::from_utf8(&display),

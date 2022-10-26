@@ -4,6 +4,7 @@
 use crate::ui::display::{
     activity::{display_activity_desc, ActivityDescError},
     metadata::metadata,
+    DisplayConfig,
 };
 use clang_time_trace::{
     ActivityTrace, ActivityTraceId, ClangTrace, ClangTraceLoadError, Duration,
@@ -30,13 +31,16 @@ pub struct ProcessingThread {
     /// Channel to send instructions to the processing thread
     instruction_sender: Sender<Instruction>,
 
-    /// Channel to receive individual mutable Strings from the processing thread
-    string_receiver: Receiver<String>,
+    /// Channel to receive individual mutable Strings from the processing thread,
+    /// along with the truth that said strings should be line-wrapped by the UI
+    /// (otherwise they will be truncated or scrolled as appropriate).
+    string_receiver: Receiver<(String, bool)>,
 
     /// Channel to receive lists of activities from the processing thread
     activities_receiver: Receiver<Box<[ActivityInfo]>>,
 
-    /// Channel to receive lists of immutable strings from the processing thread
+    /// Channel to receive lists of immutable strings from the processing thread,
+    /// used to send batches of activity descriptions.
     strings_receiver: Receiver<Box<[Arc<str>]>>,
 }
 //
@@ -96,8 +100,10 @@ impl ProcessingThread {
 
     /// Describe the trace for a certain terminal width
     pub fn describe_trace(&self, max_cols: u16) -> String {
-        self.request(Instruction::DescribeTrace(max_cols));
-        Self::fetch(&self.string_receiver)
+        self.request(Instruction::DescribeTrace { max_cols });
+        let (desc, wrap) = Self::fetch(&self.string_receiver);
+        assert!(!wrap, "Trace descriptions should be manually wrapped");
+        desc
     }
 
     /// Get the list of root activities
@@ -135,6 +141,12 @@ impl ProcessingThread {
             max_cols,
         });
         Self::fetch(&self.strings_receiver)
+    }
+
+    /// Describe a single activity fully, tell if the result should be line-wrapped
+    pub fn describe_activity(&self, activity: ActivityTraceId, max_cols: u16) -> (String, bool) {
+        self.request(Instruction::DescribeActivity { activity, max_cols });
+        Self::fetch(&self.string_receiver)
     }
 
     /// The processing thread should keep listening to instructions as long as
@@ -184,7 +196,7 @@ enum Instruction {
     LoadTrace(Box<Path>, Box<dyn FnOnce(ClangTraceLoadResult) + Send>),
 
     /// Render trace-wide metadata for a certain terminal width
-    DescribeTrace(u16),
+    DescribeTrace { max_cols: u16 },
 
     /// Get the list of root nodes (reply via activities channel)
     GetRootActivities,
@@ -198,9 +210,16 @@ enum Instruction {
     /// Get the list of all a node's children (reply via activities channel)
     GetAllChildren(ActivityTraceId),
 
-    /// Display a set of activity descriptions
+    /// Display a set of activity descriptions in one-line format
     DescribeActivities {
         activities: Box<[ActivityTraceId]>,
+        max_cols: u16,
+    },
+
+    /// Display a single activity in multi-line format, tell if the result
+    /// should be line-wrapped.
+    DescribeActivity {
+        activity: ActivityTraceId,
         max_cols: u16,
     },
 }
@@ -208,7 +227,7 @@ enum Instruction {
 /// Processing thread worker
 fn worker(
     instructions: Receiver<Instruction>,
-    string: Sender<String>,
+    string: Sender<(String, bool)>,
     activities: Sender<Box<[ActivityInfo]>>,
     strings: Sender<Box<[Arc<str>]>>,
 ) {
@@ -243,9 +262,9 @@ fn worker(
             }
 
             // Describe the trace
-            Instruction::DescribeTrace(max_cols) => {
+            Instruction::DescribeTrace { max_cols } => {
                 let trace = expect(&mut trace);
-                reply(&string, metadata(trace, max_cols))
+                reply(&string, (metadata(trace, max_cols), false))
             }
 
             // Get the list of root nodes
@@ -302,6 +321,25 @@ fn worker(
                     ),
                 )
             }
+
+            // Display a single activity in multi-line format, tell if the result
+            // should be line-wrapped.
+            Instruction::DescribeActivity { activity, max_cols } => {
+                let trace = expect(&mut trace);
+                reply(
+                    &string,
+                    describe_activity(
+                        trace,
+                        &mut parsed_arg_cache,
+                        activity,
+                        DisplayConfig::MultiLine {
+                            tot_cols: max_cols,
+                            header_cols: 0,
+                            trailer_cols: 0,
+                        },
+                    ),
+                )
+            }
         }
     }
 }
@@ -340,38 +378,21 @@ fn describe_activities(
     let result = activities
         .into_vec()
         .into_iter()
-        .map(|id| {
-            // Have we rendered that activity's description previously ?
+        .map(|activity| {
             description_cache
-                .entry(id)
+                .entry(activity)
                 .or_insert_with(|| {
-                    // Have we parsed that activity's argument previously ?
-                    let parsed_arg = parsed_arg_cache
-                        .entry(id)
-                        .or_insert_with(|| crate::ui::force_parse_arg(trace, id));
-
-                    // Render the activity description
-                    let activity_trace = trace.activity_trace(id);
-                    let mut output = Vec::new();
-                    match display_activity_desc(
-                        &mut output,
-                        activity_trace.activity().id(),
-                        &parsed_arg.resolve(trace),
-                        max_cols,
-                    ) {
-                        Ok(()) => {}
-                        Err(ActivityDescError::NotEnoughCols(_)) => {
-                            write!(output, "…").expect("IO to a buffer shouldn't fail");
-                        }
-                        Err(ActivityDescError::IoError(e)) => {
-                            unreachable!(
-                                "IO to a buffer shouldn't fail, but failed with error {e}"
-                            );
-                        }
-                    }
-                    let output = std::str::from_utf8(&output[..])
-                        .expect("Activity descriptions should be UTF-8");
-                    Arc::<str>::from(output)
+                    let (desc, wrap) = describe_activity(
+                        trace,
+                        parsed_arg_cache,
+                        activity,
+                        DisplayConfig::SingleLine { max_cols },
+                    );
+                    assert!(
+                        !wrap,
+                        "Single-line activity descriptions should not be line-wrapped"
+                    );
+                    desc
                 })
                 .clone()
         })
@@ -383,6 +404,42 @@ fn describe_activities(
 
     // Emit results
     result
+}
+
+/// Describe a single activity, return the description string along with the
+/// truth that the display should be line-wrapped (otherwise it will be either
+/// truncated or made horizontally scrollable as appropriate)
+fn describe_activity<OwnedStr: for<'a> From<&'a str> + 'static>(
+    trace: &mut ClangTrace,
+    parsed_arg_cache: &mut HashMap<ActivityTraceId, ParsedActivityArgument>,
+    activity: ActivityTraceId,
+    config: DisplayConfig,
+) -> (OwnedStr, bool) {
+    // Have we parsed that activity's argument previously ?
+    let parsed_arg = parsed_arg_cache
+        .entry(activity)
+        .or_insert_with(|| crate::ui::force_parse_arg(trace, activity));
+
+    // Render the activity description
+    let activity_trace = trace.activity_trace(activity);
+    let mut output = Vec::new();
+    let wrap = match display_activity_desc(
+        &mut output,
+        activity_trace.activity().id(),
+        &parsed_arg.resolve(trace),
+        config,
+    ) {
+        Ok(wrap) => wrap,
+        Err(ActivityDescError::NotEnoughCols(_)) => {
+            write!(output, "…").expect("IO to a buffer shouldn't fail");
+            false
+        }
+        Err(ActivityDescError::IoError(e)) => {
+            unreachable!("IO to a buffer shouldn't fail, but failed with error {e}")
+        }
+    };
+    let output = std::str::from_utf8(&output[..]).expect("Activity descriptions should be UTF-8");
+    (OwnedStr::from(output), wrap)
 }
 
 // FIXME: Add tests

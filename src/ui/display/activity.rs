@@ -1,11 +1,17 @@
 //! Utilities for displaying clang activities
 
-use clang_time_trace::{ActivityArgument, ActivityId, CustomDisplay, Symbol};
+use super::DisplayConfig;
+use clang_time_trace::{ActivityArgument, ActivityId, CustomDisplay, DisplayState, Symbol};
 use std::io;
 use thiserror::Error;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Try to display an activity's name and argument in finite space
+///
+/// If successful, returns truth that horizontal text wrapping should be enabled
+/// on the display if possible. This will be the case for multi-line displays
+/// except when line breaking is taken care of on our side (in which case
+/// scrolling is better than wrapping).
 ///
 /// Returns Err(NotEnoughCols) if not even the activity name can fit in that
 /// space. You may want to retry after eliminating other display elements if
@@ -15,49 +21,81 @@ pub fn display_activity_desc(
     mut output: impl io::Write,
     activity_id: &ActivityId,
     activity_arg: &ActivityArgument,
-    mut max_cols: u16,
-) -> Result<(), ActivityDescError> {
+    mut config: DisplayConfig,
+) -> Result<bool, ActivityDescError> {
     let activity_name = activity_id.name();
     let has_argument = *activity_arg != ActivityArgument::Nothing;
+    let paren_width = '('.width().expect("Not a control char");
+    debug_assert_eq!(Some(paren_width), ')'.width());
 
     // Can we display at least ActivityName + (…) if there are parameters?
-    if usize::from(max_cols) < activity_name.width() + 3 * (has_argument as usize) {
-        // If not, error out
-        return Err(ActivityDescError::NotEnoughCols(max_cols));
-    } else {
-        // If so, display the activity name...
-        write!(output, "{activity_name}")?;
-    }
+    // FIXME: Remove allow-directive once pretty printing is implemented
+    #[allow(unused_mut)]
+    let mut should_wrap = match &mut config {
+        // In the single-line case, this is only true if there are enough
+        // terminal columns available, otherwise we error out
+        DisplayConfig::SingleLine { max_cols } => {
+            if usize::from(*max_cols) < activity_name.width() + 3 * (has_argument as usize) {
+                return Err(ActivityDescError::NotEnoughCols(*max_cols));
+            } else {
+                write!(output, "{activity_name}")?;
+                *max_cols =
+                    max_cols.saturating_sub((activity_name.width() + 2 * paren_width) as u16);
+            }
+            false
+        }
+
+        // In the multi-line case this is always true, we only need to update
+        // the header/trailer col count for the argument display (if any)
+        DisplayConfig::MultiLine {
+            header_cols,
+            trailer_cols,
+            ..
+        } => {
+            write!(output, "{activity_name}")?;
+            *header_cols += (activity_name.width() + paren_width) as u16;
+            *trailer_cols += paren_width as u16;
+            true
+        }
+    };
 
     // If there are no parameters, stop here
     if !has_argument {
-        return Ok(());
+        return Ok(should_wrap);
     }
 
     // Otheriwe, account for the reserved space and display the parameters
-    max_cols -= activity_name.width() as u16 + 2;
     write!(output, "(")?;
     match activity_arg {
         ActivityArgument::UnnamedLoop => {
-            super::display_string(&mut output, "<unnamed loop>", max_cols)?;
+            super::display_string(&mut output, "<unnamed loop>", config)
         }
         ActivityArgument::String(s)
         | ActivityArgument::Symbol(Symbol::Demangled(s))
         | ActivityArgument::Symbol(Symbol::MaybeMangled(s)) => {
-            super::display_string(&mut output, s, max_cols)?;
+            super::display_string(&mut output, s, config)
         }
         ActivityArgument::FilePath(p) => {
-            write!(output, "{}", super::path::truncate_path(p, max_cols))?;
+            write!(output, "{}", super::path::display_path(p, config))
         }
         ActivityArgument::CppEntity(e) | ActivityArgument::Symbol(Symbol::Parsed(e)) => {
-            write!(output, "{}", e.bounded_display(max_cols))?;
+            match config {
+                DisplayConfig::SingleLine { max_cols } => {
+                    write!(output, "{}", e.bounded_display(max_cols))
+                }
+                DisplayConfig::MultiLine { .. } => {
+                    // FIXME: Restore this once pretty-printing is implemented
+                    /* should_wrap = false; */
+                    write!(output, "{}", e.display(&DisplayState::default()))
+                }
+            }
         }
-        ActivityArgument::Nothing => unreachable!(),
-    }
+        ActivityArgument::Nothing => unreachable!("Handled above"),
+    }?;
     write!(output, ")")?;
-    Ok(())
+    Ok(should_wrap)
 }
-//
+
 /// Error that is emitted when an activity id cannot be displayed
 #[derive(Debug, Error)]
 pub enum ActivityDescError {
@@ -93,7 +131,8 @@ mod tests {
                     &mut display,
                     trace.activity_trace(*id).activity().id(),
                     &parsed_arg.resolve(&trace),
-                    max_cols,
+                    // FIXME: Also test MultiLine once pretty printing is ironed out
+                    DisplayConfig::SingleLine { max_cols },
                 );
                 if expected_display.is_empty() {
                     assert_eq!(
@@ -114,7 +153,7 @@ mod tests {
                         std::str::from_utf8(&display),
                         std::str::from_utf8(&display).map(|s| s.width())
                     );
-                    assert_matches!(result, Ok(()));
+                    assert_matches!(result, Ok(false));
                 }
             };
 
