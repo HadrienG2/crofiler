@@ -8,7 +8,7 @@ use crate::{
     },
     ui::{
         display::path::truncate_path_iter,
-        tui::{trace, with_state, CreatePrompt},
+        tui::{create::CreatePrompt, trace, with_state},
     },
     CliArgs,
 };

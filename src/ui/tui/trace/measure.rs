@@ -2,7 +2,7 @@
 
 use crate::{
     build::commands::CompilationDatabase,
-    ui::tui::{trace, with_state, CreatePrompt},
+    ui::tui::{create::CreatePrompt, trace, with_state},
 };
 use cursive::{views::Dialog, Cursive};
 use std::{
