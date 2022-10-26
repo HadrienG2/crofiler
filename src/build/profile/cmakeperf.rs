@@ -7,7 +7,7 @@
 use crate::build::commands::CompilationDatabase;
 
 use std::{
-    io::{self, BufReader, Read},
+    io::{self, BufRead, BufReader, Read},
     path::Path,
     process::{Child, ChildStdout, Command, ExitStatus, Stdio},
 };
@@ -23,12 +23,12 @@ pub fn find() -> io::Result<ExitStatus> {
         .status()
 }
 
-/// Ongoing build profile collection
+/// Ongoing build profile collection process
 pub struct Collect(Child);
 //
 impl Collect {
     /// Start collecting a build profile to a specified location
-    pub fn start(path: impl AsRef<Path>) -> io::Result<(Self, BufReader<ChildStdout>)> {
+    pub fn start(path: impl AsRef<Path>) -> io::Result<(Self, Output)> {
         let mut child = Command::new(PROGRAM)
             .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
             .arg(path.as_ref())
@@ -43,7 +43,14 @@ impl Collect {
                 .take()
                 .expect("Should succeed because stdout is Stdio::piped()"),
         );
-        Ok((Self(child), stdout))
+        Ok((
+            Self(child),
+            Output {
+                stdout,
+                line_buffer: String::new(),
+                after_first: false,
+            },
+        ))
     }
 
     /// Abort the data collection process
@@ -78,6 +85,53 @@ pub enum CollectError {
     /// Process ran through with a failing exit status
     #[error("cmakeperf run failed ({0}) with the following stderr output:\n---\n{1}---")]
     BadExit(ExitStatus, Box<str>),
+}
+
+/// Output of the build profile colection process
+pub struct Output {
+    /// Standard output handle
+    stdout: BufReader<ChildStdout>,
+
+    /// Buffer to collect standard output lines
+    line_buffer: String,
+
+    /// Truth that the first line of output has been consumed
+    ///
+    /// The first line of cmakeperf output repeats configuration, it does not
+    /// indicate that a compilation unit has been taken care of, unlike
+    /// subsequent lines of output
+    ///
+    after_first: bool,
+}
+//
+impl Output {
+    /// Wait for the next compilation step
+    pub fn next_step(&mut self) -> io::Result<BuildStep> {
+        self.line_buffer.clear();
+        match self.stdout.read_line(&mut self.line_buffer) {
+            Ok(0) => Ok(BuildStep::BuildDone),
+            Ok(_nonzero) => {
+                log::info!("cmakeperf output: {}", self.line_buffer.trim());
+                if self.after_first {
+                    Ok(BuildStep::UnitDone)
+                } else {
+                    self.after_first = true;
+                    self.next_step()
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(BuildStep::BuildDone),
+            Err(other_error) => return Err(other_error),
+        }
+    }
+}
+//
+/// Elapsed build step
+pub enum BuildStep {
+    /// One compilation unit has been dealt with
+    UnitDone,
+
+    /// The full build profiling process is done
+    BuildDone,
 }
 
 /// Command used for running cmakeperf
