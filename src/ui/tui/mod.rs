@@ -154,6 +154,7 @@ fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
         \n\
         Available commands:\n\
         - Up/Down selects an activity\n\
+        - Tab switches focus between table and description\n\
         - Return zooms on an activity's callees\n\
         - Left/Right + Return adjusts sort\n\
         - Esc exits dialogs and goes up the backtrace\n\

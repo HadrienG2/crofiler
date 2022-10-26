@@ -9,8 +9,10 @@ use crate::ui::{
 };
 use clang_time_trace::{ActivityTraceId, Duration};
 use cursive::{
+    theme::PaletteColor::{Highlight, Primary},
+    traits::Scrollable,
     view::{Nameable, Resizable, View},
-    views::{Dialog, LinearLayout, OnEventView, TextView, ViewRef},
+    views::{Dialog, LinearLayout, OnEventView, TextView, ThemedView, ViewRef},
     Cursive,
 };
 use cursive_table_view::{TableView, TableViewItem};
@@ -328,7 +330,7 @@ fn show_profile(
     let description_width = terminal_width as usize - non_description_width;
 
     // Update the TUI state and load required data from it
-    let (display_config, activity_descs, mut footer) = register_profile(
+    let (display_config, activity_descs, mut footer_str, desc_name) = register_profile(
         cursive,
         terminal_width,
         ProfileLayer {
@@ -341,7 +343,21 @@ fn show_profile(
     );
 
     // Set up the profile view
-    let table = make_profile_view(
+    let desc_name_2 = desc_name.clone();
+    let update_desc = move |cursive: &mut Cursive, activity: ActivityTraceId| {
+        let (desc, wrap) = with_state(cursive, |state| {
+            state
+                .processing_thread
+                .describe_activity(activity, terminal_width)
+        });
+        cursive
+            .call_on_name(&*desc_name_2, |view: &mut TextView| {
+                view.set_content(desc);
+                view.set_content_wrap(wrap);
+            })
+            .expect("Failed to access trace profile view");
+    };
+    let (table, selected_activity) = make_profile_view(
         table_name,
         kind,
         activity_infos,
@@ -349,38 +365,77 @@ fn show_profile(
         activity_descs,
         description_width,
         display_config,
+        update_desc.clone(),
     );
 
-    // Add help instructions to the trace description footer
+    // Style activity description area like the activity selector to improve the
+    // visual association between them.
+    let mut description_theme = cursive.current_theme().clone();
+    description_theme.palette[Primary] = description_theme.palette[Highlight];
+
+    // Prepare separator line between profile and description
+    let separator = ThemedView::new(
+        description_theme.clone(),
+        TextView::new(
+            ("─┤".chars())
+                .chain("Selected activity".chars())
+                .chain(std::iter::once('├'))
+                .chain(std::iter::repeat('─').take(terminal_width as usize))
+                .collect::<String>(),
+        )
+        .no_wrap(),
+    );
+
+    // Set up the description view
+    let description = ThemedView::new(
+        description_theme,
+        TextView::new("")
+            .no_wrap()
+            .with_name(&*desc_name)
+            .scrollable()
+            .scroll_x(true),
+    );
+
+    // Set up the footer view
     {
-        let last_line = footer
+        let last_line = footer_str
             .lines()
             .last()
             .expect("There should be text in there");
         const HELP_TEXT: &str = "Press H for help.";
         if last_line.width() + 1 + HELP_TEXT.width() <= terminal_width as usize {
-            footer.push(' ');
+            footer_str.push(' ');
         } else {
-            footer.push('\n');
+            footer_str.push('\n');
         }
-        footer.push_str(HELP_TEXT);
+        footer_str.push_str(HELP_TEXT);
     }
-    let footer_lines = footer.lines().count() as u16;
+    let footer = TextView::new(footer_str).center().no_wrap();
 
     // Show the profile
     cursive.add_fullscreen_layer(
         LinearLayout::vertical()
-            .child(table.min_size((terminal_width, terminal_height - footer_lines)))
-            .child(TextView::new(footer)),
+            .child(table.full_screen())
+            .child(separator.full_width())
+            .child(
+                description
+                    .full_width()
+                    .max_height(terminal_height as usize / 4),
+            )
+            .child(footer.full_width()),
     );
+
+    // Initialize the description
+    update_desc(cursive, selected_activity);
 }
 
 /// Register a new profile in the TUI state and return the information needed to
 /// display that profile in the TUI
 ///
 /// Returns the current sorting and duration display configuration, a
-/// description for all activities to be displayed, and a description of the
-/// overall dataset that is contrained into available horizontal space.
+/// description for all activities to be displayed, a description of the
+/// overall dataset that is contrained into available horizontal space, and the
+/// display name of the description pane.
 ///
 fn register_profile(
     cursive: &mut Cursive,
@@ -388,7 +443,7 @@ fn register_profile(
     layer: ProfileLayer,
     activity_infos: &[ActivityInfo],
     description_width: u16,
-) -> (ProfileDisplay, Box<[Arc<str>]>, String) {
+) -> (ProfileDisplay, Box<[Arc<str>]>, String, Rc<str>) {
     with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
@@ -425,8 +480,12 @@ fn register_profile(
         // Set up the basic trace description footer
         let footer = state.processing_thread.describe_trace(terminal_width);
 
+        // Give the activity description panel a name that's unique within the
+        // current overall cursive display
+        let desc = format!("<activity description #{}>", state.profile_stack.len());
+
         // Bubble up useful data for following steps
-        (state.display_config, activity_descs, footer)
+        (state.display_config, activity_descs, footer, desc.into())
     })
 }
 
@@ -439,7 +498,8 @@ fn make_profile_view(
     activity_descs: Box<[Arc<str>]>,
     description_width: usize,
     display_config: ProfileDisplay,
-) -> impl View {
+    update_desc: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
+) -> (impl View, ActivityTraceId) {
     // Prepare the tabular data
     let items = activity_infos
         .iter()
@@ -475,15 +535,23 @@ fn make_profile_view(
         .collect();
 
     // Set up the children activity table
+    let select_callback = select(table_name.clone(), update_desc);
     let mut table = ProfileView::new()
         .items(items)
         .column(HierarchicalColumn::Description, "Activity", |c| {
             c.width(description_width)
                 .ordering(display_config.sort_config.order[2])
         })
-        .on_sort(sort_other_profiles);
+        .on_sort(sort_other_profiles)
+        .on_select(select_callback);
     add_duration_cols_and_sort(&mut table, kind, display_config);
     table.set_selected_row(0);
+
+    // Determine the ID of the currently selected activity
+    let selected_activity = table
+        .borrow_item(table.item().expect("There should be a selected item"))
+        .expect("Selected item index should be OK")
+        .id;
 
     // Let user zoom in on child activities in hierarchical profiles
     match kind {
@@ -497,7 +565,7 @@ fn make_profile_view(
 
     // Let F shortcut toggle between hierarchical and flat profile
     let once_state = RefCell::new(Some((activity_infos, get_other_activities)));
-    OnEventView::new(table).on_event('f', move |cursive| {
+    let view = OnEventView::new(table).on_event('f', move |cursive| {
         let kind = match kind {
             ProfileKind::Hierarchical => ProfileKind::Flat,
             ProfileKind::Flat => ProfileKind::Hierarchical,
@@ -522,7 +590,29 @@ fn make_profile_view(
             new_activity_infos,
             Box::new(|_state| old_activity_infos),
         )
-    })
+    });
+
+    // Return the view and selected activity ID
+    (view, selected_activity)
+}
+
+/// on_select callback for profiles that updates the description pane
+fn select(
+    table_name: Rc<str>,
+    update_desc: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
+) -> impl Fn(&mut Cursive, usize, usize) + 'static {
+    move |cursive, _row, index| {
+        // Access the hierarchical profile's table to check the selected
+        // activity and whether it has children / can be zoomed on.
+        let activity_trace_id = cursive
+            .call_on_name(&table_name, |view: &mut ProfileView| {
+                view.borrow_item(index)
+                    .expect("Callback shouldn't be called with an invalid index")
+                    .id
+            })
+            .expect("Failed to access trace profile view");
+        update_desc(cursive, activity_trace_id);
+    }
 }
 
 /// on_submit callback for hierarchical profiles that recursively spawns another
