@@ -29,6 +29,9 @@ pub fn run(args: CliArgs) {
     // Warn that logs will be emitted on syslog
     eprintln!("Since stderr is not usable inside of a TUI, logs will be emitted on syslog...");
 
+    // Register a panic hook that logs as much info as possible
+    enable_panic_logging();
+
     // Start the processing thread and set up the text user interface
     let mut cursive = init::setup_cursive(State {
         processing_thread: ProcessingThread::start(),
@@ -39,9 +42,6 @@ pub fn run(args: CliArgs) {
         no_escape: false,
         display_config: Default::default(),
     });
-
-    // Register a panic hook that logs as much info as possible
-    set_panic_hook();
 
     // Set up the last-chance panic handler and run
     let res = panic::catch_unwind(AssertUnwindSafe(move || {
@@ -147,7 +147,7 @@ fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
 }
 
 /// Set up a panic hook that logs as much info as possible
-fn set_panic_hook() {
+fn enable_panic_logging() {
     let default_panic_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
         // Start by telling what happened
