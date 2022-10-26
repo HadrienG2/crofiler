@@ -9,7 +9,7 @@ use std::{
     fmt::Write,
     io::{self, Read},
     num::NonZeroU32,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -91,14 +91,13 @@ pub fn show_wizard(
         }
 
         // Ask whether the profile should be (re)created
-        let output_2 = output.clone();
         create_prompt.show(cursive, move |cursive, should_create| {
             if should_create {
                 // If so, measure a new one, then display
-                start_measure(cursive, command, output_2);
+                start_measure(cursive, command, output.into_boxed_path());
             } else if freshness.exists() {
                 // Otherwise, display existing profile if available
-                trace::display::show_loader(cursive, output_2);
+                trace::display::show_loader(cursive, output);
             }
         });
     } else {
@@ -108,35 +107,18 @@ pub fn show_wizard(
 }
 
 /// Start measuring a clang time-trace
-pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: PathBuf) {
+pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: Box<Path>) {
     // Back up the previous measurement, if any
-    let backup_path = output_path.with_extension("bak");
-    match std::fs::rename(&output_path, &backup_path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(other) => {
-            cursive.add_layer(Dialog::info(format!(
-                "Failed to back up previous build trace: {other}"
-            )));
+    let backup = match TraceBackup::new(output_path) {
+        Ok(backup) => backup,
+        Err(error) => {
+            cursive.add_layer(Dialog::info(error));
             return;
         }
-    }
-
-    // If clang fails, we'll restore the backup if there is one or delete
-    // the incomplete output file if there is no backup
-    // This returns an error message to be displayed if this went wrong.
-    let restore_or_delete = move |backup_path: &Path, output_path: &Path| match std::fs::rename(
-        backup_path,
-        output_path,
-    )
-    .or_else(|_| std::fs::remove_file(output_path))
-    {
-        Ok(()) => None,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(other) => Some(format!("Failed to clean up after clang: {other}")),
     };
 
     // Start clang
+    // TODO: Abstract this + canceled away in a CancelableClang struct
     let mut clang = match command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -146,7 +128,7 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
         Ok(clang) => clang,
         Err(e) => {
             cursive.add_layer(Dialog::info(format!("Failed to start clang: {e}")));
-            if let Some(error) = restore_or_delete(&backup_path, &output_path) {
+            if let Some(error) = backup.restore_or_delete() {
                 cursive.add_layer(Dialog::info(error));
             }
             return;
@@ -189,6 +171,19 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
     // next steps to be taken once that's done
     let cb_sink = cursive.cb_sink().clone();
     std::thread::spawn(move || {
+        // Force-send a callback to the cursive thread
+        let cb_sink = &cb_sink;
+        fn callback(
+            cb_sink: &cursive::reexports::crossbeam_channel::Sender<
+                Box<dyn FnOnce(&mut Cursive) + Send>,
+            >,
+            callback: impl FnOnce(&mut Cursive) + Send + 'static,
+        ) {
+            cb_sink
+                .send(Box::new(callback))
+                .expect("Failed to send callback to main thread");
+        }
+
         // Wait for clang to finish or for the cancelation signal to be sent
         let wait_result = loop {
             const RESPONSE_TIME: Duration = Duration::from_millis(1000 / 30);
@@ -204,34 +199,25 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
                 other => break other,
             }
         };
-        cb_sink
-            .send(Box::new(move |cursive| end_measure(cursive, state)))
-            .expect("Failed to send callback to main thread");
+        callback(cb_sink, move |cursive| end_measure(cursive, state));
 
         // Handle success and failure
         let error_message = match wait_result {
             // Clang completed successfully
             Ok(Some(status)) if status.success() => {
-                // Proceed with trace loading and display
-                cb_sink
-                    .send(Box::new(move |cursive| {
-                        trace::display::show_loader(cursive, output_path);
-                    }))
-                    .expect("Failed to send callback to main thread");
+                // Delete the backup file
+                let (output_path, backup_error) = backup.cleanup();
 
-                // Remove the backup file
-                match std::fs::remove_file(backup_path) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                    Err(other) => {
-                        cb_sink
-                            .send(Box::new(move |cursive| {
-                                cursive.add_layer(Dialog::info(format!(
-                                    "Failed to remove clang trace backup: {other}"
-                                )));
-                            }))
-                            .expect("Failed to send callback to main thread");
-                    }
+                // Show the trace loading screen
+                callback(cb_sink, move |cursive| {
+                    trace::display::show_loader(cursive, output_path)
+                });
+
+                // Report errors during the backup deletion process on top of it
+                if let Some(error) = backup_error {
+                    callback(cb_sink, move |cursive| {
+                        cursive.add_layer(Dialog::info(error))
+                    });
                 }
                 return;
             }
@@ -256,29 +242,18 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: P
         };
 
         // We're on the failure/abort path, so start by displaying any error messages
-        if let Some(message) = error_message {
-            cb_sink
-                .send(Box::new(move |cursive| {
-                    cursive.add_layer(Dialog::info(message))
-                }))
-                .expect("Failed to send callback to main thread");
+        if let Some(error) = error_message {
+            callback(cb_sink, move |cursive| {
+                cursive.add_layer(Dialog::info(error))
+            });
         }
 
         // Bring back our backup or delete any partial output from clang
-        if let Some(error) = restore_or_delete(&backup_path, &output_path) {
-            cb_sink
-                .send(Box::new(|cursive| cursive.add_layer(Dialog::info(error))))
-                .expect("Failed to send callback to main thread");
+        if let Some(error) = backup.restore_or_delete() {
+            callback(cb_sink, move |cursive| {
+                cursive.add_layer(Dialog::info(error))
+            });
         }
-
-        // Tell cursive to exit in case all windows were closed
-        cb_sink
-            .send(Box::new(move |cursive| {
-                if cursive.screen().is_empty() {
-                    cursive.quit();
-                }
-            }))
-            .expect("Failed to send callback to main thread");
     });
 }
 
@@ -305,6 +280,66 @@ fn end_measure(cursive: &mut Cursive, state: MeasureState) {
     cursive.set_fps(state.old_fps.map(u32::from).unwrap_or(0));
     while cursive.screen().len() > old_layers {
         cursive.pop_layer();
+    }
+}
+
+/// Backup of output file from a previous clang time-trace run
+///
+/// This backup may be restored if the time-trace measurement is unsuccessful or
+/// aborted. Otherwise, it should be deleted, as time-trace files can get too
+/// large to afford keeping around two copies of each of them.
+///
+#[must_use]
+struct TraceBackup {
+    /// Path to output produced by clang time-trace
+    output: Box<Path>,
+
+    /// Path to backup from previous clang time-trace run
+    backup: Box<Path>,
+}
+//
+impl TraceBackup {
+    /// Make a backup of any previous output, report any fatal error
+    fn new(output: Box<Path>) -> Result<Self, String> {
+        // Back up the previous measurement, if any
+        let backup = output.with_extension("bak").into_boxed_path();
+        match std::fs::rename(&output, &backup) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(other) => return Err(format!("Failed to back up previous build trace: {other}")),
+        }
+        Ok(Self { output, backup })
+    }
+
+    /// In case of clang failure, this restores the backup if there is one or
+    /// deletes any incomplete output file if there is no backup.
+    ///
+    /// Return an error message to be displayed if something goes wrong
+    ///
+    #[must_use]
+    fn restore_or_delete(self) -> Option<String> {
+        match std::fs::rename(&self.backup, &self.output)
+            .or_else(|_| std::fs::remove_file(&self.output))
+        {
+            Ok(()) => None,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(other) => Some(format!("Failed to clean up after clang: {other}")),
+        }
+    }
+
+    /// In case of clang success, this attempts to delete the backup and returns
+    /// the output file path, along with an error message to be displayed if the
+    /// deletion process failed
+    #[must_use]
+    fn cleanup(self) -> (Box<Path>, Option<String>) {
+        match std::fs::remove_file(&self.backup) {
+            Ok(()) => (self.output, None),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => (self.output, None),
+            Err(other) => (
+                self.output,
+                Some(format!("Failed to remove clang trace backup: {other}")),
+            ),
+        }
     }
 }
 
