@@ -11,85 +11,6 @@ use std::{
 };
 use thiserror::Error;
 
-/// One entry from the compilation database
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Entry {
-    /// Working directory for the build command
-    directory: Box<Path>,
-
-    /// Build command
-    command: String,
-
-    /// Input
-    file: Box<Path>,
-}
-//
-impl Entry {
-    /// Working directory
-    pub fn current_dir(&self) -> &Path {
-        &self.directory
-    }
-
-    /// Executable
-    #[allow(unused)]
-    pub fn program(&self) -> Option<impl AsRef<str>> {
-        self.full_args().next()
-    }
-
-    /// Arguments to the executable
-    pub fn args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
-        self.full_args().skip(1)
-    }
-
-    /// Input file path
-    pub fn input(&self) -> &Path {
-        &self.file
-    }
-
-    /// Output file path
-    ///
-    /// This parses the arguments assuming a GCC-like `-o <output>` syntax.
-    /// Will return None if basic syntax assumptions do not look fullfilled.
-    ///
-    pub fn output(&self) -> Option<PathBuf> {
-        // Start from working directory provided by cmake
-        let mut result = PathBuf::from(&*self.directory);
-
-        // Parse arguments, extract file name and (assumed relative) path
-        let rel_output = self.args().skip_while(|arg| arg.as_ref() != "-o").nth(1)?;
-        let rel_output = Path::new(rel_output.as_ref());
-        let file_name = rel_output.file_name()?;
-
-        // Add output path to working directory, try to canonicalize
-        // (ignore failures to do so, that's not critical), add file name
-        if let Some(rel_path) = rel_output.parent() {
-            result.push(rel_path);
-        }
-        let res = result.canonicalize();
-        std::mem::drop(res);
-        result.push(file_name);
-
-        // Emit result
-        Some(result)
-    }
-
-    /// Check if a file derived from this source file seems up to date
-    pub fn derived_freshness(&self, output_path: &Path) -> io::Result<ProductFreshness> {
-        CompilationDatabase::product_freshness(std::iter::once(self.input()), output_path)
-    }
-
-    /// Command components
-    fn full_args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
-        Shlex::new(self.raw_command())
-    }
-
-    /// Raw compilation command without further processing
-    pub fn raw_command(&self) -> &str {
-        &self.command
-    }
-}
-
 /// Full compilation database
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompilationDatabase(HashMap<Box<Path>, Entry>);
@@ -184,6 +105,85 @@ pub enum DatabaseLoadError {
     /// Failed to parse the compilation database
     #[error("failed to parse compilation database ({0})")]
     ParseError(#[from] json::Error),
+}
+
+/// One entry from the compilation database
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Entry {
+    /// Working directory for the build command
+    directory: Box<Path>,
+
+    /// Build command
+    command: String,
+
+    /// Input
+    file: Box<Path>,
+}
+//
+impl Entry {
+    /// Working directory
+    pub fn current_dir(&self) -> &Path {
+        &self.directory
+    }
+
+    /// Executable
+    #[allow(unused)]
+    pub fn program(&self) -> Option<impl AsRef<str>> {
+        self.full_args().next()
+    }
+
+    /// Arguments to the executable
+    pub fn args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
+        self.full_args().skip(1)
+    }
+
+    /// Input file path
+    pub fn input(&self) -> &Path {
+        &self.file
+    }
+
+    /// Output file path
+    ///
+    /// This parses the arguments assuming a GCC-like `-o <output>` syntax.
+    /// Will return None if basic syntax assumptions do not look fullfilled.
+    ///
+    pub fn output(&self) -> Option<PathBuf> {
+        // Start from working directory provided by cmake
+        let mut result = PathBuf::from(&*self.directory);
+
+        // Parse arguments, extract file name and (assumed relative) path
+        let rel_output = self.args().skip_while(|arg| arg.as_ref() != "-o").nth(1)?;
+        let rel_output = Path::new(rel_output.as_ref());
+        let file_name = rel_output.file_name()?;
+
+        // Add output path to working directory, try to canonicalize
+        // (ignore failures to do so, that's not critical), add file name
+        if let Some(rel_path) = rel_output.parent() {
+            result.push(rel_path);
+        }
+        let res = result.canonicalize();
+        std::mem::drop(res);
+        result.push(file_name);
+
+        // Emit result
+        Some(result)
+    }
+
+    /// Check if a file derived from this source file seems up to date
+    pub fn derived_freshness(&self, output_path: &Path) -> io::Result<ProductFreshness> {
+        CompilationDatabase::product_freshness(std::iter::once(self.input()), output_path)
+    }
+
+    /// Command components
+    fn full_args(&self) -> impl Iterator<Item = impl AsRef<str>> + '_ {
+        Shlex::new(self.raw_command())
+    }
+
+    /// Raw compilation command without further processing
+    pub fn raw_command(&self) -> &str {
+        &self.command
+    }
 }
 
 /// Result of a build profile/output freshness query
