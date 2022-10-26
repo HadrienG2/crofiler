@@ -4,7 +4,7 @@ use crate::{
     build::commands::CompilationDatabase,
     ui::tui::{create::CreatePrompt, trace, with_state},
 };
-use cursive::{views::Dialog, Cursive};
+use cursive::{reexports::crossbeam_channel::Sender, views::Dialog, Cursive};
 use std::{
     fmt::Write,
     io::{self, Read},
@@ -107,7 +107,7 @@ pub fn show_wizard(
 }
 
 /// Start measuring a clang time-trace
-pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: Box<Path>) {
+pub fn start_measure(cursive: &mut Cursive, command: Command, output_path: Box<Path>) {
     // Back up the previous measurement, if any
     let backup = match TraceBackup::new(output_path) {
         Ok(backup) => backup,
@@ -118,16 +118,10 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: B
     };
 
     // Start clang
-    // TODO: Abstract this + canceled away in a CancelableClang struct
-    let mut clang = match command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(clang) => clang,
-        Err(e) => {
-            cursive.add_layer(Dialog::info(format!("Failed to start clang: {e}")));
+    let (clang, cancel_trigger) = match CancelableClang::start(command) {
+        Ok(tuple) => tuple,
+        Err(error) => {
+            cursive.add_layer(Dialog::info(error));
             if let Some(error) = backup.restore_or_delete() {
                 cursive.add_layer(Dialog::info(error));
             }
@@ -147,64 +141,35 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: B
     cursive.set_autorefresh(true);
     let state = MeasureState { old_fps };
 
-    // Set up a cancelation mechanism for this measurement screen
-    // We shouldn't abuse state.no_escape for this because then the following
-    // race condition can occur:
-    //
-    // - User starts loading a trace
-    // - User change their mind and cancel the load
-    // - User starts loading another trace
-    // - First load completes and displays on screen instead of being dropped
-    //
-    let canceled = Arc::new(AtomicBool::new(false));
-    let canceled2 = canceled.clone();
-
     // Set up the measurement screen
     cursive.add_layer(
         Dialog::text("Measuring time trace, please minimize system activity...")
-            .button("Abort", move |_cursive| {
-                canceled2.store(true, Ordering::Relaxed)
-            }),
+            .button("Abort", move |_cursive| cancel_trigger.cancel()),
     );
 
     // Start a thread that measures a clang time-trace and arranges for the
     // next steps to be taken once that's done
     let cb_sink = cursive.cb_sink().clone();
     std::thread::spawn(move || {
-        // Force-send a callback to the cursive thread
+        // Force-send a callback to the cursive thread with less verbosity
         let cb_sink = &cb_sink;
         fn callback(
-            cb_sink: &cursive::reexports::crossbeam_channel::Sender<
-                Box<dyn FnOnce(&mut Cursive) + Send>,
-            >,
+            cb_sink: &Sender<Box<dyn FnOnce(&mut Cursive) + Send>>,
             callback: impl FnOnce(&mut Cursive) + Send + 'static,
         ) {
             cb_sink
                 .send(Box::new(callback))
-                .expect("Failed to send callback to main thread");
+                .expect("Failed to send cursive callback to main thread");
         }
 
         // Wait for clang to finish or for the cancelation signal to be sent
-        let wait_result = loop {
-            const RESPONSE_TIME: Duration = Duration::from_millis(1000 / 30);
-            let wait_result = clang.wait_timeout(RESPONSE_TIME);
-            match wait_result {
-                Ok(None) => {
-                    if canceled.load(Ordering::Relaxed) {
-                        break wait_result;
-                    } else {
-                        continue;
-                    }
-                }
-                other => break other,
-            }
-        };
+        let wait_result = clang.wait();
         callback(cb_sink, move |cursive| end_measure(cursive, state));
 
         // Handle success and failure
         let error_message = match wait_result {
             // Clang completed successfully
-            Ok(Some(status)) if status.success() => {
+            Ok(false) => {
                 // Delete the backup file
                 let (output_path, backup_error) = backup.cleanup();
 
@@ -222,23 +187,11 @@ pub fn start_measure(cursive: &mut Cursive, mut command: Command, output_path: B
                 return;
             }
 
-            // Clang terminated with an error status
-            Ok(Some(error_status)) => Some(child_failure_message(clang, error_status)),
+            // Clang execution was successfully canceled
+            Ok(true) => None,
 
-            // The work was canceled, kill clang and exit through the error path
-            Ok(None) => match clang.kill() {
-                Ok(()) => None,
-                Err(e)
-                    if e.kind() == io::ErrorKind::InvalidInput
-                        || e.kind() == io::ErrorKind::NotFound =>
-                {
-                    None
-                }
-                Err(other) => Some(format!("Failed to kill clang: {other}")),
-            },
-
-            // Failed to await process, exit through the error path
-            Err(e) => Some(format!("Failed to await clang: {e}")),
+            // Failed to await or cancel clang
+            Err(error) => Some(error),
         };
 
         // We're on the failure/abort path, so start by displaying any error messages
@@ -340,6 +293,97 @@ impl TraceBackup {
                 Some(format!("Failed to remove clang trace backup: {other}")),
             ),
         }
+    }
+}
+
+/// Interruptible clang command
+struct CancelableClang {
+    /// Child process
+    child: Child,
+
+    /// Cancelation flag
+    canceled: Arc<AtomicBool>,
+}
+//
+impl CancelableClang {
+    /// Start clang and set up cancelation, emit an error message if it goes wrong
+    fn start(mut command: Command) -> Result<(Self, CancelTrigger), String> {
+        // Start clang process
+        let child = match command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) => {
+                return Err(format!("Failed to start clang: {e}"));
+            }
+        };
+
+        // Set up cancelation
+        let canceled = Arc::new(AtomicBool::new(false));
+        let canceled2 = canceled.clone();
+
+        // Return all of that
+        Ok((Self { child, canceled }, CancelTrigger(canceled2)))
+    }
+
+    /// Wait for the process to terminate or be canceled
+    ///
+    /// Returns truth that the clang process was canceled on success, emit an
+    /// error message if something goes wrong
+    ///
+    fn wait(mut self) -> Result<bool, String> {
+        // Wait for the process to terminate or be canceled
+        let wait_result = loop {
+            const RESPONSE_TIME: Duration = Duration::from_millis(1000 / 30);
+            let wait_result = self.child.wait_timeout(RESPONSE_TIME);
+            match wait_result {
+                Ok(None) => {
+                    if self.canceled.load(Ordering::Relaxed) {
+                        break wait_result;
+                    } else {
+                        continue;
+                    }
+                }
+                other => break other,
+            }
+        };
+
+        // Handle success and failure
+        match wait_result {
+            // Clang completed successfully
+            Ok(Some(status)) if status.success() => Ok(false),
+
+            // Clang terminated with an error status
+            Ok(Some(error_status)) => Err(child_failure_message(self.child, error_status)),
+
+            // The work was canceled, kill clang and exit through the error path
+            Ok(None) => match self.child.kill() {
+                Ok(()) => Ok(true),
+                Err(e)
+                    if e.kind() == io::ErrorKind::InvalidInput
+                        || e.kind() == io::ErrorKind::NotFound =>
+                {
+                    Ok(true)
+                }
+                Err(other) => Err(format!("Failed to kill clang: {other}")),
+            },
+
+            // Failed to await process, exit through the error path
+            Err(e) => Err(format!("Failed to await clang: {e}")),
+        }
+    }
+}
+//
+/// Cancelation trigger for CancelableClang
+struct CancelTrigger(Arc<AtomicBool>);
+//
+impl CancelTrigger {
+    /// Trigger cancelation
+    fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed)
     }
 }
 
