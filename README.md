@@ -44,16 +44,18 @@ indiscriminate replacement of inheritance with templating.
 
 #### Mandatory
 
-At present, `crofiler` has only been tested on Linux. It is expected to work on
-other Unices like macOS or FreeBSD, but not Windows.
+At present, `crofiler` has only been tested on Linux. It is expected to be fully
+functional on other Unices like macOS or FreeBSD, but not Windows as it
+currently relies on VT100 terminal commands.
 
 To be able to profile compilation units, you will need a `clang` version newer
-than 9 and suitable for building your project.
+than 9 (to have the `-ftime-trace` feature) and otherwise suitable for building
+your project.
 
 Your build system also needs to be able to export a
 [JSON compilation database](https://clang.llvm.org/docs/JSONCompilationDatabase.html).
 We will assume usage of CMake in the remainder of this tutorial, which can do
-this, please refer to your build system's manual otherwise.
+this, otherwise please refer to your build system's manual.
 
 You will also need a recent [Rust toolchain](https://www.rust-lang.org/learn/get-started)
 in order to build `crofiler` from source.
@@ -98,7 +100,7 @@ compilation database for your build. With CMake, that is done by re-running your
 option.
 
 Then, in your build directory, run `crofiler` as you would run `make` or
-`ninja`, and a TUI wizard will walk you through the remaining steps. If you find
+`ninja`, and a TUI wizard will walk you through the next steps. If you find
 any message or interaction to be hard to understand, please report this as a bug.
 
 Also, please note that due to the technical constraints of textual user
