@@ -45,7 +45,7 @@ indiscriminate replacement of inheritance with templating.
 #### Mandatory
 
 At present, `crofiler` has only been tested on Linux. It is expected to be fully
-functional on other Unices like macOS or FreeBSD, but not Windows as it
+functional on other Unices like macOS or FreeBSD, but not on Windows as it
 currently relies on VT100 terminal commands.
 
 To be able to profile compilation units, you will need a `clang` version newer
