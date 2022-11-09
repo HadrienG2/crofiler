@@ -22,9 +22,9 @@ pub fn is_profiling(cursive: &mut Cursive) -> bool {
     with_state(cursive, |state| !state.profile_stack.is_empty())
 }
 
-/// Switch to a different duration unit in all currently displayed profiles
+/// Switch to a different duration unit in all present and future profiles
 pub fn switch_duration_unit(cursive: &mut Cursive) {
-    // This does nothing when we're not doing profiling
+    // This shortcut is specific to profile views
     if !is_profiling(cursive) {
         return;
     }
@@ -141,7 +141,7 @@ impl ProfileDisplay {
     }
 }
 
-/// Display a hierarchical profile
+/// Display a hierarchical profile (see show_profile for parameters docs)
 pub(super) fn show_hierarchical_profile(
     cursive: &mut Cursive,
     table_name: Rc<str>,
@@ -150,41 +150,31 @@ pub(super) fn show_hierarchical_profile(
     get_flat_activities: impl 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>,
 ) {
     show_profile(
-        ProfileKind::Hierarchical,
         cursive,
         table_name,
         parent_percent_norm,
         activity_infos,
         Box::new(get_flat_activities),
+        ProfileKind::Hierarchical,
     );
 }
 
-/// Display a flat or hierarchical profile
+/// Display a trace profile
 fn show_profile(
-    kind: ProfileKind,
     cursive: &mut Cursive,
     table_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: Box<[ActivityInfo]>,
     get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>>,
+    kind: ProfileKind,
 ) {
     // Check terminal dimensions
     let (terminal_width, terminal_height) =
         termion::terminal_size().expect("Could not read terminal configuration");
 
-    // All kinds of profile have at least a Self column and a scrollbar, which
-    // eats up some space that is not available for the activity description.
-    let mut non_description_width = DURATION_WIDTH + 5;
-    non_description_width += match kind {
-        // Hierarchical profiles additionally have a total duration column and
-        // '+' indicators telling which activities can be zoomed.
-        ProfileKind::Hierarchical => DURATION_WIDTH + 4,
-        ProfileKind::Flat => 0,
-    };
-    let description_width = terminal_width as usize - non_description_width;
-
     // Update the TUI state and load required data from it
-    let (display_config, activity_descs, mut footer_str, desc_name) = register_profile(
+    let desc_col_width = description_column_width(kind, terminal_width);
+    let (display_config, activity_descs, footer_str, desc_view_name) = register_profile(
         cursive,
         terminal_width,
         ProfileLayer {
@@ -193,84 +183,32 @@ fn show_profile(
             kind,
         },
         &activity_infos[..],
-        description_width as u16,
+        desc_col_width,
     );
 
+    // Set up the activity description view
+    let (description, update_description) =
+        make_description_view(cursive, terminal_width, desc_view_name.clone());
+
     // Set up the profile view
-    let desc_name_2 = desc_name.clone();
-    let update_desc = move |cursive: &mut Cursive, activity: ActivityTraceId| {
-        let (desc, wrap) = with_state(cursive, |state| {
-            state
-                .processing_thread
-                .describe_activity(activity, terminal_width)
-        });
-        cursive
-            .call_on_name(&*desc_name_2, |view: &mut TextView| {
-                view.set_content(desc);
-                view.set_content_wrap(wrap);
-            })
-            .expect("Failed to access trace profile view");
-    };
     let (table, selected_activity) = make_profile_view(
         table_name,
         kind,
         activity_infos,
         get_other_activities,
         activity_descs,
-        description_width,
+        desc_col_width,
         display_config,
-        update_desc.clone(),
-    );
-
-    // Style activity description area like the activity selector to improve the
-    // visual association between them.
-    let mut description_theme = cursive.current_theme().clone();
-    description_theme.palette[Primary] = description_theme.palette[Highlight];
-
-    // Prepare separator line between profile and description
-    let separator = ThemedView::new(
-        description_theme.clone(),
-        TextView::new(
-            ("─┤".chars())
-                .chain("Selected activity".chars())
-                .chain(std::iter::once('├'))
-                .chain(std::iter::repeat('─').take(terminal_width as usize))
-                .collect::<String>(),
-        )
-        .no_wrap(),
-    );
-
-    // Set up the description view
-    let description = ThemedView::new(
-        description_theme,
-        TextView::new("")
-            .no_wrap()
-            .with_name(&*desc_name)
-            .scrollable()
-            .scroll_x(true),
+        update_description.clone(),
     );
 
     // Set up the footer view
-    {
-        let last_line = footer_str
-            .lines()
-            .last()
-            .expect("There should be text in there");
-        const HELP_TEXT: &str = "Press H for help.";
-        if last_line.width() + 1 + HELP_TEXT.width() <= terminal_width as usize {
-            footer_str.push(' ');
-        } else {
-            footer_str.push('\n');
-        }
-        footer_str.push_str(HELP_TEXT);
-    }
-    let footer = TextView::new(footer_str).center().no_wrap();
+    let footer = make_footer_view(terminal_width, footer_str);
 
     // Show the profile
     cursive.add_fullscreen_layer(
         LinearLayout::vertical()
             .child(table.full_screen())
-            .child(separator.full_width())
             .child(
                 description
                     .full_width()
@@ -280,7 +218,7 @@ fn show_profile(
     );
 
     // Initialize the description
-    update_desc(cursive, selected_activity);
+    update_description(cursive, selected_activity);
 }
 
 /// Register a new profile in the TUI state and return the information needed to
@@ -350,54 +288,21 @@ fn make_profile_view(
     activity_infos: Box<[ActivityInfo]>,
     get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>>,
     activity_descs: Box<[Arc<str>]>,
-    description_width: usize,
+    description_width: u16,
     display_config: ProfileDisplay,
-    update_desc: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
+    update_description: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
 ) -> (impl View, ActivityTraceId) {
-    // Prepare the tabular data
-    let items = activity_infos
-        .iter()
-        .zip(activity_descs.into_vec().into_iter())
-        .map(|(activity_info, description)| {
-            let description = match kind {
-                // Hierarchical profiles have little "+" indicators that tell
-                // which activities have children and can be zoomed
-                ProfileKind::Hierarchical => {
-                    let mut buf = String::new();
-                    if activity_info.has_children {
-                        buf.push('+');
-                    } else {
-                        buf.push(' ');
-                    }
-                    buf.push_str(&description);
-                    buf.into_boxed_str()
-                }
-
-                // Flat profiles just display the raw activity description
-                ProfileKind::Flat => {
-                    let description_str: &str = &description;
-                    description_str.into()
-                }
-            };
-            HierarchicalData {
-                id: activity_info.id,
-                duration: activity_info.duration,
-                self_duration: activity_info.self_duration,
-                description,
-            }
-        })
-        .collect();
-
     // Set up the children activity table
-    let select_callback = select(table_name.clone(), update_desc);
+    let items = make_profile_data(kind, &activity_infos, activity_descs);
+    let update_desc = select(table_name.clone(), update_description);
     let mut table = ProfileView::new()
         .items(items)
         .column(HierarchicalColumn::Description, "Activity", |c| {
-            c.width(description_width)
+            c.width(description_width as usize)
                 .ordering(display_config.sort_config.order[2])
         })
         .on_sort(sort_other_profiles)
-        .on_select(select_callback);
+        .on_select(update_desc);
     add_duration_cols_and_sort(&mut table, kind, display_config);
     table.set_selected_row(0);
 
@@ -414,8 +319,7 @@ fn make_profile_view(
     }
 
     // Name the table to allow accessing it later on
-    let table_name_str: &str = &table_name;
-    let table = table.with_name(String::from(table_name_str));
+    let table = table.with_name(table_name.to_string());
 
     // Let F shortcut toggle between hierarchical and flat profile
     let once_state = RefCell::new(Some((activity_infos, get_other_activities)));
@@ -437,12 +341,12 @@ fn make_profile_view(
         });
         cursive.pop_layer();
         show_profile(
-            kind,
             cursive,
             table_name.clone(),
             parent_percent_norm,
             new_activity_infos,
             Box::new(|_state| old_activity_infos),
+            kind,
         )
     });
 
@@ -835,4 +739,136 @@ impl Default for SortConfig {
             key: HierarchicalColumnName::TotalDuration,
         }
     }
+}
+
+/// Compute the width of the description column in a trace's profile table
+fn description_column_width(profile_kind: ProfileKind, terminal_width: u16) -> u16 {
+    // All kinds of profile have at least a Self column and a scrollbar, which
+    // eats up some space that is not available for the activity description.
+    let mut durations_scroll_width = DURATION_WIDTH + 5;
+    durations_scroll_width += match profile_kind {
+        // Hierarchical profiles additionally have a total duration column and
+        // '+' indicators telling which activities can be zoomed.
+        ProfileKind::Hierarchical => DURATION_WIDTH + 4,
+        ProfileKind::Flat => 0,
+    };
+    terminal_width - durations_scroll_width as u16
+}
+
+/// Construct the cursive view used to provide the detailed name of an activity,
+/// along with the callback used to update it.
+///
+/// This does not display the view on screen, that's the job of show_profile
+///
+fn make_description_view(
+    cursive: &mut Cursive,
+    terminal_width: u16,
+    name: Rc<str>,
+) -> (
+    impl View + 'static,
+    impl Fn(&mut Cursive, ActivityTraceId) + Clone + 'static,
+) {
+    // Style activity description area like the activity selector to improve the
+    // visual association between them.
+    let mut description_theme = cursive.current_theme().clone();
+    description_theme.palette[Primary] = description_theme.palette[Highlight];
+
+    // Prepare visual separation between the profile and activity description
+    let separator = TextView::new(
+        ("─┤".chars())
+            .chain("Selected activity".chars())
+            .chain(std::iter::once('├'))
+            .chain(std::iter::repeat('─').take(terminal_width as usize))
+            .collect::<String>(),
+    )
+    .no_wrap();
+
+    // Set up the description view
+    let description = TextView::new("")
+        .no_wrap()
+        .with_name(&*name)
+        .scrollable()
+        .scroll_x(true);
+
+    // Combine the separator and description into one view
+    let view = ThemedView::new(
+        description_theme,
+        LinearLayout::vertical()
+            .child(separator.full_width())
+            .child(description.full_screen()),
+    );
+
+    // Set up the callback to update the description view
+    let update_desc = move |cursive: &mut Cursive, activity: ActivityTraceId| {
+        let (desc, wrap) = with_state(cursive, |state| {
+            state
+                .processing_thread
+                .describe_activity(activity, terminal_width)
+        });
+        cursive
+            .call_on_name(&*name, |view: &mut TextView| {
+                view.set_content(desc);
+                view.set_content_wrap(wrap);
+            })
+            .expect("Failed to access trace profile view");
+    };
+    (view, update_desc)
+}
+
+/// Construct the cursive view used to display trace-wide metadata & help text
+fn make_footer_view(terminal_width: u16, mut footer_str: String) -> impl View + 'static {
+    const HELP_TEXT: &str = "Press H for help.";
+    let last_line = footer_str
+        .lines()
+        .last()
+        .expect("There should be text in there");
+
+    if last_line.width() + 1 + HELP_TEXT.width() <= terminal_width as usize {
+        footer_str.push(' ');
+    } else {
+        footer_str.push('\n');
+    }
+    footer_str.push_str(HELP_TEXT);
+
+    TextView::new(footer_str).center().no_wrap()
+}
+
+/// Construct the tabular data used by the profile view
+fn make_profile_data(
+    profile_kind: ProfileKind,
+    activity_infos: &[ActivityInfo],
+    activity_descs: Box<[Arc<str>]>,
+) -> Vec<HierarchicalData> {
+    activity_infos
+        .iter()
+        .zip(activity_descs.into_vec().into_iter())
+        .map(|(activity_info, description)| {
+            let description = match profile_kind {
+                // Hierarchical profiles have little "+" indicators that tell
+                // which activities have children and can be zoomed
+                ProfileKind::Hierarchical => {
+                    let mut buf = String::new();
+                    if activity_info.has_children {
+                        buf.push('+');
+                    } else {
+                        buf.push(' ');
+                    }
+                    buf.push_str(&description);
+                    buf.into_boxed_str()
+                }
+
+                // Flat profiles just display the raw activity description
+                ProfileKind::Flat => {
+                    let description_str: &str = &description;
+                    description_str.into()
+                }
+            };
+            HierarchicalData {
+                id: activity_info.id,
+                duration: activity_info.duration,
+                self_duration: activity_info.self_duration,
+                description,
+            }
+        })
+        .collect()
 }
