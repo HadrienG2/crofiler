@@ -120,7 +120,7 @@ impl Output {
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(BuildStep::BuildDone),
-            Err(other_error) => return Err(other_error),
+            Err(other_error) => Err(other_error),
         }
     }
 }

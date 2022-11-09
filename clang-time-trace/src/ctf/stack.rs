@@ -5,7 +5,7 @@ use serde::Deserialize;
 /// Stack trace associated with a duration event
 ///
 /// For complete events, this is the stack trace at the start of the event
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum StackTrace {
     /// id for a stackFrame object in the TraceDataObject::stackFrames map
@@ -19,7 +19,7 @@ pub enum StackTrace {
 //
 // Basically a clone of StackTrace which only exists because of field naming
 // differences... but the duplication isn't too bad, so I'll leave it be.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum EndStackTrace {
     /// id for a stackFrame object in the TraceDataObject::stackFrames map
@@ -35,7 +35,7 @@ pub enum EndStackTrace {
 /// or strings, but in the end that's a bit pointless since stackFrames keys
 /// _must_ be strings to comply with the JSON spec. So we convert everything to
 /// strings for convenience.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(from = "RawStackFrameId")]
 pub struct StackFrameId(pub Box<str>);
 //
@@ -48,7 +48,7 @@ impl From<RawStackFrameId> for StackFrameId {
     }
 }
 //
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged, deny_unknown_fields)]
 enum RawStackFrameId {
     Int(i64),
@@ -56,7 +56,7 @@ enum RawStackFrameId {
 }
 
 /// Stack frame object
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StackFrame {
     /// Usually a DSO or process name

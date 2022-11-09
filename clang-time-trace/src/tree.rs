@@ -26,6 +26,7 @@ pub struct ActivityTree {
     ///
     /// At the end, there is also a slice of root activity indices which were
     /// directly triggered by toplevel clang logic.
+    ///
     children: Box<[usize]>,
 
     /// Start of the list of root activities, at the end of the activity_tree
@@ -36,6 +37,7 @@ impl ActivityTree {
     /// Activities that were directly spawned by the clang driver
     ///
     /// See `ClangTrace::root_activities` for documentation.
+    ///
     pub fn root_activities(&self) -> impl Iterator<Item = ActivityTrace> + Clone {
         self.hierarchy_iter(self.first_root_idx..)
     }
@@ -44,10 +46,11 @@ impl ActivityTree {
     /// ActivityTree::children.
     ///
     /// Usable both for tree roots and children of a tree node.
-    fn hierarchy_iter<'self_>(
-        &'self_ self,
+    ///
+    fn hierarchy_iter(
+        &self,
         children_indices: impl SliceIndex<[usize], Output = [usize]>,
-    ) -> impl Iterator<Item = ActivityTrace> + Clone + 'self_ {
+    ) -> impl Iterator<Item = ActivityTrace> + Clone + '_ {
         self.children[children_indices]
             .iter()
             .map(move |&activity_idx| ActivityTrace {
@@ -60,6 +63,7 @@ impl ActivityTree {
     /// Complete list of activities that clang engaged in
     ///
     /// See `ClangTrace::all_activities` for documentation.
+    ///
     pub fn all_activities(&self) -> impl Iterator<Item = ActivityTrace> + Clone {
         self.activities
             .iter()
@@ -128,6 +132,7 @@ impl ActivityTrace<'_> {
     /// Activities that were directly spawned by this activity
     ///
     /// Like `ClangTrace::root_activities()`, but for children of one activity
+    ///
     pub fn direct_children(&self) -> impl Iterator<Item = ActivityTrace> + Clone {
         self.tree
             .hierarchy_iter(self.activity.children_indices.clone())
@@ -137,6 +142,7 @@ impl ActivityTrace<'_> {
     /// directly or as an indirect result of directly spawned activities
     ///
     /// Like `ClangTrace::all_activities()`, but for children of one activity
+    ///
     pub fn all_children(&self) -> impl Iterator<Item = ActivityTrace> + Clone {
         let first_child_idx = self.activity.first_related_idx;
         self.tree.activities[first_child_idx..self.activity_idx]
@@ -199,6 +205,7 @@ struct ActivityNode {
     // We can use NonZeroUsize here because activity #0 cannot be the parent of
     // any other activity as it has the smallest end-time and being the parent
     // of an activity requires ending after it.
+    //
     parent_idx: Option<NonZeroUsize>,
 }
 
@@ -231,6 +238,7 @@ impl ActivityTreeBuilder {
     /// Note that the code currently expects activities to be provided in order
     /// of ascending end timestamp, as clang does (and is expected to continue
     /// doing undefinitely, as that's the simplest implementation for them).
+    ///
     pub fn insert(&mut self, activity: ActivityStat) -> Result<(), ActivityTreeError> {
         // Check assumption that activities are provided in order of increasing
         // end timestamp (this means that a parent activity follows the sequence

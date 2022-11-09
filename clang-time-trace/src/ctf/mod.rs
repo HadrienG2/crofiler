@@ -138,7 +138,7 @@ pub const HOUR: Duration = 60.0 * MINUTE;
 pub const DAY: Duration = 24.0 * HOUR;
 
 /// Unit in which timestamps should be displayed
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum DisplayTimeUnit {
     /// Milliseconds
@@ -190,7 +190,7 @@ pub type SampleWeight = i64;
 pub type Pid = i32;
 
 /// Event categories
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(from = "Box<str>")]
 pub struct EventCategories(pub Box<[Box<str>]>);
 //

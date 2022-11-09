@@ -22,6 +22,12 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+/// Owned list of ActivityInfo (used to simplify complex type names)
+pub type ActivityInfoList = Box<[ActivityInfo]>;
+
+/// Owned list of activity descriptions
+pub type ActivityDescList = Box<[Arc<str>]>;
+
 /// Encapsulation of the processing thread
 #[derive(Debug)]
 pub struct ProcessingThread {
@@ -37,11 +43,10 @@ pub struct ProcessingThread {
     string_receiver: Receiver<(String, bool)>,
 
     /// Channel to receive lists of activities from the processing thread
-    activities_receiver: Receiver<Box<[ActivityInfo]>>,
+    activities_receiver: Receiver<ActivityInfoList>,
 
-    /// Channel to receive lists of immutable strings from the processing thread,
-    /// used to send batches of activity descriptions.
-    strings_receiver: Receiver<Box<[Arc<str>]>>,
+    /// Channel to receive activity descriptions from the processing thread
+    descs_receiver: Receiver<ActivityDescList>,
 }
 //
 impl ProcessingThread {
@@ -51,7 +56,7 @@ impl ProcessingThread {
         let (instruction_sender, instruction_receiver) = mpsc::channel();
         let (string_sender, string_receiver) = mpsc::channel();
         let (activities_sender, activities_receiver) = mpsc::channel();
-        let (strings_sender, strings_receiver) = mpsc::channel();
+        let (descs_sender, descs_receiver) = mpsc::channel();
 
         // Spawn the processing thread
         let handle = thread::spawn(move || {
@@ -60,7 +65,7 @@ impl ProcessingThread {
                 instruction_receiver,
                 string_sender,
                 activities_sender,
-                strings_sender,
+                descs_sender,
             );
         });
 
@@ -70,7 +75,7 @@ impl ProcessingThread {
             instruction_sender,
             string_receiver,
             activities_receiver,
-            strings_receiver,
+            descs_receiver,
         }
     }
 
@@ -107,25 +112,25 @@ impl ProcessingThread {
     }
 
     /// Get the list of root activities
-    pub fn get_root_activities(&self) -> Box<[ActivityInfo]> {
+    pub fn get_root_activities(&self) -> ActivityInfoList {
         self.request(Instruction::GetRootActivities);
         Self::fetch(&self.activities_receiver)
     }
 
     /// Get the list of all activities
-    pub fn get_all_activities(&self) -> Box<[ActivityInfo]> {
+    pub fn get_all_activities(&self) -> ActivityInfoList {
         self.request(Instruction::GetAllActivities);
         Self::fetch(&self.activities_receiver)
     }
 
     /// Get the list of a node's direct children
-    pub fn get_direct_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
+    pub fn get_direct_children(&self, id: ActivityTraceId) -> ActivityInfoList {
         self.request(Instruction::GetDirectChildren(id));
         Self::fetch(&self.activities_receiver)
     }
 
     /// Get the list of all of a node's direct children
-    pub fn get_all_children(&self, id: ActivityTraceId) -> Box<[ActivityInfo]> {
+    pub fn get_all_children(&self, id: ActivityTraceId) -> ActivityInfoList {
         self.request(Instruction::GetAllChildren(id));
         Self::fetch(&self.activities_receiver)
     }
@@ -135,12 +140,12 @@ impl ProcessingThread {
         &self,
         activities: Box<[ActivityTraceId]>,
         max_cols: u16,
-    ) -> Box<[Arc<str>]> {
+    ) -> ActivityDescList {
         self.request(Instruction::DescribeActivities {
             activities,
             max_cols,
         });
-        Self::fetch(&self.strings_receiver)
+        Self::fetch(&self.descs_receiver)
     }
 
     /// Describe a single activity fully, tell if the result should be line-wrapped
@@ -228,8 +233,8 @@ enum Instruction {
 fn worker(
     instructions: Receiver<Instruction>,
     string: Sender<(String, bool)>,
-    activities: Sender<Box<[ActivityInfo]>>,
-    strings: Sender<Box<[Arc<str>]>>,
+    activities: Sender<ActivityInfoList>,
+    strings: Sender<ActivityDescList>,
 ) {
     // Set up caches for activity parsing and rendering, which are costly
     let mut trace = None;
@@ -351,13 +356,13 @@ fn reply<T: Send + 'static>(sender: &Sender<T>, data: T) {
 }
 
 /// Build a list of activities
-fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> Box<[ActivityInfo]> {
+fn activity_list<'a>(iterator: impl Iterator<Item = ActivityTrace<'a>>) -> ActivityInfoList {
     iterator
         .map(|activity_trace| ActivityInfo {
             id: activity_trace.id(),
             duration: activity_trace.duration(),
             self_duration: activity_trace.self_duration(),
-            has_children: activity_trace.direct_children().next() != None,
+            has_children: activity_trace.direct_children().next().is_some(),
         })
         .collect()
 }
@@ -373,7 +378,7 @@ fn describe_activities(
     description_cache: &mut HashMap<ActivityTraceId, Arc<str>>,
     activities: Box<[ActivityTraceId]>,
     max_cols: u16,
-) -> Box<[Arc<str>]> {
+) -> ActivityDescList {
     // Describe activities
     let result = activities
         .into_vec()

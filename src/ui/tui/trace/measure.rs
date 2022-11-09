@@ -4,7 +4,7 @@ use crate::{
     build::commands::CompilationDatabase,
     ui::tui::{create::CreatePrompt, trace, with_state},
 };
-use cursive::{reexports::crossbeam_channel::Sender, views::Dialog, Cursive};
+use cursive::{views::Dialog, Cursive};
 use std::{
     fmt::Write,
     io::{self, Read},
@@ -154,7 +154,7 @@ pub fn start_measure(cursive: &mut Cursive, command: Command, output_path: Box<P
         // Force-send a callback to the cursive thread with less verbosity
         let cb_sink = &cb_sink;
         fn callback(
-            cb_sink: &Sender<Box<dyn FnOnce(&mut Cursive) + Send>>,
+            cb_sink: &cursive::CbSink,
             callback: impl FnOnce(&mut Cursive) + Send + 'static,
         ) {
             cb_sink

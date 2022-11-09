@@ -197,7 +197,7 @@ impl Activity {
             let id = ActivityId::UnknownActivity(Box::new(name));
             let arg_result = match Self::parse_detail_arg(args) {
                 Ok(detail) => {
-                    let arg_type = ActivityArgumentType::infer_from_detail(&*detail);
+                    let arg_type = ActivityArgumentType::infer_from_detail(&detail);
                     log::error!("...inferred to have argument type {arg_type:?}");
                     Ok(RawActivityArgument::new(arg_type, Some(detail)))
                 }
@@ -424,7 +424,7 @@ generate_activities! {
 }
 
 /// What can go wrong while parsing an Activity
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, Eq, PartialEq)]
 pub enum ActivityParseError {
     /// Failed to parse activity arguments
     #[error("failed to process arguments of activity {0} ({1})")]

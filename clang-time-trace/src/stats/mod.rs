@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// What can go wrong while parsing TraceEvent arguments
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, Eq, PartialEq)]
 pub enum ArgParseError {
     /// Encountered unexpected arguments
     #[error("got unexpected arguments {0:?}")]

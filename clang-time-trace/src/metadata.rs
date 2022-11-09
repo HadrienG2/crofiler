@@ -4,7 +4,7 @@ use crate::ctf::events::metadata::{MetadataEvent, MetadataOptions, NameArgs};
 use thiserror::Error;
 
 /// Parse the clang process name
-pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> {
+pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, Box<NameParseError>> {
     match m {
         MetadataEvent::process_name {
             pid,
@@ -23,12 +23,12 @@ pub fn parse_process_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> 
         {
             Ok(name)
         }
-        _ => Err(NameParseError::UnexpectedInput(m)),
+        _ => Err(Box::new(NameParseError::UnexpectedInput(m))),
     }
 }
 
 /// Parse the clang thread name
-pub fn parse_thread_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> {
+pub fn parse_thread_name(m: MetadataEvent) -> Result<Box<str>, Box<NameParseError>> {
     match m {
         MetadataEvent::thread_name {
             tid,
@@ -41,7 +41,7 @@ pub fn parse_thread_name(m: MetadataEvent) -> Result<Box<str>, NameParseError> {
                     tts: None,
                 },
         } if extra.is_empty() && cat.0.is_empty() && ts == 0.0 && pid == Some(tid) => Ok(name),
-        _ => Err(NameParseError::UnexpectedInput(m)),
+        _ => Err(Box::new(NameParseError::UnexpectedInput(m))),
     }
 }
 
@@ -124,7 +124,7 @@ mod tests {
         let test_unexpected_input = |input: MetadataEvent| {
             assert_eq!(
                 tested_parser(input.clone()),
-                Err(NameParseError::UnexpectedInput(input))
+                Err(Box::new(NameParseError::UnexpectedInput(input)))
             )
         };
 

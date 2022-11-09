@@ -407,7 +407,7 @@ pub enum ClangTraceParseError {
 
     /// Failed to parse the clang thread' name
     #[error("failed to parse name ({0})")]
-    NameParseError(#[from] NameParseError),
+    NameParseError(#[from] Box<NameParseError>),
 
     /// Encountered two occurences of the process name
     #[error("encountered thread name twice (\"{0}\" then \"{1}\")")]

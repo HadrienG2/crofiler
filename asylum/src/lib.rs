@@ -62,7 +62,7 @@ pub trait Resolver {
 }
 
 /// Interned things
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Interned<Item, K: Key = Spur>(Box<[Item]>, PhantomData<K>);
 //
 impl<Item, K: Key> Interned<Item, K> {

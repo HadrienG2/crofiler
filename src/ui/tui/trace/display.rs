@@ -2,7 +2,10 @@
 
 use crate::ui::{
     display::duration::display_duration,
-    tui::{processing::ActivityInfo, with_state, State},
+    tui::{
+        processing::{ActivityDescList, ActivityInfo, ActivityInfoList},
+        with_state, State,
+    },
 };
 use clang_time_trace::{ActivityTraceId, Duration};
 use cursive::{
@@ -14,7 +17,7 @@ use cursive::{
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::{cell::RefCell, cmp::Ordering, rc::Rc, sync::Arc};
+use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 use unicode_width::UnicodeWidthStr;
 
 /// Truth that profiling is in progress
@@ -146,8 +149,8 @@ pub(super) fn show_hierarchical_profile(
     cursive: &mut Cursive,
     table_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
-    activity_infos: Box<[ActivityInfo]>,
-    get_flat_activities: impl 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>,
+    activity_infos: ActivityInfoList,
+    get_flat_activities: impl 'static + FnOnce(&mut State) -> ActivityInfoList,
 ) {
     show_profile(
         cursive,
@@ -164,8 +167,8 @@ fn show_profile(
     cursive: &mut Cursive,
     table_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
-    activity_infos: Box<[ActivityInfo]>,
-    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>>,
+    activity_infos: ActivityInfoList,
+    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> ActivityInfoList>,
     kind: ProfileKind,
 ) {
     // Check terminal dimensions
@@ -174,7 +177,7 @@ fn show_profile(
 
     // Update the TUI state and load required data from it
     let desc_col_width = description_column_width(kind, terminal_width);
-    let (display_config, activity_descs, footer_str, desc_view_name) = register_profile(
+    let (display_config, activity_data, footer_str, desc_view_name) = register_profile(
         cursive,
         terminal_width,
         ProfileLayer {
@@ -182,21 +185,20 @@ fn show_profile(
             parent_percent_norm,
             kind,
         },
-        &activity_infos[..],
+        activity_infos,
         desc_col_width,
     );
 
     // Set up the activity description view
     let (description, update_description) =
-        make_description_view(cursive, terminal_width, desc_view_name.clone());
+        make_description_view(cursive, terminal_width, desc_view_name);
 
     // Set up the profile view
     let (table, selected_activity) = make_profile_view(
         table_name,
         kind,
-        activity_infos,
+        activity_data,
         get_other_activities,
-        activity_descs,
         desc_col_width,
         display_config,
         update_description.clone(),
@@ -233,9 +235,9 @@ fn register_profile(
     cursive: &mut Cursive,
     terminal_width: u16,
     layer: ProfileLayer,
-    activity_infos: &[ActivityInfo],
+    activity_infos: ActivityInfoList,
     description_width: u16,
-) -> (ProfileDisplay, Box<[Arc<str>]>, String, Rc<str>) {
+) -> (ProfileDisplay, ActivityData, String, Rc<str>) {
     with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
@@ -277,17 +279,24 @@ fn register_profile(
         let desc = format!("<activity description #{}>", state.profile_stack.len());
 
         // Bubble up useful data for following steps
-        (state.display_config, activity_descs, footer, desc.into())
+        (
+            state.display_config,
+            (activity_infos, activity_descs),
+            footer,
+            desc.into(),
+        )
     })
 }
+
+/// Alias used to simplify passing arround activity infos + descriptions
+type ActivityData = (ActivityInfoList, ActivityDescList);
 
 /// Set up the tabular view that is the heart of a profile
 fn make_profile_view(
     table_name: Rc<str>,
     kind: ProfileKind,
-    activity_infos: Box<[ActivityInfo]>,
-    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> Box<[ActivityInfo]>>,
-    activity_descs: Box<[Arc<str>]>,
+    (activity_infos, activity_descs): ActivityData,
+    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> ActivityInfoList>,
     description_width: u16,
     display_config: ProfileDisplay,
     update_description: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
@@ -806,7 +815,7 @@ fn make_description_view(
                 .describe_activity(activity, terminal_width)
         });
         cursive
-            .call_on_name(&*name, |view: &mut TextView| {
+            .call_on_name(&name, |view: &mut TextView| {
                 view.set_content(desc);
                 view.set_content_wrap(wrap);
             })
@@ -837,7 +846,7 @@ fn make_footer_view(terminal_width: u16, mut footer_str: String) -> impl View + 
 fn make_profile_data(
     profile_kind: ProfileKind,
     activity_infos: &[ActivityInfo],
-    activity_descs: Box<[Arc<str>]>,
+    activity_descs: ActivityDescList,
 ) -> Vec<HierarchicalData> {
     activity_infos
         .iter()

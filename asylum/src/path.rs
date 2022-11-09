@@ -51,7 +51,7 @@ pub trait PathResolver {
 pub type PathKey<KeyImpl = Spur, const LEN_BITS: u32 = 8> = SequenceKey<KeyImpl, LEN_BITS>;
 
 /// Space- and allocation-efficient collection of file paths
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct InternedPaths<
     ComponentKey: Key,
     PK: InternerKey<ImplKey = Range<usize>> = PathKey<Spur, 8>,
@@ -161,7 +161,7 @@ impl<'parent, Parent: PathResolver + ?Sized> Display for InternedPath<'parent, P
 }
 
 /// Accessor to an interned path component
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct InternedComponent<'parent, ComponentKey: Key = Spur> {
     /// Key used to extract the path component
     key: ComponentKey,
@@ -339,7 +339,7 @@ impl<ComponentKey: Key + Hash, PK: InternerKey<ImplKey = Range<usize>>> PathReso
 }
 
 /// What can go wrong when processing a file path
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Eq, Error, PartialEq)]
 pub enum PathError {
     /// Expected absolute file paths, but clang provided a relative one
     ///

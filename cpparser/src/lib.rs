@@ -99,6 +99,7 @@ pub type InternedPath<'entities> = path::InternedPath<'entities, PathInterner>;
 //
 pub struct EntityParser {
     /// Legacy name parser
+    #[allow(clippy::type_complexity)]
     legacy_name_parser: Box<dyn Send + Fn(&str) -> IResult<LegacyName>>,
 
     /// Interned identifiers

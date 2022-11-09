@@ -114,7 +114,7 @@ pub struct MetadataOptions {
 /// Arguments for MetadataEvents that name something (a process, a thread...)
 //
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Deserialize, PartialEq)]
 pub struct NameArgs {
     /// Name to be attributed to target entity
     pub name: Box<str>,
@@ -127,7 +127,7 @@ pub struct NameArgs {
 /// Arguments for MetadataEvent::process_labels
 //
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Deserialize, PartialEq)]
 pub struct LabelsArgs {
     /// Extra label to be attributed to the target process
     pub labels: Box<str>,
@@ -140,7 +140,7 @@ pub struct LabelsArgs {
 /// Arguments for MetadataEvents provide a sort order position
 //
 // Has a #[serde(flatten)] so should not get #[serde(deny_unknown_fields)]
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Deserialize, PartialEq)]
 pub struct SortIndexArgs {
     /// Relative sorting position
     ///

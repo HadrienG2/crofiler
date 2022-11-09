@@ -131,7 +131,7 @@ impl RawActivityArgument {
         demangling_buf: &mut String,
     ) -> Result<ParsedSymbol, ActivityArgumentError> {
         let mut parse_demangled = |entity: Rc<str>| -> ParsedSymbol {
-            if let Ok(parsed) = Self::parse_entity(&*entity, parser) {
+            if let Ok(parsed) = Self::parse_entity(&entity, parser) {
                 ParsedSymbol::Parsed(parsed)
             } else {
                 ParsedSymbol::Demangled(entity)
@@ -326,7 +326,7 @@ impl ParsedActivityArgument {
     pub fn resolve<'a>(&'a self, trace: &'a ClangTrace) -> ActivityArgument<'a> {
         match self {
             ParsedActivityArgument::Nothing => ActivityArgument::Nothing,
-            ParsedActivityArgument::String(s) => ActivityArgument::String(&*s),
+            ParsedActivityArgument::String(s) => ActivityArgument::String(s),
             ParsedActivityArgument::FilePath(p) => ActivityArgument::FilePath(trace.file_path(*p)),
             ParsedActivityArgument::CppEntity(e) => ActivityArgument::CppEntity(trace.entity(*e)),
             ParsedActivityArgument::Symbol(m) => ActivityArgument::Symbol(m.resolve(trace)),
@@ -378,8 +378,8 @@ impl ParsedSymbol {
     pub fn resolve<'a>(&'a self, trace: &'a ClangTrace) -> Symbol<'a> {
         match self {
             ParsedSymbol::Parsed(key) => Symbol::Parsed(trace.entity(*key)),
-            ParsedSymbol::Demangled(s) => Symbol::Demangled(&*s),
-            ParsedSymbol::MaybeMangled(s) => Symbol::MaybeMangled(&*s),
+            ParsedSymbol::Demangled(s) => Symbol::Demangled(s),
+            ParsedSymbol::MaybeMangled(s) => Symbol::MaybeMangled(s),
         }
     }
 }
