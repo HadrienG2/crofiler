@@ -97,12 +97,12 @@ pub fn show_wizard(
                 start_measure(cursive, command, output.into_boxed_path());
             } else if freshness.exists() {
                 // Otherwise, display existing profile if available
-                trace::display::show_loader(cursive, output);
+                trace::load::show_loader(cursive, output);
             }
         });
     } else {
         // If the existing profile is good, display it right away
-        trace::display::show_loader(cursive, output);
+        trace::load::show_loader(cursive, output);
     }
 }
 
@@ -175,7 +175,7 @@ pub fn start_measure(cursive: &mut Cursive, command: Command, output_path: Box<P
 
                 // Show the trace loading screen
                 callback(cb_sink, move |cursive| {
-                    trace::display::show_loader(cursive, output_path)
+                    trace::load::show_loader(cursive, output_path)
                 });
 
                 // Report errors during the backup deletion process on top of it

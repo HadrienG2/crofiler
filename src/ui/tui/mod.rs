@@ -46,7 +46,7 @@ pub fn run(args: CliArgs) {
     // Set up the last-chance panic handler and run
     let res = panic::catch_unwind(AssertUnwindSafe(move || {
         if let Some(trace_path) = &args.input {
-            trace::display::show_loader(&mut cursive, trace_path);
+            trace::load::show_loader(&mut cursive, trace_path);
             cursive.run();
         } else {
             build::profile(&mut cursive, args);
