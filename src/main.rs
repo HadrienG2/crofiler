@@ -6,9 +6,8 @@ mod build;
 mod trace;
 mod ui;
 
-use atty::Stream::{Stdin, Stdout};
 use clap::{ArgEnum, Parser};
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 /// Analyze where your compilation time is spent in order to optimize it
 ///
@@ -111,7 +110,7 @@ fn main() {
     let args = CliArgs::parse();
     match args.ui {
         UI::Auto => {
-            if atty::is(Stdin) && atty::is(Stdout) {
+            if termion::is_tty(&io::stdin()) && termion::is_tty(&io::stdout()) {
                 ui::tui::run(args)
             } else {
                 ui::stdio::run(args)

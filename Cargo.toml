@@ -15,10 +15,8 @@ edition = "2021"
 unstable_interner_stats = []
 
 [dependencies]
-# Used to determine if connected to a TTY -> Interactive TUI, autosize
-atty = "0.2"
-
 # Used to explain what happened in crashes -> better debugging...
+# TODO: Switch to std's Backtrace once rust 1.65 is old enough
 backtrace = "0.3"
 
 # Used to format ISO dates from clang Unix timestamps
@@ -33,10 +31,8 @@ clap = { version = "3.2", features = ["derive"] }
 # Used to decode cmakeperf output
 csv = "1.1"
 
-# Used for TUI (general library)
+# Used for TUI display
 cursive = { version = "0.20", default-features = false, features = ["termion-backend"] }
-
-# Used for TUI (profile display)
 cursive_table_view = "0.14"
 
 # Saner floats, used to simplify TUI code
@@ -63,7 +59,7 @@ shlex = "1.1"
 # Used for logging in TUI mode
 syslog = "6.0"
 
-# Used for low-level terminal interaction, mostly teminal size
+# Used for low-level terminal interaction, mostly TTY detection & teminal size
 termion = "1.5"
 
 # Used for typesetting hierarchical profiles in stdio mode
@@ -75,7 +71,7 @@ thiserror = "1.0"
 # Used to find appropriate points for cutting Unicode strings
 unicode-segmentation = "1.9"
 
-# Used to evaluate print width of strings
+# Used to evaluate terminal width of strings
 unicode-width = "0.1"
 
 # Used for cancellable wait on worker processes
