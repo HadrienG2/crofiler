@@ -551,7 +551,7 @@ mod tests {
         let identifier = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_identifier(s));
         let check_anonymous = |parser: &mut EntityParser, input, expected, output| {
             assert_eq!(parser.parse_clang_anonymous_imut(input), Ok(("", expected)));
-            assert_eq!(format!("{}", parser.clang_anonymous(expected)), output);
+            assert_eq!(parser.clang_anonymous(expected).to_string(), output);
         };
         let check_anonymous_bijective = |parser: &mut EntityParser, input, expected| {
             check_anonymous(parser, input, expected, input);

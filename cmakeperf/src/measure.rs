@@ -9,6 +9,7 @@ use std::{
     io::{self, BufRead, BufReader, Read},
     path::Path,
     process::{Child, ChildStdout, Command, ExitStatus, Stdio},
+    time::Duration,
 };
 use thiserror::Error;
 
@@ -29,7 +30,12 @@ impl Collect {
     /// Start collecting a build profile to a specified location
     pub fn start(path: impl AsRef<Path>) -> io::Result<(Self, Output)> {
         let mut child = Command::new(PROGRAM)
-            .args(["collect", "--interval", POLLING_INTERVAL, "-o"])
+            .args([
+                "collect",
+                "--interval",
+                &POLLING_INTERVAL.as_secs_f32().to_string(),
+                "-o",
+            ])
             .arg(path.as_ref())
             .arg(CompilationDatabase::location())
             .stdin(Stdio::null())
@@ -141,6 +147,6 @@ const PROGRAM: &str = "cmakeperf";
 /// This is enough to get execution times with 0.1s precision, and seems
 /// empirically to also be enough for good RAM measurements.
 ///
-const POLLING_INTERVAL: &str = "0.03";
+const POLLING_INTERVAL: Duration = Duration::from_millis(33);
 
 // FIXME: Add unit tests ?

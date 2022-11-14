@@ -223,10 +223,11 @@ mod tests {
         expected.push('^');
         if recursion_depth > 0 {
             for (idx, item) in sequence.iter().cloned().enumerate() {
-                expected.push_str(&format!(
-                    "{}",
-                    CustomDisplayMock(item).display(&DisplayState::new(recursion_depth - 1))
-                ));
+                expected.push_str(
+                    &CustomDisplayMock(item)
+                        .display(&DisplayState::new(recursion_depth - 1))
+                        .to_string(),
+                );
                 if idx != sequence.len() - 1 {
                     expected.push('~');
                 }
@@ -244,7 +245,7 @@ mod tests {
         setup_and_check(|sequence, view| {
             assert_eq!(
                 expected_custom_display(sequence, usize::MAX),
-                format!("{}", view)
+                view.to_string()
             );
         })
     }
@@ -256,7 +257,8 @@ mod tests {
             for recursion_depth in 0..sequence.iter().max().unwrap_or(&0) + 1 {
                 assert_eq!(
                     expected_custom_display(sequence, recursion_depth),
-                    format!("{}", view.display(&DisplayState::new(recursion_depth)))
+                    view.display(&DisplayState::new(recursion_depth))
+                        .to_string()
                 );
             }
         })

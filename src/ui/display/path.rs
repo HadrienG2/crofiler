@@ -27,7 +27,7 @@ pub fn display_path(path: &InternedPath, config: DisplayConfig) -> Box<str> {
         DisplayConfig::SingleLine { max_cols } => {
             truncate_path_iter(path.components().map(|c| c.value()), max_cols)
         }
-        DisplayConfig::MultiLine { .. } => format!("{}", path.to_boxed_path().display()).into(),
+        DisplayConfig::MultiLine { .. } => path.to_boxed_path().display().to_string().into(),
     }
 }
 

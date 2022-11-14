@@ -164,7 +164,7 @@ pub(crate) mod tests {
         assert_eq!(view.recursion_depth(), displays.len() - 1);
 
         let actual_display =
-            |max_recursion| format!("{}", view.display(&DisplayState::new(max_recursion)));
+            |max_recursion| view.display(&DisplayState::new(max_recursion)).to_string();
         for (max_recursion, expected_display) in displays.iter().enumerate() {
             assert_eq!(*expected_display, actual_display(max_recursion));
         }
@@ -240,14 +240,14 @@ pub(crate) mod tests {
 
         let none: Option<CustomDisplayMock> = None;
         assert_eq!(none.recursion_depth(), 0);
-        assert_eq!(format!("{}", none.display(&state)), "");
+        assert_eq!(none.display(&state).to_string(), "");
 
         let mock = CustomDisplayMock(2);
         let some = Some(mock);
         assert_eq!(some.recursion_depth(), mock.recursion_depth());
         assert_eq!(
-            format!("{}", some.display(&state)),
-            format!("{}", mock.display(&state))
+            some.display(&state).to_string(),
+            mock.display(&state).to_string()
         );
     }
 
