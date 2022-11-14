@@ -1,5 +1,6 @@
 //! Extension of SequenceInterner which provides an entry() API that can be
 //! called recursively using shared references
+// FIXME: Move to asylum
 
 use asylum::{
     lasso::Spur,
