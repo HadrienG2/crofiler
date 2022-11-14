@@ -314,3 +314,5 @@ fn display_profile_info(
     let percent = duration * duration_norm * 100.0;
     write!(output, ", {percent:.2}%]")
 }
+
+// FIXME: Add tests ?
