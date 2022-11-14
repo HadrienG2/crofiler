@@ -7,13 +7,14 @@ use std::{
     collections::HashMap,
     io,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Duration,
 };
 use thiserror::Error;
 
 /// Full compilation database
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CompilationDatabase(HashMap<Box<Path>, Entry>);
+pub struct CompilationDatabase(HashMap<Box<Path>, DatabaseEntry>);
 //
 impl CompilationDatabase {
     /// Location of the compilation database relative to the build directory
@@ -29,17 +30,11 @@ impl CompilationDatabase {
             }
             other => other?,
         };
-        let entries = json::from_str::<Vec<Entry>>(&data)?;
-        Ok(Self(
-            entries
-                .into_iter()
-                .map(|entry| (Box::from(entry.input()), entry))
-                .collect(),
-        ))
+        Ok(Self::from_str(&data)?)
     }
 
     /// List the database entries in arbitrary order
-    pub fn entries(&self) -> impl Iterator<Item = &Entry> {
+    pub fn entries(&self) -> impl Iterator<Item = &DatabaseEntry> {
         self.0.values()
     }
 
@@ -47,13 +42,13 @@ impl CompilationDatabase {
     ///
     /// Will return None if no file with that name exists in the database.
     ///
-    pub fn entry(&self, input_path: &Path) -> Option<&Entry> {
+    pub fn entry(&self, input_path: &Path) -> Option<&DatabaseEntry> {
         self.0.get(input_path)
     }
 
     /// Check if a full-build profile seems up to date
     pub fn profile_freshness(&self, path: &Path) -> io::Result<ProductFreshness> {
-        Self::product_freshness(self.entries().map(Entry::input), path)
+        Self::product_freshness(self.entries().map(DatabaseEntry::input), path)
     }
 
     /// Check if some build derivative seems up to date
@@ -90,6 +85,20 @@ impl CompilationDatabase {
         ))
     }
 }
+//
+impl FromStr for CompilationDatabase {
+    type Err = json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let entries = json::from_str::<Vec<DatabaseEntry>>(s)?;
+        Ok(Self(
+            entries
+                .into_iter()
+                .map(|entry| (Box::from(entry.input()), entry))
+                .collect(),
+        ))
+    }
+}
 
 /// Failure to load the CompilationDatabase from disk
 #[derive(Debug, Error)]
@@ -110,7 +119,7 @@ pub enum DatabaseLoadError {
 /// One entry from the compilation database
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct Entry {
+pub struct DatabaseEntry {
     /// Working directory for the build command
     directory: Box<Path>,
 
@@ -121,7 +130,7 @@ pub struct Entry {
     file: Box<Path>,
 }
 //
-impl Entry {
+impl DatabaseEntry {
     /// Working directory
     pub fn current_dir(&self) -> &Path {
         &self.directory
@@ -183,6 +192,14 @@ impl Entry {
     /// Raw compilation command without further processing
     pub fn raw_command(&self) -> &str {
         &self.command
+    }
+}
+//
+impl FromStr for DatabaseEntry {
+    type Err = json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        json::from_str(s)
     }
 }
 
