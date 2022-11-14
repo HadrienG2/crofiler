@@ -1,9 +1,7 @@
 //! Wizard that guides the user through the process of measuring a time-trace
 
-use crate::{
-    build::commands::CompilationDatabase,
-    ui::tui::{create::CreatePrompt, trace, with_state},
-};
+use crate::ui::tui::{create::CreatePrompt, trace, with_state};
+use cmakeperf::commands::CompilationDatabase;
 use cursive::{views::Dialog, Cursive};
 use std::{
     fmt::Write,

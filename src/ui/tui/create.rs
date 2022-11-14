@@ -1,6 +1,6 @@
 //! Prompt before creating a build profile (either full-build or single-file)
 
-use crate::build::commands::ProductFreshness;
+use cmakeperf::commands::ProductFreshness;
 use cursive::{views::Dialog, Cursive, CursiveRunnable};
 use std::{cell::Cell, fmt::Write, rc::Rc};
 

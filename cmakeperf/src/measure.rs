@@ -4,8 +4,7 @@
 //! user experience (no need to install an extra Python package), so keep it
 //! as encapsulated as possible.
 
-use crate::build::commands::CompilationDatabase;
-
+use crate::commands::CompilationDatabase;
 use std::{
     io::{self, BufRead, BufReader, Read},
     path::Path,
@@ -143,3 +142,5 @@ const PROGRAM: &str = "cmakeperf";
 /// empirically to also be enough for good RAM measurements.
 ///
 const POLLING_INTERVAL: &str = "0.03";
+
+// FIXME: Add unit tests ?

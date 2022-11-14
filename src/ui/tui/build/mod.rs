@@ -4,14 +4,10 @@ mod display;
 mod measure;
 
 use self::{display::display_profile, measure::measure_profile};
-use crate::{
-    build::{
-        clang,
-        commands::{CompilationDatabase, DatabaseLoadError},
-        profile::{self, ProfileLoadError},
-    },
-    ui::tui::create::CreatePrompt,
-    CliArgs,
+use crate::{clang, ui::tui::create::CreatePrompt, CliArgs};
+use cmakeperf::{
+    commands::{CompilationDatabase, DatabaseLoadError},
+    output::ProfileLoadError,
 };
 use cursive::{views::Dialog, Cursive, CursiveRunnable};
 use std::path::Path;
@@ -63,7 +59,7 @@ pub fn profile(cursive: &mut CursiveRunnable, args: CliArgs) {
         };
 
     // Load the full-build profile
-    let profile = match profile::load(profile_path) {
+    let profile = match cmakeperf::output::load(profile_path) {
         Ok(profile) => profile,
         Err(e) => {
             let message = match e {
@@ -94,7 +90,7 @@ pub fn update_profile(
     compilation_database: &CompilationDatabase,
 ) -> Option<Box<Path>> {
     // Determine full build profile path
-    let default_profile_path = Path::new(profile::DEFAULT_LOCATION);
+    let default_profile_path = Path::new(cmakeperf::output::DEFAULT_LOCATION);
     let manually_specified = args.build_profile.is_some();
     let profile_path = args
         .build_profile

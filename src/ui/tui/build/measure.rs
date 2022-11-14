@@ -1,11 +1,9 @@
 //! Measure a full-build profile
 
-use crate::{
-    build::{
-        commands::CompilationDatabase,
-        profile::cmakeperf::{self, BuildStep},
-    },
-    ui::tui::with_state,
+use crate::ui::tui::with_state;
+use cmakeperf::{
+    commands::CompilationDatabase,
+    measure::{self, BuildStep, Collect, CollectError},
 };
 use cursive::{
     views::{Dialog, LinearLayout, ProgressBar, TextView},
@@ -150,7 +148,7 @@ struct CollectHandle<'cursive, 'output> {
     backup_path: Option<Box<Path>>,
 
     /// Live cmakeperf data collection process
-    collect: cmakeperf::Collect,
+    collect: Collect,
 }
 //
 impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
@@ -158,9 +156,9 @@ impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
     fn start(
         cursive: &'cursive mut CursiveRunnable,
         output_path: &'output Path,
-    ) -> Option<(Self, cmakeperf::Output)> {
+    ) -> Option<(Self, measure::Output)> {
         // Check for cmakeperf availability
-        let error_message = match cmakeperf::find() {
+        let error_message = match measure::find() {
             Ok(status) if status.success() => None,
             Ok(bad_status) => Some(format!(
                 "Found cmakeperf, but it exits with the error status {bad_status}.\n\
@@ -197,7 +195,7 @@ impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
         }
 
         // Start cmakeperf
-        let (collect, output) = match cmakeperf::Collect::start(output_path) {
+        let (collect, output) = match Collect::start(output_path) {
             Ok(tuple) => tuple,
             Err(e) => {
                 super::error(cursive, format!("Failed to start cmakeperf: {e}"));
@@ -224,7 +222,7 @@ impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
     }
 
     /// Wait for the cmakeperf data collection process to complete
-    fn finish(&mut self) -> Result<(), cmakeperf::CollectError> {
+    fn finish(&mut self) -> Result<(), CollectError> {
         let result = self.collect.finish();
         if result.is_ok() {
             // Disable the backup restore/output deletion process on successful run

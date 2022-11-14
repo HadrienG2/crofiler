@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod build;
+mod clang;
 mod trace;
 mod ui;
 

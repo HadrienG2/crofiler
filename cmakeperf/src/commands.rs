@@ -214,3 +214,5 @@ impl ProductFreshness {
         }
     }
 }
+
+// FIXME: Add tests

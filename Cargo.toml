@@ -28,8 +28,8 @@ clang-time-trace = { path = "clang-time-trace" }
 # Used for CLI options
 clap = { version = "3.2", features = ["derive"] }
 
-# Used to decode cmakeperf output
-csv = "1.1"
+# Used to measure and process full-build profiles
+cmakeperf = { path = "cmakeperf" }
 
 # Used for TUI display
 cursive = { version = "0.20", default-features = false, features = ["termion-backend"] }
@@ -46,15 +46,6 @@ log = "0.4"
 
 # Used for lazy stuff: path separator, test trace...
 once_cell = "1.10"
-
-# Used for (de)serializing various formats
-serde = { version = "1.0", features = ["derive"] }
-
-# Used to decode CMake compilation database
-serde_json = "1.0"
-
-# Used to parse command arguments in CMake compilation database
-shlex = "1.1"
 
 # Used for logging in TUI mode
 syslog = "6.0"

@@ -1,15 +1,15 @@
 //! Display a full-build profile
 
 use crate::{
-    build::{
-        commands::CompilationDatabase,
-        profile::{self, BuildProfile},
-    },
     ui::{
         display::path::truncate_path_iter,
         tui::{trace, with_state},
     },
     CliArgs,
+};
+use cmakeperf::{
+    commands::CompilationDatabase,
+    output::{BuildProfile, UnitProfile},
 };
 use cursive::{
     traits::{Nameable, Resizable},
@@ -47,7 +47,7 @@ pub fn display_profile(
     let file_width = terminal_width as usize - non_file_width;
 
     // Set up table display
-    type FullBuildProfileView = TableView<profile::Unit, ProfileColumn>;
+    type FullBuildProfileView = TableView<UnitProfile, ProfileColumn>;
     let mut table = FullBuildProfileView::new()
         .items(profile)
         .column(ProfileColumn::MaxRSS, "Memory", |c| {
@@ -116,7 +116,7 @@ enum ProfileColumn {
     RelPath(u16),
 }
 //
-impl TableViewItem<ProfileColumn> for profile::Unit {
+impl TableViewItem<ProfileColumn> for UnitProfile {
     fn to_column(&self, column: ProfileColumn) -> String {
         match column {
             ProfileColumn::MaxRSS => format!("{:.2} GB", self.max_rss_bytes() as f32 / 1e9),

@@ -1,7 +1,5 @@
 //! Full-build profiling facilities
 
-pub mod cmakeperf;
-
 use serde::Deserialize;
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
@@ -45,7 +43,7 @@ pub enum ProfileLoadError {
 /// This summarizes the compilation performance of one compilation unit.
 ///
 #[derive(Clone, Debug, Deserialize)]
-pub struct Unit {
+pub struct UnitProfile {
     /// Relative path to the source file, starting from the build directory
     #[serde(rename = "file")]
     rel_path: Box<Path>,
@@ -58,7 +56,7 @@ pub struct Unit {
     wall_time_secs: Option<f32>,
 }
 //
-impl Unit {
+impl UnitProfile {
     /// Path to the file, starting from the build directory
     pub fn rel_path(&self) -> &Path {
         &self.rel_path
@@ -92,4 +90,6 @@ impl Unit {
 }
 
 /// Full build profile
-pub type BuildProfile = Vec<Unit>;
+pub type BuildProfile = Vec<UnitProfile>;
+
+// FIXME: Add unit tests
