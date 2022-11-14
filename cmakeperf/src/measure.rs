@@ -149,4 +149,5 @@ const PROGRAM: &str = "cmakeperf";
 ///
 const POLLING_INTERVAL: Duration = Duration::from_millis(33);
 
-// FIXME: Add unit tests ?
+// FIXME: Add unit tests ? Could do that by having a dummy binary that consumes
+//        X memory during Y time.
