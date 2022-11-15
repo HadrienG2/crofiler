@@ -97,7 +97,7 @@ fn backtrace_dialog(cursive: &mut Cursive) -> Option<Dialog> {
                 .iter()
                 .enumerate()
                 .rev()
-                .map(|(idx, profile)| (String::from(profile.table_name()), idx)),
+                .map(|(idx, profile)| (String::from(profile.parent_name()), idx)),
         );
         state.layers_below_profile
     });

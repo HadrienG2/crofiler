@@ -92,7 +92,10 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
 /// Information about a layer of the cursive TUI stack that contains a profile
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileLayer {
-    /// Name of the profile data TableView = name of the parent entity
+    /// Name of the entity being profiled, for display use
+    parent_name: Rc<str>,
+
+    /// Identifier of the table widget displaying the profile
     table_name: Rc<str>,
 
     /// Norm used to compute percentages with respect to this profile's parent.
@@ -103,9 +106,9 @@ pub struct ProfileLayer {
 }
 //
 impl ProfileLayer {
-    /// Name of the profile data TableView = name of the parent entity
-    pub fn table_name(&self) -> &str {
-        &self.table_name
+    /// Name of the entity being profiled, for display use
+    pub fn parent_name(&self) -> &str {
+        &self.parent_name
     }
 }
 //
@@ -147,14 +150,14 @@ impl ProfileDisplay {
 /// Display a hierarchical profile (see show_profile for parameters docs)
 pub(super) fn show_hierarchical_profile(
     cursive: &mut Cursive,
-    table_name: Rc<str>,
+    parent_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: ActivityInfoList,
     get_flat_activities: impl 'static + FnOnce(&mut State) -> ActivityInfoList,
 ) {
     show_profile(
         cursive,
-        table_name,
+        parent_name,
         parent_percent_norm,
         activity_infos,
         Box::new(get_flat_activities),
@@ -165,7 +168,7 @@ pub(super) fn show_hierarchical_profile(
 /// Display a trace profile
 fn show_profile(
     cursive: &mut Cursive,
-    table_name: Rc<str>,
+    parent_name: Rc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: ActivityInfoList,
     get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> ActivityInfoList>,
@@ -177,21 +180,19 @@ fn show_profile(
 
     // Update the TUI state and load required data from it
     let desc_col_width = description_column_width(kind, terminal_width);
-    let (display_config, activity_data, footer_str, desc_view_name) = register_profile(
+    let (display_config, activity_data, footer_str, profile_id, table_name) = register_profile(
         cursive,
         terminal_width,
-        ProfileLayer {
-            table_name: table_name.clone(),
-            parent_percent_norm,
-            kind,
-        },
+        parent_name,
+        parent_percent_norm,
+        kind,
         activity_infos,
         desc_col_width,
     );
 
     // Set up the activity description view
     let (description, update_description) =
-        make_description_view(cursive, terminal_width, desc_view_name);
+        make_description_view(cursive, terminal_width, profile_id);
 
     // Set up the profile view
     let (table, selected_activity) = make_profile_view(
@@ -228,16 +229,19 @@ fn show_profile(
 ///
 /// Returns the current sorting and duration display configuration, a
 /// description for all activities to be displayed, a description of the
-/// overall dataset that is contrained into available horizontal space, and the
-/// display name of the description pane.
+/// overall dataset that is contrained into available horizontal space, a
+/// unique numerical identifier of the profile, and a textual identifier for the
+/// text widget representing the profile.
 ///
 fn register_profile(
     cursive: &mut Cursive,
     terminal_width: u16,
-    layer: ProfileLayer,
+    parent_name: Rc<str>,
+    parent_percent_norm: Finite<Duration>,
+    kind: ProfileKind,
     activity_infos: ActivityInfoList,
     description_width: u16,
-) -> (ProfileDisplay, ActivityData, String, Rc<str>) {
+) -> (ProfileDisplay, ActivityData, String, usize, Rc<str>) {
     with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
@@ -259,7 +263,7 @@ fn register_profile(
         if let DurationDisplay::Percentage(ref mut norm, PercentageReference::Parent) =
             duration_display
         {
-            *norm = layer.parent_percent_norm;
+            *norm = parent_percent_norm;
         }
 
         // Generate activity descriptions of the right width
@@ -269,21 +273,25 @@ fn register_profile(
         );
 
         // Register this new layer in the profile stack
-        state.profile_stack.push(layer);
+        let profile_id = state.profile_stack.len();
+        let table_name: Rc<str> = format!("Activity profile {profile_id}").into();
+        state.profile_stack.push(ProfileLayer {
+            parent_name,
+            table_name: table_name.clone(),
+            parent_percent_norm,
+            kind,
+        });
 
         // Set up the basic trace description footer
         let footer = state.processing_thread.describe_trace(terminal_width);
-
-        // Give the activity description panel a name that's unique within the
-        // current overall cursive display
-        let desc = format!("<activity description #{}>", state.profile_stack.len());
 
         // Bubble up useful data for following steps
         (
             state.display_config,
             (activity_infos, activity_descs),
             footer,
-            desc.into(),
+            profile_id,
+            table_name,
         )
     })
 }
@@ -341,17 +349,21 @@ fn make_profile_view(
             .borrow_mut()
             .take()
             .expect("This callback may only be called once, after that the view is destroyed");
-        let (parent_percent_norm, new_activity_infos) = with_state(cursive, |state| {
+        let (parent_name, parent_percent_norm, new_activity_infos) = with_state(cursive, |state| {
             let layer = state
                 .profile_stack
                 .pop()
                 .expect("There should be a profile if this shortcut works");
-            (layer.parent_percent_norm, get_other_activities(state))
+            (
+                layer.parent_name,
+                layer.parent_percent_norm,
+                get_other_activities(state),
+            )
         });
         cursive.pop_layer();
         show_profile(
             cursive,
-            table_name.clone(),
+            parent_name,
             parent_percent_norm,
             new_activity_infos,
             Box::new(|_state| old_activity_infos),
@@ -772,11 +784,15 @@ fn description_column_width(profile_kind: ProfileKind, terminal_width: u16) -> u
 fn make_description_view(
     cursive: &mut Cursive,
     terminal_width: u16,
-    name: Rc<str>,
+    profile_id: usize,
 ) -> (
     impl View + 'static,
     impl Fn(&mut Cursive, ActivityTraceId) + Clone + 'static,
 ) {
+    // Give the activity description panel a name that's unique within the
+    // current overall cursive display
+    let name = format!("Activity description {profile_id}");
+
     // Style activity description area like the activity selector to improve the
     // visual association between them.
     let mut description_theme = cursive.current_theme().clone();
@@ -795,7 +811,7 @@ fn make_description_view(
     // Set up the description view
     let description = TextView::new("")
         .no_wrap()
-        .with_name(&*name)
+        .with_name(&name)
         .scrollable()
         .scroll_x(true);
 

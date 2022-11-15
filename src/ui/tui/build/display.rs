@@ -68,7 +68,7 @@ pub fn display_profile(
     table.set_selected_row(0);
 
     // Set up table interaction
-    const TABLE_NAME: &str = "<full-build profile>";
+    const TABLE_NAME: &str = "Full-build profile";
     let time_trace_granularity = args.time_trace_granularity;
     table.set_on_submit(move |cursive, _row, index| {
         let rel_path: Box<Path> = cursive
