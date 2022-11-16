@@ -15,10 +15,6 @@ edition = "2021"
 unstable_interner_stats = []
 
 [dependencies]
-# Used to explain what happened in crashes -> better debugging...
-# TODO: Switch to std's Backtrace once rust 1.65 is old enough
-backtrace = "0.3"
-
 # Used to format ISO dates from clang Unix timestamps
 chrono = "0.4"
 

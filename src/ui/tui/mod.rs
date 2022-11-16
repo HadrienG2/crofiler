@@ -16,6 +16,7 @@ use cursive::{views::Dialog, Cursive};
 use decorum::Finite;
 use log::{error, LevelFilter};
 use std::{
+    backtrace::Backtrace,
     fmt::Write,
     panic::{self, AssertUnwindSafe, PanicInfo},
 };
@@ -181,7 +182,7 @@ fn enable_panic_logging() {
         }
 
         // Log previous message along with a backtrace
-        error!("{message}\n{:?}", backtrace::Backtrace::new());
+        error!("{message}\n{:?}", Backtrace::capture());
 
         // Leave the rest up to the default panic hook
         default_panic_hook(panic_info);
