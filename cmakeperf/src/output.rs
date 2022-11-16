@@ -1,6 +1,6 @@
 //! Full-build profiling facilities
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{io, path::Path, time::Duration};
 use thiserror::Error;
 
@@ -42,14 +42,14 @@ pub enum ProfileLoadError {
 ///
 /// This summarizes the compilation performance of one compilation unit.
 ///
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UnitProfile {
     /// Relative path to the source file, starting from the build directory
     #[serde(rename = "file")]
     rel_path: Box<Path>,
 
     /// Maximum observed RSS memory usage during compilation, in bytes
-    max_rss: usize,
+    max_rss: u64,
 
     /// Wall-clock time taken to compile this file, if measured
     #[serde(rename = "time")]
@@ -57,13 +57,26 @@ pub struct UnitProfile {
 }
 //
 impl UnitProfile {
+    /// Create a new unit profile
+    pub fn new(
+        rel_path: impl Into<Box<Path>>,
+        max_rss_bytes: u64,
+        wall_time: Option<Duration>,
+    ) -> Self {
+        Self {
+            rel_path: rel_path.into(),
+            max_rss: max_rss_bytes,
+            wall_time_secs: wall_time.map(|time| time.as_secs_f32()),
+        }
+    }
+
     /// Path to the file, starting from the build directory
     pub fn rel_path(&self) -> &Path {
         &self.rel_path
     }
 
     /// Maximum observed memory usage in bytes
-    pub fn max_rss_bytes(&self) -> usize {
+    pub fn max_rss_bytes(&self) -> u64 {
         self.max_rss
     }
 
