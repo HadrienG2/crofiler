@@ -372,7 +372,7 @@ impl<'monitor> MonitorClient<'monitor> {
     /// Update the value of the elapsed counter
     fn update_elapsed(&mut self, update: impl FnOnce(usize) -> usize) -> Result<(), MustStop> {
         // Handle stop signal
-        if self.stopped.raised() {
+        if self.stopped.must_stop() {
             return Err(MustStop);
         }
 
@@ -405,7 +405,7 @@ impl<'word> StopClient<'word> {
     }
 
     /// Check if we've been asked to stop
-    pub fn raised(&self) -> bool {
+    pub fn must_stop(&self) -> bool {
         let raised = (self.word.load(Ordering::Relaxed) & self.mask) == 0;
         if raised {
             atomic::fence(Ordering::Acquire);
@@ -434,7 +434,7 @@ mod tests {
         let flag = StopClient::new(&word, mask);
         assert_eq!(word.load(Ordering::Relaxed), init);
         assert_eq!(flag.mask, mask);
-        assert_eq!(flag.raised(), (init & flag.mask) == 0);
+        assert_eq!(flag.must_stop(), (init & flag.mask) == 0);
         TestResult::passed()
     }
 

@@ -209,7 +209,7 @@ impl<'monitor> MonitorServer<'monitor> {
 
     /// Kill all jobs
     pub fn kill_all(&mut self) {
-        self.stop_server.raise_all();
+        self.stop_server.stop_all();
     }
 
     /// Refresh system monitor and check available memory
@@ -229,7 +229,7 @@ impl<'monitor> MonitorServer<'monitor> {
         self.last_available_memory = Some(available_memory);
         let newly_used_memory = last_available_memory.saturating_sub(available_memory);
         if newly_used_memory > self.oom_threshold {
-            let live_threads = self.stop_server.num_cleared() as u64;
+            let live_threads = self.stop_server.num_active() as u64;
             let old_margin_per_thread = self.oom_threshold / live_threads;
             let new_margin_per_thread = newly_used_memory / live_threads + 1;
             log::warn!(
@@ -245,14 +245,14 @@ impl<'monitor> MonitorServer<'monitor> {
     fn handle_oom_and_termination(&mut self, available_memory: u64) -> MonitorStatus {
         // Handle out-of-memory conditions
         if available_memory < self.oom_threshold {
-            let old_live_threads = self.stop_server.num_cleared() as u64;
+            let old_live_threads = self.stop_server.num_active() as u64;
             let youngest_alive_worker = self
                 .stop_server
-                .enumerate_cleared()
+                .enumerate_active()
                 // Relaxed is fine here since we're not reading `elapsed` to synchronize
                 .min_by_key(|&idx| self.monitor.elapsed[idx].load(Ordering::Relaxed))
                 .expect("There should be at least one worker thread");
-            self.stop_server.raise(youngest_alive_worker);
+            self.stop_server.stop(youngest_alive_worker);
             let new_live_threads = old_live_threads - 1;
             self.oom_threshold = self.oom_threshold / old_live_threads * new_live_threads;
             log::warn!(
@@ -310,14 +310,14 @@ impl<'flags> StopServer<'flags> {
     }
 
     /// Count how many workers have not been stopped yet
-    pub fn num_cleared(&self) -> usize {
+    pub fn num_active(&self) -> usize {
         self.word_values()
             .map(|word| word.count_ones() as usize)
             .sum()
     }
 
     /// Iterate over workers that haven't been stopped yet, return their indices
-    pub fn enumerate_cleared(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn enumerate_active(&self) -> impl Iterator<Item = usize> + '_ {
         self.word_values()
             .enumerate()
             .flat_map(|(word_idx, mut word_value)| {
@@ -335,17 +335,16 @@ impl<'flags> StopServer<'flags> {
     }
 
     /// Ask a worker to stop
-    pub fn raise(&self, idx: usize) {
+    pub fn stop(&self, idx: usize) {
         let (word, mask) = self.word_and_mask(idx);
-        let old_word = word.fetch_and(!mask, Ordering::Release);
-        assert!(
-            old_word & mask != 0,
-            "Attempted to raise an already raised flag"
-        );
+        // Relaxed load/store cycle is fine since only the main thread writes
+        let old_word = word.load(Ordering::Relaxed);
+        assert!(old_word & mask != 0, "Attempted to stop a worker twice");
+        word.store(old_word & !mask, Ordering::Release);
     }
 
     /// Ask all workers to stop
-    pub fn raise_all(&self) {
+    pub fn stop_all(&self) {
         atomic::fence(Ordering::Release);
         for word in &self.0 .0 {
             word.store(0, Ordering::Relaxed);

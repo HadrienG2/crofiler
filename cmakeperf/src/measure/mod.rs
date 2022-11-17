@@ -241,10 +241,9 @@ const BITS_PER_USIZE: usize = std::mem::size_of::<usize>() * 8;
 
 /// Polling interval in seconds
 ///
-/// This is enough to get execution times with 0.1s precision, and seems
-/// empirically to also be enough for good RAM measurements.
+/// This is empirically enough to measure max-RSS with ~100MB precision.
 ///
-const POLLING_INTERVAL: Duration = Duration::from_millis(33);
+const POLLING_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
 #[cfg(test)]
 mod tests {
@@ -266,15 +265,15 @@ mod tests {
         let clients = flags.clients().collect::<Vec<_>>();
         let server = flags.server();
         //
-        assert_eq!(server.num_cleared(), len);
-        assert_eq!(server.enumerate_cleared().count(), len);
-        for (expected, actual) in server.enumerate_cleared().enumerate() {
+        assert_eq!(server.num_active(), len);
+        assert_eq!(server.enumerate_active().count(), len);
+        for (expected, actual) in server.enumerate_active().enumerate() {
             assert_eq!(expected, actual);
         }
         //
         assert_eq!(clients.len(), len);
         for client in clients {
-            assert!(!client.raised());
+            assert!(!client.must_stop());
         }
     }
 
@@ -294,42 +293,42 @@ mod tests {
         let server = flags.server();
 
         // Raise the first flag
-        server.raise(raise_idx_1);
-        assert_eq!(server.num_cleared(), len - 1);
-        assert_eq!(server.enumerate_cleared().count(), len - 1);
+        server.stop(raise_idx_1);
+        assert_eq!(server.num_active(), len - 1);
+        assert_eq!(server.enumerate_active().count(), len - 1);
         for (expected, actual) in
-            ((0..raise_idx_1).chain(raise_idx_1 + 1..len)).zip(server.enumerate_cleared())
+            ((0..raise_idx_1).chain(raise_idx_1 + 1..len)).zip(server.enumerate_active())
         {
             assert_eq!(expected, actual);
         }
         for (idx, client) in clients.iter().enumerate() {
-            assert_eq!(client.raised(), idx == raise_idx_1);
+            assert_eq!(client.must_stop(), idx == raise_idx_1);
         }
 
         // Raise the second flag
-        server.raise(raise_idx_2);
-        assert_eq!(server.num_cleared(), len - 2);
-        assert_eq!(server.enumerate_cleared().count(), len - 2);
+        server.stop(raise_idx_2);
+        assert_eq!(server.num_active(), len - 2);
+        assert_eq!(server.enumerate_active().count(), len - 2);
         if raise_idx_1 > raise_idx_2 {
             std::mem::swap(&mut raise_idx_1, &mut raise_idx_2);
         }
         for (expected, actual) in ((0..raise_idx_1)
             .chain(raise_idx_1 + 1..raise_idx_2)
             .chain(raise_idx_2 + 1..len))
-        .zip(server.enumerate_cleared())
+        .zip(server.enumerate_active())
         {
             assert_eq!(expected, actual);
         }
         for (idx, client) in clients.iter().enumerate() {
-            assert_eq!(client.raised(), idx == raise_idx_1 || idx == raise_idx_2);
+            assert_eq!(client.must_stop(), idx == raise_idx_1 || idx == raise_idx_2);
         }
 
         // Raise all the remaining flags
-        server.raise_all();
-        assert_eq!(server.num_cleared(), 0);
-        assert_eq!(server.enumerate_cleared().count(), 0);
+        server.stop_all();
+        assert_eq!(server.num_active(), 0);
+        assert_eq!(server.enumerate_active().count(), 0);
         for client in clients {
-            assert!(client.raised());
+            assert!(client.must_stop());
         }
         TestResult::passed()
     }
