@@ -3,7 +3,10 @@
 mod main;
 mod worker;
 
-use self::{main::MonitorServer, worker::MonitorClient};
+use self::{
+    main::{MonitorServer, StopServer},
+    worker::{MonitorClient, StopClient},
+};
 use crate::commands::{CompilationDatabase, DatabaseEntry};
 use crossbeam_deque::{Injector, Stealer, Worker};
 use crossbeam_utils::CachePadded;
@@ -69,7 +72,7 @@ impl Measurement {
 //
 impl Drop for Measurement {
     fn drop(&mut self) {
-        self.kill.store(true, Ordering::Relaxed);
+        self.kill.store(true, Ordering::Release);
         for main_thread in self.main_thread.take() {
             std::mem::drop(main_thread.join());
         }
@@ -98,7 +101,12 @@ impl WorkQueue {
         }
     }
 
-    /// Generate worker interfaces
+    /// Set up worker-local queues, used to build WorkReceivers
+    ///
+    /// It would be nice to directly return WorkReceivers from this method, but
+    /// with the current borrow checker rules, that would result in an
+    /// undesirable long-lived mutable borrow of the WorkQueue.
+    ///
     pub fn local_queues(
         &mut self,
         concurrency: usize,
@@ -118,7 +126,7 @@ impl WorkQueue {
     }
 }
 
-/// Shared state for out-of-memory handling
+/// Shared state for system monitoring and OOM handling
 struct Monitor {
     /// Shared system monitor state
     system: RwLock<System>,
@@ -127,7 +135,10 @@ struct Monitor {
     elapsed: Vec<CachePadded<AtomicUsize>>,
 
     /// Request for workers to stop what they are doing
-    stopped: Vec<AtomicBool>,
+    stop: StopFlags,
+
+    /// Live thread counter
+    alive: AtomicUsize,
 }
 //
 impl Monitor {
@@ -138,31 +149,95 @@ impl Monitor {
             elapsed: std::iter::repeat_with(|| CachePadded::new(AtomicUsize::new(0)))
                 .take(concurrency)
                 .collect(),
-            stopped: std::iter::repeat_with(|| AtomicBool::new(false))
-                .take(concurrency)
-                .collect(),
+            stop: StopFlags::new(concurrency),
+            alive: AtomicUsize::new(concurrency),
         }
     }
 
     /// Get back access to the concurrency
     pub fn concurrency(&self) -> usize {
-        debug_assert_eq!(self.elapsed.len(), self.stopped.len());
         self.elapsed.len()
     }
 
-    /// Generate main thread interface
+    /// Set up main thread interface
     pub fn server(&self) -> MonitorServer {
         MonitorServer::new(self)
     }
 
-    /// Generate worker interfaces
+    /// Set up worker interfaces
     pub fn clients(&self) -> impl Iterator<Item = MonitorClient> {
+        debug_assert_eq!(self.elapsed.len(), self.stop.clients().count());
         self.elapsed
             .iter()
-            .zip(self.stopped.iter())
-            .map(|(elapsed, stop)| MonitorClient::new(&self.system, &elapsed, stop))
+            .zip(self.stop.clients())
+            .map(|(elapsed, stop_client)| MonitorClient::new(self, &elapsed, stop_client))
     }
 }
+
+/// Vector of atomic flags that can be raised to request threads to stop
+///
+/// A stop flag can only be raised by the main thread, and once it has been
+/// raised, it will remain raised for the rest of its lifetime.
+///
+struct StopFlags(Vec<AtomicUsize>);
+//
+impl StopFlags {
+    /// Create a set of stop flags
+    pub fn new(len: usize) -> Self {
+        let trailing_bits = len % BITS_PER_USIZE;
+        Self(
+            std::iter::repeat_with(|| AtomicUsize::new(usize::MAX))
+                .take(len / BITS_PER_USIZE)
+                .chain((trailing_bits != 0).then_some(AtomicUsize::new((1 << trailing_bits) - 1)))
+                .collect(),
+        )
+    }
+
+    /// Set up main thread interface
+    pub fn server(&self) -> StopServer {
+        StopServer::new(self)
+    }
+
+    /// Set up worker interfaces
+    pub fn clients(&self) -> impl Iterator<Item = StopClient> + '_ {
+        self.0.iter().enumerate().flat_map(|(idx, word)| {
+            // Count worker flags within the active words
+            let word_value = word.load(Ordering::Relaxed);
+            let is_last = idx == self.0.len() - 1;
+            let mut num_iters = if !is_last {
+                debug_assert_eq!(
+                    word_value,
+                    usize::MAX,
+                    "This should only be called during initialization"
+                );
+                BITS_PER_USIZE
+            } else {
+                debug_assert_eq!(
+                    word_value.leading_zeros(),
+                    word_value.count_zeros(),
+                    "This should only be called during initialization"
+                );
+                word_value.trailing_ones() as usize
+            };
+
+            // Emit clients for each worker
+            let mut mask = 1;
+            std::iter::from_fn(move || {
+                (num_iters != 0).then(|| {
+                    let old_mask = mask;
+                    if num_iters > 1 {
+                        mask <<= 1
+                    };
+                    num_iters -= 1;
+                    StopClient::new(word, old_mask)
+                })
+            })
+        })
+    }
+}
+//
+/// Number of bits in an `usize` integer
+const BITS_PER_USIZE: usize = std::mem::size_of::<usize>() * 8;
 
 /// Polling interval in seconds
 ///
@@ -171,17 +246,94 @@ impl Monitor {
 ///
 const POLLING_INTERVAL: Duration = Duration::from_millis(33);
 
-/// Out-of-memory threshold, in bytes/thread
-///
-/// Out-of-memory handling will be triggered when the amount of available RAM
-/// becomes lower than this times the number of worker threads, resulting in one
-/// of the worker threads being killed.
-///
-/// This should be tuned a little higher than the RAM monitoring resolution
-/// (maximum RSS increase observed from one process poll to the next). It will
-/// be auto-tuned upwards if it turns out to be too optimistic.
-///
-static OOM_MARGIN_PER_THREAD: AtomicUsize = AtomicUsize::new(110_000_000);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
 
-// FIXME: Add unit tests ? Could do that by having a dummy binary that consumes
-//        X memory during Y time.
+    #[quickcheck]
+    fn stop_flags_init(len: u8) {
+        // Extract useful parameters
+        let len = len as usize;
+        let has_trailer = (len % BITS_PER_USIZE) != 0;
+        let num_full_words = len / BITS_PER_USIZE;
+
+        // Check initial state
+        let flags = StopFlags::new(len);
+        assert_eq!(flags.0.len(), num_full_words + has_trailer as usize);
+        //
+        let clients = flags.clients().collect::<Vec<_>>();
+        let server = flags.server();
+        //
+        assert_eq!(server.num_cleared(), len);
+        assert_eq!(server.enumerate_cleared().count(), len);
+        for (expected, actual) in server.enumerate_cleared().enumerate() {
+            assert_eq!(expected, actual);
+        }
+        //
+        assert_eq!(clients.len(), len);
+        for client in clients {
+            assert!(!client.raised());
+        }
+    }
+
+    #[quickcheck]
+    fn stop_flags_raise(len: u8, raise_idx_1: u8, raise_idx_2: u8) -> TestResult {
+        // Ignore invalid requests
+        if raise_idx_1 >= len || raise_idx_2 >= len || raise_idx_1 == raise_idx_2 {
+            return TestResult::discard();
+        }
+
+        // Set things up
+        let len = len as usize;
+        let mut raise_idx_1 = raise_idx_1 as usize;
+        let mut raise_idx_2 = raise_idx_2 as usize;
+        let flags = StopFlags::new(len);
+        let clients = flags.clients().collect::<Vec<_>>();
+        let server = flags.server();
+
+        // Raise the first flag
+        server.raise(raise_idx_1);
+        assert_eq!(server.num_cleared(), len - 1);
+        assert_eq!(server.enumerate_cleared().count(), len - 1);
+        for (expected, actual) in
+            ((0..raise_idx_1).chain(raise_idx_1 + 1..len)).zip(server.enumerate_cleared())
+        {
+            assert_eq!(expected, actual);
+        }
+        for (idx, client) in clients.iter().enumerate() {
+            assert_eq!(client.raised(), idx == raise_idx_1);
+        }
+
+        // Raise the second flag
+        server.raise(raise_idx_2);
+        assert_eq!(server.num_cleared(), len - 2);
+        assert_eq!(server.enumerate_cleared().count(), len - 2);
+        if raise_idx_1 > raise_idx_2 {
+            std::mem::swap(&mut raise_idx_1, &mut raise_idx_2);
+        }
+        for (expected, actual) in ((0..raise_idx_1)
+            .chain(raise_idx_1 + 1..raise_idx_2)
+            .chain(raise_idx_2 + 1..len))
+        .zip(server.enumerate_cleared())
+        {
+            assert_eq!(expected, actual);
+        }
+        for (idx, client) in clients.iter().enumerate() {
+            assert_eq!(client.raised(), idx == raise_idx_1 || idx == raise_idx_2);
+        }
+
+        // Raise all the remaining flags
+        server.raise_all();
+        assert_eq!(server.num_cleared(), 0);
+        assert_eq!(server.enumerate_cleared().count(), 0);
+        for client in clients {
+            assert!(client.raised());
+        }
+        TestResult::passed()
+    }
+
+    // FIXME: Add more unit tests ? Could do that by having a dummy binary that consumes
+    //        X memory during Y time.
+}

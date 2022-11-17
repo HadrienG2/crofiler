@@ -1,15 +1,16 @@
 //! Worker threads measuring build performance
 
-use super::{WorkQueue, POLLING_INTERVAL};
+use super::{Monitor, WorkQueue, POLLING_INTERVAL};
 use crate::{commands::DatabaseEntry, output::UnitProfile};
 use crossbeam_deque::{Injector, Stealer, Worker};
 use std::{
     io::{self, Read},
+    panic::AssertUnwindSafe,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{self, AtomicUsize, Ordering},
         mpsc::Sender,
-        RwLock,
+        RwLockReadGuard,
     },
     time::Instant,
 };
@@ -24,14 +25,22 @@ pub(super) fn run(
     mut monitor_client: MonitorClient,
     measure_time: bool,
 ) {
-    let mut tree = ProcessTree::new();
-    for job in input {
-        let result = process_job(&mut tree, job, &mut monitor_client, measure_time);
-        let failed = result.is_err();
-        output.send(result).expect("Main thread has crashed");
-        if failed {
-            break;
+    let output = AssertUnwindSafe(output);
+    let mut monitor_client_ref = AssertUnwindSafe(&mut monitor_client);
+    let maybe_panic = std::panic::catch_unwind(move || {
+        let mut tree = ProcessTree::new();
+        for job in input {
+            let result = process_job(&mut tree, job, &mut monitor_client_ref, measure_time);
+            let failed = result.is_err();
+            output.send(result).expect("Main thread has crashed");
+            if failed {
+                break;
+            }
         }
+    });
+    monitor_client.notify_shutdown();
+    if let Err(panic) = maybe_panic {
+        std::panic::resume_unwind(panic);
     }
 }
 
@@ -55,10 +64,7 @@ fn process_job(
     let exit_status = loop {
         match process.wait_timeout(POLLING_INTERVAL) {
             Ok(None) => {
-                let system = monitor_client
-                    .system
-                    .read()
-                    .expect("System monitor has been poisoned");
+                let system = monitor_client.system();
                 tree.refresh(&system);
                 if let Err(MustStop) = monitor_client.keep_job() {
                     tree.kill(&system);
@@ -309,7 +315,7 @@ impl Iterator for WorkReceiver<'_> {
 /// Worker interface for out-of-memory handling
 pub(super) struct MonitorClient<'monitor> {
     /// System monitor
-    system: &'monitor RwLock<System>,
+    monitor: &'monitor Monitor,
 
     /// Time spent by this worker on its current job
     elapsed: usize,
@@ -318,18 +324,18 @@ pub(super) struct MonitorClient<'monitor> {
     elapsed_shared: &'monitor AtomicUsize,
 
     /// Request from the main thread to stop this thread
-    stopped: &'monitor AtomicBool,
+    stopped: StopClient<'monitor>,
 }
 //
 impl<'monitor> MonitorClient<'monitor> {
     /// Set up the worker interface
     pub fn new(
-        system: &'monitor RwLock<System>,
+        monitor: &'monitor Monitor,
         elapsed: &'monitor AtomicUsize,
-        stopped: &'monitor AtomicBool,
+        stopped: StopClient<'monitor>,
     ) -> Self {
         Self {
-            system: system,
+            monitor,
             elapsed: 0,
             elapsed_shared: elapsed,
             stopped,
@@ -346,15 +352,32 @@ impl<'monitor> MonitorClient<'monitor> {
         self.update_elapsed(|_| 0)
     }
 
+    /// Access the system monitor
+    pub fn system(&self) -> RwLockReadGuard<'monitor, System> {
+        self.monitor
+            .system
+            .read()
+            .expect("System monitor has been poisoned")
+    }
+
+    /// Notify the main thread that this worker is shutting down
+    pub fn notify_shutdown(&mut self) {
+        let prev_live = self.monitor.alive.fetch_sub(1, Ordering::Release);
+        assert!(
+            prev_live > 0,
+            "There were more shutdown notifications than threads!"
+        );
+    }
+
     /// Update the value of the elapsed counter
     fn update_elapsed(&mut self, update: impl FnOnce(usize) -> usize) -> Result<(), MustStop> {
         // Handle stop signal
-        let stopped = self.stopped.load(Ordering::Relaxed);
-        if stopped {
+        if self.stopped.raised() {
             return Err(MustStop);
         }
 
         // If no OOM occured, updated elapsed time counter as scheduled
+        // The write can be Relaxed since we're not sending any other information
         self.elapsed = update(self.elapsed);
         self.elapsed_shared.store(self.elapsed, Ordering::Relaxed);
         Ok(())
@@ -365,4 +388,56 @@ impl<'monitor> MonitorClient<'monitor> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MustStop;
 
-// FIXME: Add tests
+/// Notification channel for the main thread to stop us
+pub(super) struct StopClient<'word> {
+    /// Word within which the flag is located
+    word: &'word AtomicUsize,
+
+    /// Bit mask to test or set the flag
+    mask: usize,
+}
+//
+impl<'word> StopClient<'word> {
+    /// Create a flag accessor
+    pub fn new(word: &'word AtomicUsize, mask: usize) -> Self {
+        debug_assert_eq!(mask.count_ones(), 1, "Not a valid flag mask");
+        Self { word, mask }
+    }
+
+    /// Check if we've been asked to stop
+    pub fn raised(&self) -> bool {
+        let raised = (self.word.load(Ordering::Relaxed) & self.mask) == 0;
+        if raised {
+            atomic::fence(Ordering::Acquire);
+        }
+        raised
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::measure::BITS_PER_USIZE;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    #[quickcheck]
+    fn stop_client(init: usize, bit_idx: u8) -> TestResult {
+        // Ignore invalid bit indices
+        if bit_idx as usize >= BITS_PER_USIZE {
+            return TestResult::discard();
+        }
+
+        // Test stop client
+        let word = AtomicUsize::new(init);
+        let mask = 1 << bit_idx;
+        let flag = StopClient::new(&word, mask);
+        assert_eq!(word.load(Ordering::Relaxed), init);
+        assert_eq!(flag.mask, mask);
+        assert_eq!(flag.raised(), (init & flag.mask) == 0);
+        TestResult::passed()
+    }
+
+    // FIXME: Add more unit tests ? Could do that by having a dummy binary that consumes
+    //        X memory during Y time.
+}

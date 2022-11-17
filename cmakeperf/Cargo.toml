@@ -32,3 +32,8 @@ thiserror = "1.0"
 
 # Used to monitor and cancel build processes
 wait-timeout = "0.2"
+
+[dev-dependencies]
+# Property-based testing
+quickcheck = "1"
+quickcheck_macros = "1"

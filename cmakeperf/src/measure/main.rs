@@ -2,7 +2,7 @@
 
 use super::{
     worker::{self, JobError, WorkReceiver},
-    Monitor, WorkQueue, OOM_MARGIN_PER_THREAD, POLLING_INTERVAL,
+    Monitor, StopFlags, WorkQueue, BITS_PER_USIZE, POLLING_INTERVAL,
 };
 use crate::commands::DatabaseEntry;
 use std::{
@@ -13,7 +13,7 @@ use std::{
     panic::UnwindSafe,
     path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{self, AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, RecvTimeoutError},
         Arc,
     },
@@ -69,6 +69,7 @@ pub(super) fn run(
             loop {
                 // Handle external request to terminate the job
                 if kill.load(Ordering::Relaxed) {
+                    atomic::fence(Ordering::Acquire);
                     monitor_server.kill_all();
                     return Err(MeasureError::Killed);
                 }
@@ -98,10 +99,10 @@ pub(super) fn run(
 
                     // System monitor wakeup
                     Err(RecvTimeoutError::Timeout) => {
-                        // FIXME: It seems Disconnected is broken for some
-                        //        reason, try offloading that job to Monitor
-                        if let Err(NoThreadLeft) = monitor_server.handle_oom() {
-                            return Err(MeasureError::OutOfMemory);
+                        match monitor_server.update() {
+                            MonitorStatus::Running => {}
+                            MonitorStatus::KilledEveryone => return Err(MeasureError::OutOfMemory),
+                            MonitorStatus::AllThreadsDone => break,
                         }
                         last_poll = Instant::now();
                         next_poll = last_poll + POLLING_INTERVAL;
@@ -164,10 +165,13 @@ fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) -> usize {
     })
 }
 
-/// Main thread interface for out of memory handling
+/// Main thread interface for system monitoring and out of memory handling
 pub(super) struct MonitorServer<'monitor> {
     /// Shared monitor state
     monitor: &'monitor Monitor,
+
+    /// Iterface to ask threads to stop
+    stop_server: StopServer<'monitor>,
 
     /// Out of memory threshold in bytes
     ///
@@ -187,8 +191,8 @@ impl<'monitor> MonitorServer<'monitor> {
     pub(super) fn new(monitor: &'monitor Monitor) -> Self {
         Self {
             monitor,
-            oom_threshold: OOM_MARGIN_PER_THREAD.load(Ordering::Relaxed) as u64
-                * monitor.concurrency() as u64,
+            stop_server: monitor.stop.server(),
+            oom_threshold: OOM_MARGIN_PER_THREAD * monitor.concurrency() as u64,
             refresh_kind: RefreshKind::new()
                 .with_memory()
                 .with_processes(ProcessRefreshKind::new()),
@@ -196,77 +200,171 @@ impl<'monitor> MonitorServer<'monitor> {
         }
     }
 
-    /// Check for out-of-memory conditions and handle them
-    pub fn handle_oom(&mut self) -> Result<(), NoThreadLeft> {
-        // Check available memory
-        let available_memory = {
-            let mut guard = self
-                .monitor
-                .system
-                .write()
-                .expect("System monitor has been poisoned");
-            guard.refresh_specifics(self.refresh_kind);
-            guard.available_memory()
-        };
+    /// Update system monitor state and handle job lifecycle events
+    pub fn update(&mut self) -> MonitorStatus {
+        let available_memory = self.refresh_and_check_memory();
+        self.update_oom_threshold(available_memory);
+        self.handle_oom_and_termination(available_memory)
+    }
 
-        // Update OOM threshold if the former one was too optimistic
+    /// Kill all jobs
+    pub fn kill_all(&mut self) {
+        self.stop_server.raise_all();
+    }
+
+    /// Refresh system monitor and check available memory
+    fn refresh_and_check_memory(&mut self) -> u64 {
+        let mut guard = self
+            .monitor
+            .system
+            .write()
+            .expect("System monitor has been poisoned");
+        guard.refresh_specifics(self.refresh_kind);
+        guard.available_memory()
+    }
+
+    /// Tighten OOM threshold if new measurements call for it
+    fn update_oom_threshold(&mut self, available_memory: u64) {
         let last_available_memory = self.last_available_memory.unwrap_or(available_memory);
         self.last_available_memory = Some(available_memory);
         let newly_used_memory = last_available_memory.saturating_sub(available_memory);
         if newly_used_memory > self.oom_threshold {
-            let margin_per_thread = OOM_MARGIN_PER_THREAD.load(Ordering::Relaxed) as u64;
-            let concurrency = self.oom_threshold / margin_per_thread;
-            let new_margin_per_thread = newly_used_memory / concurrency + 1;
+            let live_threads = self.stop_server.num_cleared() as u64;
+            let old_margin_per_thread = self.oom_threshold / live_threads;
+            let new_margin_per_thread = newly_used_memory / live_threads + 1;
             log::warn!(
                 "OOM threshold of {}MB/thread is too low, observed +{}MB/thread across monitor tick. Moving to that.",
-                margin_per_thread / 1_000_000,
+                old_margin_per_thread / 1_000_000,
                 new_margin_per_thread / 1_000_000,
             );
-            OOM_MARGIN_PER_THREAD.store(new_margin_per_thread as usize, Ordering::Relaxed);
-            self.oom_threshold = new_margin_per_thread * concurrency;
+            self.oom_threshold = new_margin_per_thread * live_threads;
         }
+    }
 
-        // Handle OOM conditions
+    /// Handle out-of-memory and worker termination conditions
+    fn handle_oom_and_termination(&mut self, available_memory: u64) -> MonitorStatus {
+        // Handle out-of-memory conditions
         if available_memory < self.oom_threshold {
+            let old_live_threads = self.stop_server.num_cleared() as u64;
             let youngest_alive_worker = self
-                .monitor
-                .stopped
-                .iter()
-                .zip(self.monitor.elapsed.iter())
-                .enumerate()
-                .filter_map(|(idx, (stopped, elapsed))| {
-                    if stopped.load(Ordering::Relaxed) {
-                        None
-                    } else {
-                        Some((idx, elapsed))
-                    }
-                })
-                .min_by_key(|(_idx, elapsed)| elapsed.load(Ordering::Relaxed))
-                .expect("There should be at least one worker thread")
-                .0;
-            self.monitor.stopped[youngest_alive_worker].store(true, Ordering::Relaxed);
-            self.oom_threshold -= OOM_MARGIN_PER_THREAD.load(Ordering::Relaxed) as u64;
+                .stop_server
+                .enumerate_cleared()
+                // Relaxed is fine here since we're not reading `elapsed` to synchronize
+                .min_by_key(|&idx| self.monitor.elapsed[idx].load(Ordering::Relaxed))
+                .expect("There should be at least one worker thread");
+            self.stop_server.raise(youngest_alive_worker);
+            let new_live_threads = old_live_threads - 1;
+            self.oom_threshold = self.oom_threshold / old_live_threads * new_live_threads;
             log::warn!(
                 "Killed worker thread #{youngest_alive_worker} due to out-of-memory condition"
             );
-            if self.oom_threshold == 0 {
-                return Err(NoThreadLeft);
+            if new_live_threads == 0 {
+                atomic::fence(Ordering::Acquire);
+                return MonitorStatus::KilledEveryone;
             }
         }
-        Ok(())
-    }
 
-    /// Kill all jobs
-    pub fn kill_all(&self) {
-        for stop in &self.monitor.stopped {
-            stop.store(true, Ordering::Relaxed);
+        // Make sure there still are threads left
+        if self.monitor.alive.load(Ordering::Relaxed) == 0 {
+            atomic::fence(Ordering::Acquire);
+            MonitorStatus::AllThreadsDone
+        } else {
+            MonitorStatus::Running
         }
     }
 }
 //
 /// Error returned when all threads have been killed due to OOM
+#[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NoThreadLeft;
+pub enum MonitorStatus {
+    /// There still are running threads
+    Running,
+
+    /// We just killed the last thread, which means some jobs won't be done
+    KilledEveryone,
+
+    /// All the threads stopped on their own, job over ?
+    AllThreadsDone,
+}
+
+/// Default out-of-memory threshold, in bytes/thread
+///
+/// Out-of-memory handling will be triggered when the amount of available RAM
+/// becomes lower than this times the number of worker threads, resulting in one
+/// of the worker threads being killed.
+///
+/// This should be tuned a little higher than the RAM monitoring resolution
+/// (maximum RSS increase observed from one process poll to the next). It will
+/// be auto-tuned upwards if it turns out to be too optimistic.
+///
+const OOM_MARGIN_PER_THREAD: u64 = 110_000_000;
+
+/// Main thread interface to StopFlags
+pub(super) struct StopServer<'flags>(&'flags StopFlags);
+//
+impl<'flags> StopServer<'flags> {
+    /// Set up the main thread interface
+    pub fn new(flags: &'flags StopFlags) -> Self {
+        Self(flags)
+    }
+
+    /// Count how many workers have not been stopped yet
+    pub fn num_cleared(&self) -> usize {
+        self.word_values()
+            .map(|word| word.count_ones() as usize)
+            .sum()
+    }
+
+    /// Iterate over workers that haven't been stopped yet, return their indices
+    pub fn enumerate_cleared(&self) -> impl Iterator<Item = usize> + '_ {
+        self.word_values()
+            .enumerate()
+            .flat_map(|(word_idx, mut word_value)| {
+                let mut bit_offset = word_idx * BITS_PER_USIZE;
+                std::iter::from_fn(move || {
+                    if word_value == 0 {
+                        return None;
+                    }
+                    let offset_after_first_one = word_value.trailing_zeros() as usize + 1;
+                    bit_offset += offset_after_first_one;
+                    word_value >>= offset_after_first_one;
+                    Some(bit_offset - 1)
+                })
+            })
+    }
+
+    /// Ask a worker to stop
+    pub fn raise(&self, idx: usize) {
+        let (word, mask) = self.word_and_mask(idx);
+        let old_word = word.fetch_and(!mask, Ordering::Release);
+        assert!(
+            old_word & mask != 0,
+            "Attempted to raise an already raised flag"
+        );
+    }
+
+    /// Ask all workers to stop
+    pub fn raise_all(&self) {
+        atomic::fence(Ordering::Release);
+        for word in &self.0 .0 {
+            word.store(0, Ordering::Relaxed);
+        }
+    }
+
+    /// Iterate over the value of inner atomic words
+    fn word_values(&self) -> impl Iterator<Item = usize> + '_ {
+        // Relaxed is fine since only the main thread can write to this
+        self.0 .0.iter().map(|a| a.load(Ordering::Relaxed))
+    }
+
+    /// Determine the word and bitmask associated with a certain bit
+    fn word_and_mask(&self, idx: usize) -> (&AtomicUsize, usize) {
+        let word = &self.0 .0[idx / BITS_PER_USIZE];
+        let mask = 1 << (idx % BITS_PER_USIZE);
+        (word, mask)
+    }
+}
 
 // FIXME: Add unit tests ? Could do that by having a dummy binary that consumes
 //        X memory during Y time.

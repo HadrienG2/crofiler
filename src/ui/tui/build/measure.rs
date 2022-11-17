@@ -174,7 +174,7 @@ impl<'cursive, 'output> MeasureHandle<'cursive, 'output> {
             step_done,
             move |result| {
                 if result.is_ok() {
-                    success2.store(true, Ordering::Relaxed);
+                    success2.store(true, Ordering::Release);
                 }
                 build_done(result)
             },
@@ -212,7 +212,7 @@ impl<'cursive, 'output> MeasureHandle<'cursive, 'output> {
 //
 impl Drop for MeasureHandle<'_, '_> {
     fn drop(&mut self) {
-        if !self.success.load(Ordering::Relaxed) {
+        if !self.success.load(Ordering::Acquire) {
             Self::restore_or_delete(self.cursive, &self.backup_path, self.output_path);
         }
     }

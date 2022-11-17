@@ -10,7 +10,7 @@ use std::{
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{self, AtomicBool, Ordering},
         Arc,
     },
     time::Duration,
@@ -340,6 +340,7 @@ impl CancelableClang {
             match wait_result {
                 Ok(None) => {
                     if self.canceled.load(Ordering::Relaxed) {
+                        atomic::fence(Ordering::Acquire);
                         break wait_result;
                     } else {
                         continue;
@@ -381,7 +382,7 @@ struct CancelTrigger(Arc<AtomicBool>);
 impl CancelTrigger {
     /// Trigger cancelation
     fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed)
+        self.0.store(true, Ordering::Release)
     }
 }
 

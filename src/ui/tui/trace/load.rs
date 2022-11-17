@@ -7,7 +7,7 @@ use std::{
     num::NonZeroU32,
     path::Path,
     sync::{
-        atomic::{self, AtomicBool},
+        atomic::{self, AtomicBool, Ordering},
         Arc,
     },
 };
@@ -24,7 +24,8 @@ pub fn show_loader(cursive: &mut Cursive, trace_path: impl AsRef<Path>) {
                 cb_sink
                     .send(Box::new(move |cursive| {
                         // Check if the load was canceled, if so do nothing
-                        if canceled.load(atomic::Ordering::Relaxed) {
+                        if canceled.load(Ordering::Relaxed) {
+                            atomic::fence(Ordering::Acquire);
                             return;
                         }
 
@@ -109,7 +110,7 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
     //
     cursive.add_layer(
         Dialog::text("Processing time trace...").button("Abort", move |cursive| {
-            canceled2.store(true, atomic::Ordering::Relaxed);
+            canceled2.store(true, atomic::Ordering::Release);
             end_wait_for_input(cursive, state);
             if cursive.screen().is_empty() {
                 cursive.quit();
