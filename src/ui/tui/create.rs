@@ -24,15 +24,9 @@ impl CreatePrompt {
     ///
     /// - manually_specified indicates that a profile was manually specified by
     ///   the user, which disabled "maybe stale" dialogs.
-    /// - full_build indicates that this is about a full-build profile, as
-    ///   opposed to a trace from a single compilation unit.
     ///
-    pub fn from_freshness(
-        freshness: ProductFreshness,
-        manually_specified: bool,
-        full_build: bool,
-    ) -> Option<Self> {
-        let mut result = match freshness {
+    pub fn from_freshness(freshness: ProductFreshness, manually_specified: bool) -> Option<Self> {
+        match freshness {
             // No profile at the expected location
             ProductFreshness::Nonexistent => Some(CreatePrompt::new_build_profile()),
 
@@ -50,11 +44,7 @@ impl CreatePrompt {
                     None
                 }
             }
-        }?;
-        if full_build {
-            result.question.push_str(Self::BUILD_PROFILE_TRAILER);
         }
-        Some(result)
     }
 
     /// Show the dialog, asking whether a new profile should be created
@@ -155,9 +145,4 @@ impl CreatePrompt {
             default_means_create: false,
         }
     }
-
-    /// Common trailer for all build profile creation questions
-    const BUILD_PROFILE_TRAILER: &'static str =
-        "\n(Measuring a build profile requires a full single-core build, \
-            during which you should minimize other system activity)";
 }

@@ -74,7 +74,7 @@ pub fn show_wizard(
             return;
         }
     };
-    let create_prompt = CreatePrompt::from_freshness(freshness, false, false);
+    let create_prompt = CreatePrompt::from_freshness(freshness, false);
 
     // Handle build profile creation requests
     if let Some(create_prompt) = create_prompt {

@@ -60,26 +60,6 @@ this, otherwise please refer to your build system's manual.
 You will also need a recent [Rust toolchain](https://www.rust-lang.org/learn/get-started)
 in order to build `crofiler` from source.
 
-#### Recommended
-
-We currently use the [`cmakeperf`](https://github.com/paulgessinger/cmakeperf)
-utility for full build profiling. Therefore, this utility should be installed
-and in `PATH` if you intend to use this feature.
-
-You can install it via `pip` like so:
-
-```bash
-# Optional, but recommended: set up a virtual environment
-python3 -m venv cmakeperf
-source cmakeperf/bin/activate
-
-# Actual installation
-pip3 install cmakeperf
-
-# If you used a virtual environement, you can make cmakeperf available in shells
-# you subsequently create with `source cmakeperf/bin/activate`
-```
-
 ### Installing `crofiler`
 
 The `crofiler` codebase is currently too fast-moving for binary distribution to

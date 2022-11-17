@@ -3,16 +3,21 @@
 use crate::ui::tui::with_state;
 use cmakeperf::{
     commands::CompilationDatabase,
-    measure::{self, BuildStep, Collect, CollectError},
+    measure::{MeasureError, Measurement},
 };
 use cursive::{
+    utils::Counter,
     views::{Dialog, LinearLayout, ProgressBar, TextView},
     Cursive, CursiveRunnable,
 };
 use std::{
     io,
+    panic::UnwindSafe,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 /// Measure a build profile, storing the result in a specific location
@@ -26,22 +31,38 @@ pub fn measure_profile(
     output_path: &Path,
     compilation_database: &CompilationDatabase,
 ) -> bool {
-    // Set up cmakeperf data collection process
-    let (mut collect, mut output) = match CollectHandle::start(cursive, output_path) {
-        Some(tuple) => tuple,
-        None => return false,
-    };
-
     // Set up and run through the progress dialog
     let outcome = {
-        let cursive = collect.cursive();
-        let layers_below_profile = cursive.screen().len();
+        // Set up shared state
         with_state(cursive, |state| {
             state.no_escape = true;
         });
+        let layers_below_profile = cursive.screen().len();
         let cb_sink = cursive.cb_sink().clone();
         let outcome = Arc::new(Mutex::new(None));
         let outcome2 = outcome.clone();
+        let progress_counter = Counter::new(0);
+        let progress_counter_2 = progress_counter.clone();
+
+        // Start data collection process
+        let mut measurement = match MeasureHandle::start(
+            cursive,
+            output_path,
+            compilation_database,
+            move || progress_counter_2.tick(1),
+            move |result| {
+                *outcome2.lock().expect("Main thread has panicked") = Some(result);
+                cb_sink
+                    .send(Box::new(Cursive::quit))
+                    .expect("Failed to exit cursive");
+            },
+        ) {
+            Some(tuple) => tuple,
+            None => return false,
+        };
+
+        // Display progress UI
+        let cursive = measurement.cursive();
         cursive.add_layer(
             Dialog::around(
                 LinearLayout::vertical()
@@ -51,24 +72,7 @@ pub fn measure_profile(
                     .child(
                         ProgressBar::new()
                             .max(compilation_database.entries().count())
-                            .with_task(move |counter| {
-                                loop {
-                                    let outcome = match output.next_step() {
-                                        Ok(BuildStep::UnitDone) => {
-                                            counter.tick(1);
-                                            continue;
-                                        }
-                                        Ok(BuildStep::BuildDone) => Ok(()),
-                                        Err(error) => Err(error),
-                                    };
-                                    *outcome2.lock().expect("Main thread has panicked") =
-                                        Some(outcome);
-                                    break;
-                                }
-                                cb_sink
-                                    .send(Box::new(Cursive::quit))
-                                    .expect("Failed to exit cursive");
-                            }),
+                            .with_value(progress_counter),
                     ),
             )
             .button("Abort", Cursive::quit),
@@ -86,21 +90,14 @@ pub fn measure_profile(
         outcome
     };
 
-    // Once we reach this point, the data collection process may either be done,
-    // have errored out, or have been aborted by the user. We now need to
-    // discriminate these various scenarios and react accordingly.
+    // Once we reach this point, the data collection process may either be done
+    // or have errored out
     let error_message = match outcome.lock() {
         Ok(mut guard) => match guard.take() {
-            // Monitoring thread read process stdout through to the end, at this
-            // point joining the process should not block.
-            Some(Ok(())) => match collect.finish() {
-                // Exit with successful status on success
-                Ok(()) => return true,
-                Err(e) => Some(format!("Failed to join cmakeperf process: {e}")),
-            },
+            // Successfully measured a build profile
+            Some(Ok(())) => return true,
 
-            // The monitoring thread errored out. I can't think of a sane
-            // situation where this should happen, but let's handle it anyway...
+            // Build profiling errored out
             Some(Err(e)) => Some(format!("Failed to collect build profile: {e}")),
 
             // The user has requested that data collection be aborted
@@ -111,23 +108,8 @@ pub fn measure_profile(
         Err(e) => Some(format!("Build profile monitoring thread panicked: {e}")),
     };
     if let Some(message) = error_message {
-        super::error(collect.cursive(), message);
+        super::error(cursive, message);
     }
-
-    // Next, try to kill the data collection process. This may race with the
-    // process completing normally in the background, which is fine, but other
-    // errors are not fine.
-    match collect.kill() {
-        Ok(()) => {}
-        Err(e)
-            if e.kind() == io::ErrorKind::InvalidInput || e.kind() == io::ErrorKind::NotFound => {}
-        Err(other) => super::error(
-            collect.cursive(),
-            format!("Failed to kill cmakeperf: {other}"),
-        ),
-    }
-
-    // Finally, exit with an error status
     false
 }
 
@@ -137,7 +119,7 @@ pub fn measure_profile(
 /// case this is dropped without seeing the whole data collection process
 /// through. This provides RAII-based data collection error & cancelation handling.
 ///
-struct CollectHandle<'cursive, 'output> {
+struct MeasureHandle<'cursive, 'output> {
     /// Cursive handle
     cursive: &'cursive mut CursiveRunnable,
 
@@ -145,40 +127,25 @@ struct CollectHandle<'cursive, 'output> {
     output_path: &'output Path,
 
     /// Path to the backup
-    backup_path: Option<Box<Path>>,
+    backup_path: Box<Path>,
+
+    /// Truth that the job has succeeded (in which case backups need not be restored)
+    success: Arc<AtomicBool>,
 
     /// Live cmakeperf data collection process
-    collect: Collect,
+    _measurement: Measurement,
 }
 //
-impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
+impl<'cursive, 'output> MeasureHandle<'cursive, 'output> {
     /// Set up the cmakeperf data collection process
     fn start(
         cursive: &'cursive mut CursiveRunnable,
         output_path: &'output Path,
-    ) -> Option<(Self, measure::Output)> {
-        // Check for cmakeperf availability
-        let error_message = match measure::find() {
-            Ok(status) if status.success() => None,
-            Ok(bad_status) => Some(format!(
-                "Found cmakeperf, but it exits with the error status {bad_status}.\n\
-                Please repair your cmakeperf installation to enable build profiling."
-            )),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Some(
-                "cmakeperf was not found, please install it or bring it into PATH \
-                to enable build profiling.\n\
-                'pip3 install cmakeperf' should do this for you, but the use of a \
-                virtual environment is recommended to avoid harmful interactions."
-                    .to_owned(),
-            ),
-            Err(e) => Some(format!(
-                "Failed to run cmakeperf for build profiling due to an I/O error: {e}"
-            )),
-        };
-        if let Some(message) = error_message {
-            super::error(cursive, message);
-            return None;
-        }
+        compilation_database: &CompilationDatabase,
+        step_done: impl FnMut() + UnwindSafe + Send + 'static,
+        build_done: impl FnOnce(Result<(), MeasureError>) + Send + 'static,
+    ) -> Option<Self> {
+        // FIXME: Ask user what kind of profile they want (memory-only or wall-time too ? What concurrency ?)
 
         // If a cmakeperf output already exists, back it up
         let backup_path = output_path.with_extension("bak").into_boxed_path();
@@ -194,46 +161,38 @@ impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
             }
         }
 
-        // Start cmakeperf
-        let (collect, output) = match Collect::start(output_path) {
-            Ok(tuple) => tuple,
-            Err(e) => {
-                super::error(cursive, format!("Failed to start cmakeperf: {e}"));
-                Self::restore_or_delete(cursive, &backup_path, output_path);
-                return None;
-            }
-        };
+        // Start data collection
+        let success = Arc::new(AtomicBool::new(false));
+        let success2 = success.clone();
+        let measurement = Measurement::start(
+            output_path,
+            compilation_database,
+            // FIXME: let user configure this
+            false,
+            // FIXME: Let user set this
+            None,
+            step_done,
+            move |result| {
+                if result.is_ok() {
+                    success2.store(true, Ordering::Relaxed);
+                }
+                build_done(result)
+            },
+        );
 
         // Emit process and stdout handles
-        Some((
-            Self {
-                cursive,
-                output_path,
-                backup_path: Some(backup_path),
-                collect,
-            },
-            output,
-        ))
+        Some(Self {
+            cursive,
+            output_path,
+            backup_path,
+            success,
+            _measurement: measurement,
+        })
     }
 
     /// Borrow the cursive handle for other uses
     fn cursive(&mut self) -> &mut CursiveRunnable {
         self.cursive
-    }
-
-    /// Wait for the cmakeperf data collection process to complete
-    fn finish(&mut self) -> Result<(), CollectError> {
-        let result = self.collect.finish();
-        if result.is_ok() {
-            // Disable the backup restore/output deletion process on successful run
-            self.backup_path = None;
-        }
-        result
-    }
-
-    // Kill the data collection process
-    fn kill(&mut self) -> io::Result<()> {
-        self.collect.kill()
     }
 
     /// Attempt to restore a full build profile backup
@@ -251,10 +210,10 @@ impl<'cursive, 'output> CollectHandle<'cursive, 'output> {
     }
 }
 //
-impl Drop for CollectHandle<'_, '_> {
+impl Drop for MeasureHandle<'_, '_> {
     fn drop(&mut self) {
-        if let Some(backup_path) = &self.backup_path {
-            Self::restore_or_delete(self.cursive, backup_path, self.output_path);
+        if !self.success.load(Ordering::Relaxed) {
+            Self::restore_or_delete(self.cursive, &self.backup_path, self.output_path);
         }
     }
 }

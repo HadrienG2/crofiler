@@ -109,7 +109,7 @@ pub fn update_profile(
             return None;
         }
     };
-    let create_prompt = CreatePrompt::from_freshness(freshness, manually_specified, true);
+    let create_prompt = CreatePrompt::from_freshness(freshness, manually_specified);
 
     // Handle build profile creation requests
     if let Some(create_prompt) = create_prompt {

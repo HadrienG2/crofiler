@@ -6,18 +6,25 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# Used for communication with jobs during build profiling
+crossbeam-deque = "0.8"
+crossbeam-utils = "0.8"
+
 # Used to parse and produce full-build CSV profiles
 csv = "1.1"
 
 # Used to notify of unexpected clang output
 log = "0.4"
 
+# Used to compute relative paths
+pathdiff = "0.2"
+
 # Used to parse the CMake compilation database
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 shlex = "1.1"
 
-# Used to monitor available RAM and command RAM usage
+# Used to monitor available RAM and command RAM usage during build profiling
 sysinfo = "0.26"
 
 # Used to generate error types with reasonable boilerplate
