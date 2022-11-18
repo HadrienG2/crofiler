@@ -25,7 +25,7 @@ serde_json = "1.0"
 shlex = "1.1"
 
 # Used to monitor available RAM and command RAM usage during build profiling
-sysinfo = "0.26"
+sysinfo = { version = "0.26", default-features = false }
 
 # Used to generate error types with reasonable boilerplate
 thiserror = "1.0"

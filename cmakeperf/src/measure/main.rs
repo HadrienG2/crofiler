@@ -298,7 +298,7 @@ pub enum MonitorStatus {
 /// (maximum RSS increase observed from one process poll to the next). It will
 /// be auto-tuned upwards if it turns out to be too optimistic.
 ///
-const OOM_MARGIN_PER_THREAD: u64 = 110_000_000;
+const OOM_MARGIN_PER_THREAD: u64 = 100_000_000;
 
 /// Main thread interface to StopFlags
 pub(super) struct StopServer<'flags>(&'flags StopFlags);
