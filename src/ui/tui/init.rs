@@ -1,6 +1,6 @@
 //! Initialization of the text user interface
 
-use super::{trace, State};
+use super::{names::ViewName::GlobalDialog, trace, State};
 use cursive::{
     event::{Event, Key},
     traits::Scrollable,
@@ -31,16 +31,13 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
         mut dialog_factory: impl 'static + FnMut(&mut Cursive) -> Option<Dialog>,
     ) {
         cursive.set_global_callback(event, move |cursive| {
-            // This name must not be a valid C++ entity name to avoid namespace
-            // collisions with profile layers.
-            const GLOBAL_DIALOG_NAME: &str = "Global dialog";
             if cursive
                 .screen_mut()
-                .find_layer_from_name(GLOBAL_DIALOG_NAME)
+                .find_layer_from_name(GlobalDialog.as_ref())
                 .is_none()
             {
                 if let Some(dialog) = dialog_factory(cursive) {
-                    cursive.add_layer(dialog.with_name(GLOBAL_DIALOG_NAME));
+                    cursive.add_layer(dialog.with_name(GlobalDialog.as_ref()));
                 }
             }
         });

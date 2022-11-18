@@ -3,6 +3,7 @@
 mod build;
 mod create;
 mod init;
+mod names;
 mod processing;
 mod trace;
 

@@ -3,6 +3,7 @@
 use crate::ui::{
     display::duration::display_duration,
     tui::{
+        names::ViewName::{ActivityDescPrefix, ActivityTablePrefix},
         processing::{ActivityDescList, ActivityInfo, ActivityInfoList},
         with_state, State,
     },
@@ -274,7 +275,7 @@ fn register_profile(
 
         // Register this new layer in the profile stack
         let profile_id = state.profile_stack.len();
-        let table_name: Rc<str> = format!("Activity profile {profile_id}").into();
+        let table_name: Rc<str> = format!("{}{profile_id}", ActivityTablePrefix.as_ref()).into();
         state.profile_stack.push(ProfileLayer {
             parent_name,
             table_name: table_name.clone(),
@@ -791,7 +792,7 @@ fn make_description_view(
 ) {
     // Give the activity description panel a name that's unique within the
     // current overall cursive display
-    let name = format!("Activity description {profile_id}");
+    let name = format!("{}{profile_id}", ActivityDescPrefix.as_ref());
 
     // Style activity description area like the activity selector to improve the
     // visual association between them.

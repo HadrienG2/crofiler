@@ -3,7 +3,7 @@
 use crate::{
     ui::{
         display::path::truncate_path_iter,
-        tui::{trace, with_state},
+        tui::{names::ViewName::FullBuildProfile, trace, with_state},
     },
     CliArgs,
 };
@@ -68,16 +68,18 @@ pub fn display_profile(
     table.set_selected_row(0);
 
     // Set up table interaction
-    const TABLE_NAME: &str = "Full-build profile";
     let time_trace_granularity = args.time_trace_granularity;
     table.set_on_submit(move |cursive, _row, index| {
         let rel_path: Box<Path> = cursive
-            .call_on_name(TABLE_NAME, |view: &mut FullBuildProfileView| {
-                view.borrow_item(index)
-                    .expect("Callback shouldn't be called with an invalid index")
-                    .rel_path()
-                    .into()
-            })
+            .call_on_name(
+                FullBuildProfile.as_ref(),
+                |view: &mut FullBuildProfileView| {
+                    view.borrow_item(index)
+                        .expect("Callback shouldn't be called with an invalid index")
+                        .rel_path()
+                        .into()
+                },
+            )
             .expect("Failed to access full-build profile view");
         trace::measure::show_wizard(
             cursive,
@@ -87,7 +89,7 @@ pub fn display_profile(
             time_trace_granularity,
         );
     });
-    let table = table.with_name(TABLE_NAME);
+    let table = table.with_name(FullBuildProfile.as_ref());
 
     // Update UI state
     with_state(cursive, |state| {
