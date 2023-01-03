@@ -72,11 +72,15 @@ impl CreatePrompt {
     }
 
     /// Same, but wait for answer and return it (requires CursiveRunnable)
-    pub fn ask(self, cursive: &mut CursiveRunnable) -> bool {
+    ///
+    /// `None` can be returned if users activate the Quit command without
+    /// answering the question, in which case the caller should terminate.
+    ///
+    pub fn ask(self, cursive: &mut CursiveRunnable) -> Option<bool> {
         let should_create = Rc::new(Cell::default());
         let should_create_2 = should_create.clone();
         self.show(cursive, move |cursive, should_create| {
-            should_create_2.set(should_create);
+            should_create_2.set(Some(should_create));
             cursive.quit();
         });
         cursive.run();

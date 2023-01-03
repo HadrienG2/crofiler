@@ -113,7 +113,7 @@ pub fn update_profile(
 
     // Handle build profile creation requests
     if let Some(create_prompt) = create_prompt {
-        if create_prompt.ask(cursive) {
+        if create_prompt.ask(cursive)? {
             if !measure_profile(cursive, profile_path, compilation_database) {
                 return None;
             }
