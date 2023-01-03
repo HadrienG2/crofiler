@@ -73,7 +73,7 @@ impl Measurement {
 impl Drop for Measurement {
     fn drop(&mut self) {
         self.kill.store(true, Ordering::Release);
-        for main_thread in self.main_thread.take() {
+        if let Some(main_thread) = self.main_thread.take() {
             std::mem::drop(main_thread.join());
         }
     }
