@@ -93,7 +93,7 @@ impl UnitProfile {
         if secs_f32 < 0.0 {
             return Some(Err(secs_f32));
         }
-        if secs_f32 > u64::MAX as f32 + 0.999999999 {
+        if secs_f32 > u64::MAX as f32 + 0.999_999_999 {
             return Some(Err(secs_f32));
         }
         Some(Ok(Duration::from_secs(secs_f32 as u64).saturating_add(
