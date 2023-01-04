@@ -260,17 +260,8 @@ pub(crate) mod tests {
     //
     pub static WORKING_DIRECTORY: Mutex<WorkingDirectory> = Mutex::new(WorkingDirectory);
 
-    #[test]
-    fn product_freshness() {
-        assert!(!ProductFreshness::Nonexistent.exists());
-        assert!(ProductFreshness::Outdated.exists());
-        assert!(ProductFreshness::MaybeOutdated(None).exists());
-        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 0))).exists());
-        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 1))).exists());
-    }
-
     // Mark a file as modified
-    fn touch(fd: impl AsFd) -> rustix::io::Result<()> {
+    pub fn touch(fd: impl AsFd) -> rustix::io::Result<()> {
         const NOW: Timespec = Timespec {
             tv_sec: 0,
             tv_nsec: UTIME_NOW,
@@ -282,6 +273,15 @@ pub(crate) mod tests {
                 last_modification: NOW,
             },
         )
+    }
+
+    #[test]
+    fn product_freshness() {
+        assert!(!ProductFreshness::Nonexistent.exists());
+        assert!(ProductFreshness::Outdated.exists());
+        assert!(ProductFreshness::MaybeOutdated(None).exists());
+        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 0))).exists());
+        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 1))).exists());
     }
 
     #[test]
