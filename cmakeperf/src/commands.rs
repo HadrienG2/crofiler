@@ -237,11 +237,8 @@ impl ProductFreshness {
 pub(crate) mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use rustix::{
-        fd::AsFd,
-        fs::{Timespec, Timestamps, UTIME_NOW},
-    };
-    use std::{fs::OpenOptions, sync::Mutex};
+    use fs_set_times::SystemTimeSpec;
+    use std::{io, sync::Mutex};
 
     /// Working directory lock
     ///
@@ -261,19 +258,16 @@ pub(crate) mod tests {
     pub static WORKING_DIRECTORY: Mutex<WorkingDirectory> = Mutex::new(WorkingDirectory);
 
     // Mark a file as modified
-    pub fn touch(fd: impl AsFd) -> rustix::io::Result<()> {
-        const NOW: Timespec = Timespec {
-            tv_sec: 0,
-            tv_nsec: UTIME_NOW,
-        };
-        rustix::fs::futimens(
-            fd,
-            &Timestamps {
-                last_access: NOW,
-                last_modification: NOW,
-            },
+    pub fn touch(path: impl AsRef<Path>) -> io::Result<()> {
+        fs_set_times::set_times(
+            path,
+            Some(SystemTimeSpec::SymbolicNow),
+            Some(SystemTimeSpec::SymbolicNow),
         )
     }
+
+    // Time to wait between touch() operations so that the timestamps differ
+    pub const FS_CLOCK_GRANULARITY: Duration = Duration::from_millis(10);
 
     #[test]
     fn product_freshness() {
@@ -365,16 +359,15 @@ pub(crate) mod tests {
             );
 
             // Products may be outdated with respect to inputs...
-            const FS_CLOCK_GRANULARITY: Duration = Duration::from_millis(10);
             std::thread::sleep(FS_CLOCK_GRANULARITY);
-            touch(OpenOptions::new().write(true).open(input_path).unwrap()).unwrap();
+            touch(&input_path).unwrap();
             assert_eq!(
                 entry.derived_freshness(&derived_path).unwrap(),
                 ProductFreshness::Outdated
             );
 
             // ...and can be updated back to MaybeOutdated state
-            touch(OpenOptions::new().write(true).open(&derived_path).unwrap()).unwrap();
+            touch(&derived_path).unwrap();
             assert_matches!(
                 entry.derived_freshness(&derived_path).unwrap(),
                 ProductFreshness::MaybeOutdated(Some(_))
@@ -382,13 +375,7 @@ pub(crate) mod tests {
 
             // Products may be outdated with respect to the compilation database
             std::thread::sleep(FS_CLOCK_GRANULARITY);
-            touch(
-                OpenOptions::new()
-                    .write(true)
-                    .open(CompilationDatabase::location())
-                    .unwrap(),
-            )
-            .unwrap();
+            touch(CompilationDatabase::location()).unwrap();
             assert_eq!(
                 entry.derived_freshness(&derived_path).unwrap(),
                 ProductFreshness::Outdated

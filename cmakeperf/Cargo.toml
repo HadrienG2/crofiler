@@ -42,5 +42,5 @@ quickcheck = "1"
 quickcheck_macros = "1"
 
 # Temporary file management
-rustix = { version = "0.36", features = ["fs"] }
+fs-set-times = "0.18"
 tempfile = "3.3"

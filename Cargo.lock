@@ -259,11 +259,11 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
  "csv",
+ "fs-set-times",
  "log",
  "pathdiff",
  "quickcheck",
  "quickcheck_macros",
- "rustix",
  "serde",
  "serde_json",
  "shlex",
@@ -663,6 +663,17 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
+name = "fs-set-times"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e25ca26b0001154679ce0901527330e6153b670d17ccd1f86bab4e45dfba1a74"
+dependencies = [
+ "io-lifetimes",
+ "rustix",
+ "windows-sys",
+]
 
 [[package]]
 name = "getrandom"
