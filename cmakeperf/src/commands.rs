@@ -124,9 +124,9 @@ pub struct DatabaseEntry {
     directory: Box<Path>,
 
     /// Build command
-    command: String,
+    command: Box<str>,
 
-    /// Input
+    /// Input file
     file: Box<Path>,
 }
 //
@@ -171,8 +171,9 @@ impl DatabaseEntry {
         if let Some(rel_path) = rel_output.parent() {
             result.push(rel_path);
         }
-        let res = result.canonicalize();
-        std::mem::drop(res);
+        if let Ok(canonicalized) = result.canonicalize() {
+            result = canonicalized;
+        }
         result.push(file_name);
 
         // Emit result
@@ -232,4 +233,168 @@ impl ProductFreshness {
     }
 }
 
-// FIXME: Add tests
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rustix::{
+        fd::AsFd,
+        fs::{Timespec, Timestamps, UTIME_NOW},
+    };
+    use std::{fs::OpenOptions, sync::Mutex};
+
+    /// Working directory lock
+    ///
+    /// Tests that rely on a certain working directory configuration cannot run
+    /// in parallel because the working directory is a process-wide
+    /// configuration, not a thread-local variable. Use this to synchronize.
+    ///
+    pub struct WorkingDirectory;
+    //
+    impl WorkingDirectory {
+        /// Set the current working directory
+        pub fn set(&mut self, path: impl AsRef<Path>) {
+            std::env::set_current_dir(path).unwrap()
+        }
+    }
+    //
+    pub static WORKING_DIRECTORY: Mutex<WorkingDirectory> = Mutex::new(WorkingDirectory);
+
+    #[test]
+    fn product_freshness() {
+        assert!(!ProductFreshness::Nonexistent.exists());
+        assert!(ProductFreshness::Outdated.exists());
+        assert!(ProductFreshness::MaybeOutdated(None).exists());
+        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 0))).exists());
+        assert!(ProductFreshness::MaybeOutdated(Some(Duration::new(0, 1))).exists());
+    }
+
+    // Mark a file as modified
+    fn touch(fd: impl AsFd) -> rustix::io::Result<()> {
+        const NOW: Timespec = Timespec {
+            tv_sec: 0,
+            tv_nsec: UTIME_NOW,
+        };
+        rustix::fs::futimens(
+            fd,
+            &Timestamps {
+                last_access: NOW,
+                last_modification: NOW,
+            },
+        )
+    }
+
+    #[test]
+    fn database_entry() {
+        use std::fs::File;
+
+        // Check that even bad database entries produce reasonable properties
+        let empty = DatabaseEntry {
+            directory: Path::new("").into(),
+            command: "".into(),
+            file: Path::new("").into(),
+        };
+        assert_eq!(empty.current_dir(), Path::new(""));
+        assert!(empty.program().is_none());
+        assert_eq!(empty.args().count(), 0);
+        assert_eq!(empty.input(), Path::new(""));
+        assert_eq!(empty.output(), None);
+        assert!(empty.derived_freshness(Path::new("/")).is_err());
+
+        // Now try it with a more reasonable entry
+        let input_dir = tempfile::tempdir().unwrap();
+        let input_path = input_dir.path().join("input.cpp");
+        File::create(&input_path).unwrap();
+        //
+        let output_base = tempfile::tempdir().unwrap();
+        let output_subdir = Path::new("really");
+        let output_dir = output_base.path().join(output_subdir);
+        std::fs::create_dir(&output_dir).unwrap();
+        let rel_output_dir = Path::new("really/../really");
+        //
+        let output_file = Path::new("out.o");
+        let rel_output_path = rel_output_dir.join(output_file);
+        let rel_output_path_str = format!("{}", rel_output_path.display());
+        let abs_output_path = output_dir.join(output_file);
+        //
+        let command = format!(
+            "SuperGoodCompiler --useless pointless -options -o {rel_output_path_str} -more fluff"
+        );
+        //
+        let entry = DatabaseEntry {
+            directory: output_base.path().into(),
+            command: command.into(),
+            file: input_path.clone().into(),
+        };
+        assert_eq!(entry.current_dir(), output_base.path());
+        assert_eq!(entry.program().unwrap().as_ref(), "SuperGoodCompiler");
+        let expected_args = [
+            "--useless",
+            "pointless",
+            "-options",
+            "-o",
+            &rel_output_path_str,
+            "-more",
+            "fluff",
+        ];
+        assert_eq!(entry.args().count(), expected_args.len());
+        for (actual, expected) in entry.args().zip(expected_args.into_iter()) {
+            assert_eq!(actual.as_ref(), expected);
+        }
+        assert_eq!(entry.input(), input_path);
+        assert_eq!(entry.output(), Some(abs_output_path.clone()));
+        //
+        let tmp_workdir = tempfile::tempdir().unwrap();
+        {
+            let mut workdir = WORKING_DIRECTORY.lock().unwrap();
+            workdir.set(&tmp_workdir);
+            File::create(CompilationDatabase::location()).unwrap();
+
+            // Products may not exist yet
+            let derived_path = output_base.path().join("stuff.json");
+            assert_eq!(
+                entry.derived_freshness(&derived_path).unwrap(),
+                ProductFreshness::Nonexistent
+            );
+
+            // Products may be apparently up to date
+            File::create(&derived_path).unwrap();
+            assert_matches!(
+                entry.derived_freshness(&derived_path).unwrap(),
+                ProductFreshness::MaybeOutdated(Some(_))
+            );
+
+            // Products may be outdated with respect to inputs...
+            const FS_CLOCK_GRANULARITY: Duration = Duration::from_millis(10);
+            std::thread::sleep(FS_CLOCK_GRANULARITY);
+            touch(OpenOptions::new().write(true).open(input_path).unwrap()).unwrap();
+            assert_eq!(
+                entry.derived_freshness(&derived_path).unwrap(),
+                ProductFreshness::Outdated
+            );
+
+            // ...and can be updated back to MaybeOutdated state
+            touch(OpenOptions::new().write(true).open(&derived_path).unwrap()).unwrap();
+            assert_matches!(
+                entry.derived_freshness(&derived_path).unwrap(),
+                ProductFreshness::MaybeOutdated(Some(_))
+            );
+
+            // Products may be outdated with respect to the compilation database
+            std::thread::sleep(FS_CLOCK_GRANULARITY);
+            touch(
+                OpenOptions::new()
+                    .write(true)
+                    .open(CompilationDatabase::location())
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                entry.derived_freshness(&derived_path).unwrap(),
+                ProductFreshness::Outdated
+            );
+        }
+    }
+
+    // TODO: ...then test CompilationDatabase, reusing some of the above mock logic
+}
