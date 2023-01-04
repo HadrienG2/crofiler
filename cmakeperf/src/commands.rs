@@ -257,7 +257,7 @@ pub(crate) mod tests {
     //
     pub static WORKING_DIRECTORY: Mutex<WorkingDirectory> = Mutex::new(WorkingDirectory);
 
-    // Mark a file as modified
+    /// Mark a file as modified
     pub fn touch(path: impl AsRef<Path>) -> io::Result<()> {
         fs_set_times::set_times(
             path,
@@ -266,7 +266,7 @@ pub(crate) mod tests {
         )
     }
 
-    // Time to wait between touch() operations so that the timestamps differ
+    /// Time to wait between touch() operations so that the timestamps differ
     pub const FS_CLOCK_GRANULARITY: Duration = Duration::from_millis(10);
 
     #[test]
