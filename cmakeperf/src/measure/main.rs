@@ -74,6 +74,7 @@ pub(super) fn run(
                     return Err(MeasureError::Killed);
                 }
 
+                // Wait for a job to be complete or a timeout
                 // TODO: Move to recv_deadline once available
                 match results_receiver
                     .recv_timeout(next_poll.saturating_duration_since(Instant::now()))
@@ -161,7 +162,9 @@ fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) -> usize {
     } else {
         std::thread::available_parallelism()
             .map(usize::from)
-            .unwrap_or(1)
+            // Minimal amount of CPU threads expected on a dev machine in the
+            // unlikely scenario where we have no OS-level CPU enumeration API.
+            .unwrap_or(4)
     })
 }
 
