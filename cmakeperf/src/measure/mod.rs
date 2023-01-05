@@ -279,8 +279,13 @@ mod tests {
 
     #[quickcheck]
     fn stop_flags_raise(len: u8, raise_idx_1: u8, raise_idx_2: u8) -> TestResult {
-        // Ignore invalid requests
-        if raise_idx_1 >= len || raise_idx_2 >= len || raise_idx_1 == raise_idx_2 {
+        // Wrap around raise_idx, ignore invalid requests
+        if len == 0 {
+            return TestResult::discard();
+        }
+        let raise_idx_1 = raise_idx_1 % len;
+        let raise_idx_2 = raise_idx_2 % len;
+        if raise_idx_1 == raise_idx_2 {
             return TestResult::discard();
         }
 
