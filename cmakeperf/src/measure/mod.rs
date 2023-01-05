@@ -247,6 +247,7 @@ const POLLING_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
 #[cfg(test)]
 mod tests {
+    use super::main::MonitorStatus;
     use super::*;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
@@ -338,6 +339,83 @@ mod tests {
         TestResult::passed()
     }
 
-    // FIXME: Add more unit tests ? Could do that by having a dummy binary that consumes
-    //        X memory during Y time.
+    #[test]
+    fn monitor_init() {
+        for concurrency in [1, 2] {
+            let monitor = Monitor::new(concurrency);
+            let check_monitor = || {
+                assert_eq!(monitor.concurrency(), concurrency);
+                assert_eq!(monitor.elapsed.len(), concurrency);
+                assert_eq!(monitor.stop.clients().count(), concurrency);
+                assert_eq!(monitor.alive.load(Ordering::Relaxed), concurrency);
+            };
+
+            let mut server = monitor.server();
+            let check_monitor = |server: &mut MonitorServer| {
+                check_monitor();
+                assert_eq!(server.update(), MonitorStatus::Running);
+            };
+            check_monitor(&mut server);
+
+            let clients = monitor.clients().collect::<Vec<_>>();
+            let check_monitor = |server: &mut MonitorServer, clients: &Vec<MonitorClient>| {
+                check_monitor(server);
+                for client in clients {
+                    // Assert that system monitor lock is not poisoned
+                    std::mem::drop(client.system());
+                }
+            };
+            check_monitor(&mut server, &clients);
+        }
+    }
+
+    // TODO: Test more Monitor functionality
+    /* === Worker side ===
+
+    /// Signal that the same job keeps being processed
+    pub fn keep_job(&mut self) -> Result<(), MustStop> {
+        self.update_elapsed(|elapsed| elapsed + 1)
+    }
+
+    /// Signal that a new job is being processed
+    pub fn switch_job(&mut self) -> Result<(), MustStop> {
+        self.update_elapsed(|_| 0)
+    }
+
+    /// Access the system monitor
+    pub fn system(&self) -> RwLockReadGuard<'monitor, System> {
+        self.monitor
+            .system
+            .read()
+            .expect("System monitor has been poisoned")
+    }
+
+    /// Notify the main thread that this worker is shutting down
+    pub fn notify_shutdown(&mut self) {
+        let prev_live = self.monitor.alive.fetch_sub(1, Ordering::Release);
+        assert!(
+            prev_live > 0,
+            "There were more shutdown notifications than threads!"
+        );
+    }
+
+    === Main thread side ===
+
+    /// Update system monitor state and handle job lifecycle events
+    pub fn update(&mut self) -> MonitorStatus {
+        let available_memory = self.refresh_and_check_memory();
+        self.update_oom_threshold(available_memory);
+        self.handle_oom_and_termination(available_memory)
+    }
+
+    /// Kill all jobs
+    pub fn kill_all(&mut self) {
+        self.stop_server.stop_all();
+    }
+    */
+
+    // TODO: Test WorkQueue
+    // TODO: Test Measurement in an integration test using
+    //       env!("CARGO_BIN_EXE_hog") as a workload and
+    //       env!("CARGO_TARGET_TMPDIR") as a file dump
 }
