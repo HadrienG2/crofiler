@@ -42,6 +42,9 @@ impl CompilationDatabase {
     ///
     /// Will return None if no file with that name exists in the database.
     ///
+    /// Note that the filename matching is not smart and just looks for an exact
+    /// string match against entry.path().
+    ///
     pub fn entry(&self, input_path: &Path) -> Option<&DatabaseEntry> {
         self.0.get(input_path)
     }
@@ -238,7 +241,11 @@ pub(crate) mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fs_set_times::SystemTimeSpec;
-    use std::{io, sync::Mutex};
+    use std::{
+        fs::File,
+        io::{self, Write},
+        sync::Mutex,
+    };
 
     /// Working directory lock
     ///
@@ -280,8 +287,6 @@ pub(crate) mod tests {
 
     #[test]
     fn database_entry() {
-        use std::fs::File;
-
         // Check that even bad database entries produce reasonable properties
         let empty = DatabaseEntry {
             directory: Path::new("").into(),
@@ -296,15 +301,15 @@ pub(crate) mod tests {
         assert!(empty.derived_freshness(Path::new("/")).is_err());
 
         // Now try it with a more reasonable entry
-        let input_dir = tempfile::tempdir().unwrap();
-        let input_path = input_dir.path().join("input.cpp");
+        let tmp_input_dir = tempfile::tempdir().unwrap();
+        let input_path = tmp_input_dir.path().join("input.cpp");
         File::create(&input_path).unwrap();
         //
-        let output_base = tempfile::tempdir().unwrap();
+        let tmp_output_base = tempfile::tempdir().unwrap();
         let output_subdir = Path::new("really");
-        let output_dir = output_base.path().join(output_subdir);
+        let output_dir = tmp_output_base.path().join(output_subdir);
         std::fs::create_dir(&output_dir).unwrap();
-        let rel_output_dir = Path::new("really/../really");
+        let rel_output_dir = output_dir.join(Path::new("..")).join(&output_dir);
         //
         let output_file = Path::new("out.o");
         let rel_output_path = rel_output_dir.join(output_file);
@@ -316,11 +321,11 @@ pub(crate) mod tests {
         );
         //
         let entry = DatabaseEntry {
-            directory: output_base.path().into(),
+            directory: tmp_output_base.path().into(),
             command: command.into(),
             file: input_path.clone().into(),
         };
-        assert_eq!(entry.current_dir(), output_base.path());
+        assert_eq!(entry.current_dir(), tmp_output_base.path());
         assert_eq!(entry.program().unwrap().as_ref(), "SuperGoodCompiler");
         let expected_args = [
             "--useless",
@@ -339,13 +344,13 @@ pub(crate) mod tests {
         assert_eq!(entry.output(), Some(abs_output_path.clone()));
         //
         let tmp_workdir = tempfile::tempdir().unwrap();
+        File::create(tmp_workdir.path().join(CompilationDatabase::location())).unwrap();
         {
             let mut workdir = WORKING_DIRECTORY.lock().unwrap();
             workdir.set(&tmp_workdir);
-            File::create(CompilationDatabase::location()).unwrap();
 
             // Products may not exist yet
-            let derived_path = output_base.path().join("stuff.json");
+            let derived_path = tmp_output_base.path().join("stuff.json");
             assert_eq!(
                 entry.derived_freshness(&derived_path).unwrap(),
                 ProductFreshness::Nonexistent
@@ -383,5 +388,107 @@ pub(crate) mod tests {
         }
     }
 
-    // TODO: ...then test CompilationDatabase, reusing some of the above mock logic
+    #[test]
+    fn compilation_database() {
+        let tmp_input_dir_1 = tempfile::tempdir().unwrap();
+        let input_path_1 = tmp_input_dir_1.path().join("a.cpp");
+        File::create(&input_path_1).unwrap();
+        let tmp_output_dir_1 = tempfile::tempdir().unwrap();
+        let cmd_1 = format!("cc -o a.o {}", input_path_1.display());
+
+        let tmp_input_dir_2 = tempfile::tempdir().unwrap();
+        let input_path_2 = tmp_input_dir_2.path().join("b.hxx");
+        File::create(&input_path_2).unwrap();
+        let tmp_output_dir_2 = tempfile::tempdir().unwrap();
+        let cmd_2 = format!("not_a_compiler {}", input_path_2.display());
+
+        let tmp_workdir = tempfile::tempdir().unwrap();
+        {
+            let mut database_json =
+                File::create(tmp_workdir.path().join(CompilationDatabase::location())).unwrap();
+            eprintln!(
+                "[\
+                {{\"directory\":\"{}\",\"command\":\"{cmd_1}\",\"file\":\"{}\"}},\
+                {{\"directory\":\"{}\",\"command\":\"{cmd_2}\",\"file\":\"{}\"}}\
+                ]",
+                tmp_output_dir_1.path().display(),
+                input_path_1.display(),
+                tmp_output_dir_2.path().display(),
+                input_path_2.display()
+            );
+            write!(
+                database_json,
+                "[\
+                {{\"directory\":\"{}\",\"command\":\"{cmd_1}\",\"file\":\"{}\"}},\
+                {{\"directory\":\"{}\",\"command\":\"{cmd_2}\",\"file\":\"{}\"}}\
+                ]",
+                tmp_output_dir_1.path().display(),
+                input_path_1.display(),
+                tmp_output_dir_2.path().display(),
+                input_path_2.display()
+            )
+            .unwrap();
+        }
+
+        {
+            let mut workdir = WORKING_DIRECTORY.lock().unwrap();
+            workdir.set(&tmp_workdir);
+            let db = CompilationDatabase::load().unwrap();
+
+            assert_eq!(db.entries().count(), 2);
+            let entry1 = db.entry(&input_path_1).unwrap();
+            assert_eq!(entry1.current_dir(), tmp_output_dir_1.path());
+            assert_eq!(entry1.raw_command(), cmd_1);
+            assert_eq!(entry1.input(), &input_path_1);
+            let entry2 = db.entry(&input_path_2).unwrap();
+            assert_eq!(entry2.current_dir(), tmp_output_dir_2.path());
+            assert_eq!(entry2.raw_command(), cmd_2);
+            assert_eq!(entry2.input(), &input_path_2);
+
+            let profile_path = Path::new("my_super_build_profile.csv");
+            assert_eq!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::Nonexistent
+            );
+
+            File::create(&profile_path).unwrap();
+            assert_matches!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::MaybeOutdated(Some(_))
+            );
+
+            std::thread::sleep(FS_CLOCK_GRANULARITY);
+            touch(CompilationDatabase::location()).unwrap();
+            assert_eq!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::Outdated
+            );
+
+            touch(&profile_path).unwrap();
+            assert_matches!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::MaybeOutdated(Some(_))
+            );
+
+            std::thread::sleep(FS_CLOCK_GRANULARITY);
+            touch(&input_path_1).unwrap();
+            assert_eq!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::Outdated
+            );
+
+            touch(&profile_path).unwrap();
+            assert_matches!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::MaybeOutdated(Some(_))
+            );
+
+            std::thread::sleep(FS_CLOCK_GRANULARITY);
+            touch(&input_path_2).unwrap();
+            assert_eq!(
+                db.profile_freshness(&profile_path).unwrap(),
+                ProductFreshness::Outdated
+            );
+        }
+    }
 }
