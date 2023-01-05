@@ -256,9 +256,12 @@ pub(crate) mod tests {
     pub struct WorkingDirectory;
     //
     impl WorkingDirectory {
-        /// Set the current working directory
-        pub fn set(&mut self, path: impl AsRef<Path>) {
-            std::env::set_current_dir(path).unwrap()
+        /// Run a serios of operations in a certain working directory
+        pub fn with(&mut self, path: impl AsRef<Path>, operation: impl FnOnce()) {
+            let old_workdir = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            operation();
+            std::env::set_current_dir(old_workdir).unwrap();
         }
     }
     //
@@ -287,18 +290,27 @@ pub(crate) mod tests {
 
     #[test]
     fn database_entry() {
-        // Check that even bad database entries produce reasonable properties
+        // Set up a basic compilation database mock
+        let tmp_workdir = tempfile::tempdir().unwrap();
+        File::create(tmp_workdir.path().join(CompilationDatabase::location())).unwrap();
+
+        // Check that even crazy database entries produce reasonable properties
         let empty = DatabaseEntry {
-            directory: Path::new("").into(),
-            command: "".into(),
-            file: Path::new("").into(),
+            directory: Path::new("/").into(),
+            command: "xxx".into(),
+            file: Path::new("/etc/fstab").into(),
         };
-        assert_eq!(empty.current_dir(), Path::new(""));
-        assert!(empty.program().is_none());
+        assert_eq!(empty.current_dir(), Path::new("/"));
+        assert_eq!(empty.program().unwrap().as_ref(), "xxx");
         assert_eq!(empty.args().count(), 0);
-        assert_eq!(empty.input(), Path::new(""));
+        assert_eq!(empty.input(), Path::new("/etc/fstab"));
         assert_eq!(empty.output(), None);
-        assert!(empty.derived_freshness(Path::new("/")).is_err());
+        WORKING_DIRECTORY.lock().unwrap().with(&tmp_workdir, || {
+            assert_eq!(
+                empty.derived_freshness(Path::new("/")).unwrap(),
+                ProductFreshness::Outdated
+            );
+        });
 
         // Now try it with a more reasonable entry
         let tmp_input_dir = tempfile::tempdir().unwrap();
@@ -342,13 +354,7 @@ pub(crate) mod tests {
         }
         assert_eq!(entry.input(), input_path);
         assert_eq!(entry.output(), Some(abs_output_path.clone()));
-        //
-        let tmp_workdir = tempfile::tempdir().unwrap();
-        File::create(tmp_workdir.path().join(CompilationDatabase::location())).unwrap();
-        {
-            let mut workdir = WORKING_DIRECTORY.lock().unwrap();
-            workdir.set(&tmp_workdir);
-
+        WORKING_DIRECTORY.lock().unwrap().with(&tmp_workdir, || {
             // Products may not exist yet
             let derived_path = tmp_output_base.path().join("stuff.json");
             assert_eq!(
@@ -385,7 +391,7 @@ pub(crate) mod tests {
                 entry.derived_freshness(&derived_path).unwrap(),
                 ProductFreshness::Outdated
             );
-        }
+        });
     }
 
     #[test]
@@ -430,9 +436,7 @@ pub(crate) mod tests {
             .unwrap();
         }
 
-        {
-            let mut workdir = WORKING_DIRECTORY.lock().unwrap();
-            workdir.set(&tmp_workdir);
+        WORKING_DIRECTORY.lock().unwrap().with(&tmp_workdir, || {
             let db = CompilationDatabase::load().unwrap();
 
             assert_eq!(db.entries().count(), 2);
@@ -489,6 +493,6 @@ pub(crate) mod tests {
                 db.profile_freshness(&profile_path).unwrap(),
                 ProductFreshness::Outdated
             );
-        }
+        });
     }
 }
