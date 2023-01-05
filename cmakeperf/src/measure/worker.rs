@@ -329,7 +329,7 @@ pub(super) struct MonitorClient<'monitor> {
 //
 impl<'monitor> MonitorClient<'monitor> {
     /// Set up the worker interface
-    pub fn new(
+    pub(super) fn new(
         monitor: &'monitor Monitor,
         elapsed: &'monitor AtomicUsize,
         stopped: StopClient<'monitor>,
