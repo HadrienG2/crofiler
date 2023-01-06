@@ -302,7 +302,7 @@ impl<'queue> WorkReceiver<'queue> {
         }
     }
 
-    /// Wait for work to come in (true) or for the termination signal (false)
+    /// Wait for work or a termination signal
     pub fn wait(&mut self) -> WaitOutcome {
         let futex = &self.shared.futex;
         self.last_futex_value = loop {
@@ -358,7 +358,7 @@ impl Iterator for WorkReceiver<'_> {
                 return Some(result);
             }
 
-            // Otherwise, wait for more work or a termination signal
+            // Otherwise, wait for work or a termination signal
             match self.wait() {
                 WaitOutcome::NewJob => continue,
                 WaitOutcome::Finished => break None,

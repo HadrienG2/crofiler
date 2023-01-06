@@ -115,7 +115,7 @@ pub(super) fn run(
                         next_poll = last_poll + POLLING_INTERVAL;
                     }
 
-                    // No worker threads left to send jobs
+                    // No worker threads left to send job results
                     //
                     // This should not happen because worker threads should wait
                     // for the main thread to drop the WorkSender before they
