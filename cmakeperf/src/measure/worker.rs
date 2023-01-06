@@ -344,6 +344,11 @@ impl<'monitor> MonitorClient<'monitor> {
         }
     }
 
+    /// Check if the main thread has asked us to stop
+    pub fn must_stop(&self) -> bool {
+        self.stopped.must_stop()
+    }
+
     /// Signal that the same job keeps being processed
     pub fn keep_job(&mut self) -> Result<(), MustStop> {
         self.update_elapsed(|elapsed| elapsed + 1)
@@ -374,7 +379,7 @@ impl<'monitor> MonitorClient<'monitor> {
     /// Update the value of the elapsed counter
     fn update_elapsed(&mut self, update: impl FnOnce(usize) -> usize) -> Result<(), MustStop> {
         // Handle stop signal
-        if self.stopped.must_stop() {
+        if self.must_stop() {
             return Err(MustStop);
         }
 

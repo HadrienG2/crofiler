@@ -347,79 +347,71 @@ mod tests {
     }
 
     #[test]
-    fn monitor_init() {
+    fn monitor() {
+        fn check_monitor(
+            monitor: &Monitor,
+            concurrency: usize,
+            num_alive: usize,
+            mut expected_elapsed: impl FnMut(usize) -> usize,
+        ) {
+            assert_eq!(monitor.concurrency(), concurrency);
+            assert_eq!(monitor.elapsed.len(), concurrency);
+            for (idx, elapsed) in monitor.elapsed.iter().enumerate() {
+                assert_eq!(elapsed.load(Ordering::Relaxed), expected_elapsed(idx));
+            }
+            assert_eq!(monitor.stop.clients().count(), concurrency);
+            assert_eq!(monitor.alive.load(Ordering::Relaxed), num_alive);
+        }
+
         for concurrency in [1, 2] {
+            // Test observable state at various construction stages
             let monitor = Monitor::new(concurrency);
-            let check_monitor = || {
-                assert_eq!(monitor.concurrency(), concurrency);
-                assert_eq!(monitor.elapsed.len(), concurrency);
-                assert_eq!(monitor.stop.clients().count(), concurrency);
-                assert_eq!(monitor.alive.load(Ordering::Relaxed), concurrency);
-            };
-
+            check_monitor(&monitor, concurrency, concurrency, |_| 0);
             let mut server = monitor.server();
-            let check_monitor = |server: &mut MonitorServer| {
-                check_monitor();
-                assert_eq!(server.update(), MonitorStatus::Running);
+            check_monitor(&monitor, concurrency, concurrency, |_| 0);
+            let check_server_update_result = |server: &mut MonitorServer, result| {
+                assert_eq!(server.update(), result);
             };
-            check_monitor(&mut server);
+            check_server_update_result(&mut server, MonitorStatus::Running);
+            let mut clients = monitor.clients().collect::<Vec<_>>();
+            check_monitor(&monitor, concurrency, concurrency, |_| 0);
+            check_server_update_result(&mut server, MonitorStatus::Running);
+            let check_system_not_poisoned = |clients: &Vec<MonitorClient>| {
+                clients.iter().for_each(|c| std::mem::drop(c.system()));
+            };
+            check_system_not_poisoned(&clients);
 
-            let clients = monitor.clients().collect::<Vec<_>>();
-            let check_monitor = |server: &mut MonitorServer, clients: &Vec<MonitorClient>| {
-                check_monitor(server);
-                for client in clients {
-                    // Assert that system monitor lock is not poisoned
-                    std::mem::drop(client.system());
-                }
-            };
-            check_monitor(&mut server, &clients);
+            // Try retaining and switching jobs
+            for client_idx in 0..concurrency {
+                assert_eq!(clients[client_idx].keep_job(), Ok(()));
+                check_monitor(&monitor, concurrency, concurrency, |idx| {
+                    (idx == client_idx) as usize
+                });
+                check_server_update_result(&mut server, MonitorStatus::Running);
+                check_system_not_poisoned(&clients);
+
+                assert_eq!(clients[client_idx].switch_job(), Ok(()));
+                check_monitor(&monitor, concurrency, concurrency, |_| 0);
+                check_server_update_result(&mut server, MonitorStatus::Running);
+                check_system_not_poisoned(&clients);
+            }
+
+            // Simulate all clients stopping
+            for client_idx in 0..concurrency {
+                clients[client_idx].notify_shutdown();
+                check_monitor(&monitor, concurrency, concurrency - client_idx - 1, |_| 0);
+                check_server_update_result(
+                    &mut server,
+                    if client_idx < concurrency - 1 {
+                        MonitorStatus::Running
+                    } else {
+                        MonitorStatus::AllThreadsDone
+                    },
+                );
+                check_system_not_poisoned(&clients);
+            }
         }
     }
-
-    // TODO: Test more Monitor functionality
-    /* === Worker side ===
-
-    /// Signal that the same job keeps being processed
-    pub fn keep_job(&mut self) -> Result<(), MustStop> {
-        self.update_elapsed(|elapsed| elapsed + 1)
-    }
-
-    /// Signal that a new job is being processed
-    pub fn switch_job(&mut self) -> Result<(), MustStop> {
-        self.update_elapsed(|_| 0)
-    }
-
-    /// Access the system monitor
-    pub fn system(&self) -> RwLockReadGuard<'monitor, System> {
-        self.monitor
-            .system
-            .read()
-            .expect("System monitor has been poisoned")
-    }
-
-    /// Notify the main thread that this worker is shutting down
-    pub fn notify_shutdown(&mut self) {
-        let prev_live = self.monitor.alive.fetch_sub(1, Ordering::Release);
-        assert!(
-            prev_live > 0,
-            "There were more shutdown notifications than threads!"
-        );
-    }
-
-    === Main thread side ===
-
-    /// Update system monitor state and handle job lifecycle events
-    pub fn update(&mut self) -> MonitorStatus {
-        let available_memory = self.refresh_and_check_memory();
-        self.update_oom_threshold(available_memory);
-        self.handle_oom_and_termination(available_memory)
-    }
-
-    /// Kill all jobs
-    pub fn kill_all(&mut self) {
-        self.stop_server.stop_all();
-    }
-    */
 
     // TODO: Test WorkQueue
     // TODO: Test Measurement in an integration test using

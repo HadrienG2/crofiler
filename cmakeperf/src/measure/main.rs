@@ -173,7 +173,7 @@ pub(super) struct MonitorServer<'monitor> {
     /// Shared monitor state
     monitor: &'monitor Monitor,
 
-    /// Iterface to ask threads to stop
+    /// Interface to ask threads to stop
     stop_server: StopServer<'monitor>,
 
     /// Out of memory threshold in bytes
