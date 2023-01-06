@@ -236,9 +236,9 @@ impl<'monitor> MonitorServer<'monitor> {
             let old_margin_per_thread = self.oom_threshold / live_threads;
             let new_margin_per_thread = newly_used_memory / live_threads + 1;
             log::warn!(
-                "OOM threshold of {}MB/thread is too low, observed +{}MB/thread across monitor tick. Moving to that.",
-                old_margin_per_thread / 1_000_000,
-                new_margin_per_thread / 1_000_000,
+                "OOM threshold of {:.6}MB/thread is too low, observed +{:.6}MB/thread across monitor tick. Moving to that.",
+                old_margin_per_thread as f32 / 1_000_000.0,
+                new_margin_per_thread as f32 / 1_000_000.0,
             );
             self.oom_threshold = new_margin_per_thread * live_threads;
         }

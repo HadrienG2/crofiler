@@ -39,10 +39,17 @@ impl Measurement {
     ///
     /// `path` indicates where the profile should be saved.
     ///
+    /// `database` provides the list of compilation units to be profiled.
+    ///
     /// Measuring elapsed time per compilation unit is optional, as is
     /// specifying the build concurrency. The default build concurrency is
     /// 1 process (sequential build) if elapsed time is requested, one process
-    /// per CPU hyperthread if .
+    /// per CPU hyperthread otherwise.
+    ///
+    /// `step_done` is called whenever a compilation unit has been profiled,
+    /// it is meant to be used for progress tracking.
+    ///
+    /// `build_done` is called once the full build has been profiled.
     ///
     pub fn start(
         path: impl Into<Box<Path>>,

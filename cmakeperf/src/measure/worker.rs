@@ -169,6 +169,8 @@ impl ProcessTree {
     /// Refresh process tree
     fn refresh(&mut self, system: &System) {
         // Seed parent list with tree root, then reset tree
+        assert!(self.parents.is_empty());
+        assert!(self.children.is_empty());
         self.parents.push(
             *self
                 .tree
