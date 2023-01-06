@@ -40,6 +40,7 @@ pub(super) fn run(
         log::info!("Will use {concurrency} worker process(es)");
 
         // Set up communication between the main thread and workers
+        let mut remaining_jobs = jobs.len();
         let mut work_queue = WorkQueue::new(jobs);
         let (results_sender, results_receiver) = mpsc::channel();
         let monitor = Monitor::new(concurrency);
@@ -66,11 +67,12 @@ pub(super) fn run(
             let mut last_poll = Instant::now();
             let mut next_poll = last_poll + POLLING_INTERVAL;
             let mut monitor_server = monitor.server();
+            let mut work_sender = WorkSender::new(&work_queue);
             loop {
                 // Handle external request to terminate the job
                 if kill.load(Ordering::Relaxed) {
                     atomic::fence(Ordering::Acquire);
-                    monitor_server.kill_all();
+                    monitor_server.stop_all();
                     return Err(MeasureError::Killed);
                 }
 
@@ -80,9 +82,9 @@ pub(super) fn run(
                     .recv_timeout(next_poll.saturating_duration_since(Instant::now()))
                 {
                     // A worker had to abort its current job as a result of running
-                    // out of memory, send it back to other jobs.
+                    // out of memory, send it back to other workers.
                     Ok(Err(JobError::Killed(job))) => {
-                        work_queue.push(job);
+                        work_sender.push(job);
                     }
 
                     // A worker finished processing a job for another reason
@@ -96,6 +98,11 @@ pub(super) fn run(
                         );
                         writer.serialize(unit_profile)?;
                         step_done();
+                        remaining_jobs -= 1;
+                        if remaining_jobs == 0 {
+                            // This was the last job, we're done
+                            break;
+                        }
                     }
 
                     // System monitor wakeup
@@ -103,14 +110,20 @@ pub(super) fn run(
                         match monitor_server.update() {
                             MonitorStatus::Running => {}
                             MonitorStatus::KilledEveryone => return Err(MeasureError::OutOfMemory),
-                            MonitorStatus::AllThreadsDone => break,
                         }
                         last_poll = Instant::now();
                         next_poll = last_poll + POLLING_INTERVAL;
                     }
 
-                    // No worker threads left, we are done
-                    Err(RecvTimeoutError::Disconnected) => break,
+                    // No worker threads left to send jobs
+                    //
+                    // This should not happen because worker threads should wait
+                    // for the main thread to drop the WorkSender before they
+                    // terminate, in case the main thread sends in more work.
+                    //
+                    Err(RecvTimeoutError::Disconnected) => {
+                        unreachable!("Worker threads should wait for us")
+                    }
                 }
             }
 
@@ -168,6 +181,65 @@ fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) -> usize {
     })
 }
 
+/// Main thread interface to send work to worker threads
+pub(super) struct WorkSender<'queue> {
+    /// Shared work queue state
+    queue: &'queue WorkQueue,
+
+    /// Last set value of queue.futex
+    last_futex_value: u32,
+}
+//
+impl<'queue> WorkSender<'queue> {
+    /// Set up main thread interface
+    pub fn new(queue: &'queue WorkQueue) -> Self {
+        // No need to synchronize yet since only this thread can update the futex
+        let last_futex_value = queue.futex.load(Ordering::Relaxed);
+        assert_eq!(last_futex_value, WorkQueue::FUTEX_INITIAL);
+        Self {
+            queue,
+            last_futex_value,
+        }
+    }
+
+    /// (Re)submit a job to workers
+    pub fn push(&mut self, job: DatabaseEntry) {
+        assert_ne!(
+            self.last_futex_value,
+            WorkQueue::FUTEX_FINISHED,
+            "Closed WorkQueue can't accept more jobs"
+        );
+        self.queue.global.push(job);
+        self.last_futex_value = self
+            .last_futex_value
+            .checked_add(1)
+            .unwrap_or(WorkQueue::FUTEX_INITIAL + 1);
+        self.update_futex();
+        atomic_wait::wake_one(&self.queue.futex);
+    }
+
+    /// Tell workers we won't be sending work anymore
+    fn close(&mut self) {
+        self.last_futex_value = WorkQueue::FUTEX_FINISHED;
+        self.update_futex();
+        atomic_wait::wake_all(&self.queue.futex);
+    }
+
+    /// Sync up `queue.futex` with `last_futex_value`
+    fn update_futex(&self) {
+        self.queue
+            .futex
+            .store(self.last_futex_value, Ordering::Release);
+    }
+}
+//
+impl Drop for WorkSender<'_> {
+    /// Automatically close work queue on drop
+    fn drop(&mut self) {
+        self.close()
+    }
+}
+
 /// Main thread interface for system monitoring and out of memory handling
 pub(super) struct MonitorServer<'monitor> {
     /// Shared monitor state
@@ -191,7 +263,7 @@ pub(super) struct MonitorServer<'monitor> {
 //
 impl<'monitor> MonitorServer<'monitor> {
     /// Set up main thread interface
-    pub(super) fn new(monitor: &'monitor Monitor) -> Self {
+    pub fn new(monitor: &'monitor Monitor) -> Self {
         Self {
             monitor,
             stop_server: monitor.stop.server(),
@@ -210,8 +282,8 @@ impl<'monitor> MonitorServer<'monitor> {
         self.handle_oom_and_termination(available_memory)
     }
 
-    /// Kill all jobs
-    pub fn kill_all(&mut self) {
+    /// Ask all workers to terminate
+    pub fn stop_all(&mut self) {
         self.stop_server.stop_all();
     }
 
@@ -268,12 +340,7 @@ impl<'monitor> MonitorServer<'monitor> {
         }
 
         // Make sure there still are threads left
-        if self.monitor.alive.load(Ordering::Relaxed) == 0 {
-            atomic::fence(Ordering::Acquire);
-            MonitorStatus::AllThreadsDone
-        } else {
-            MonitorStatus::Running
-        }
+        MonitorStatus::Running
     }
 }
 //
@@ -286,9 +353,6 @@ pub enum MonitorStatus {
 
     /// We just killed the last thread, which means some jobs won't be done
     KilledEveryone,
-
-    /// All the threads stopped on their own, job over ?
-    AllThreadsDone,
 }
 
 /// Default out-of-memory threshold, in bytes/thread

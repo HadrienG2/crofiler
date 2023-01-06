@@ -2,7 +2,7 @@
 
 use super::{Monitor, WorkQueue, POLLING_INTERVAL};
 use crate::{commands::DatabaseEntry, output::UnitProfile};
-use crossbeam_deque::{Injector, Stealer, Worker};
+use crossbeam_deque::Worker;
 use std::{
     io::{self, Read},
     panic::AssertUnwindSafe,
@@ -25,21 +25,23 @@ pub(super) fn run(
     mut monitor_client: MonitorClient,
     measure_time: bool,
 ) {
-    let output = AssertUnwindSafe(output);
-    let mut monitor_client_ref = AssertUnwindSafe(&mut monitor_client);
+    let output_ref = AssertUnwindSafe(&output);
+    let mut monitor_client = AssertUnwindSafe(&mut monitor_client);
     let maybe_panic = std::panic::catch_unwind(move || {
         let mut tree = ProcessTree::new();
         for job in input {
-            let result = process_job(&mut tree, job, &mut monitor_client_ref, measure_time);
+            let result = process_job(&mut tree, job, &mut monitor_client, measure_time);
             let failed = result.is_err();
-            output.send(result).expect("Main thread has crashed");
+            output_ref.send(result).expect("Main thread has crashed");
             if failed {
                 break;
             }
         }
     });
-    monitor_client.notify_shutdown();
     if let Err(panic) = maybe_panic {
+        output
+            .send(Err(JobError::WorkerPanicked))
+            .expect("Main thread has crashed");
         std::panic::resume_unwind(panic);
     }
 }
@@ -114,6 +116,10 @@ pub enum JobError {
     /// Failing status
     #[error("Job process failed")]
     JobFailed,
+
+    /// Worker panicked
+    #[error("Worker thread panicked")]
+    WorkerPanicked,
 }
 
 /// Start a compilation process
@@ -274,43 +280,90 @@ fn report_stdpipe(process: Child) -> String {
 
 /// Worker interface to the work queue
 pub(super) struct WorkReceiver<'queue> {
+    /// Thread-local work queue
     local: Worker<DatabaseEntry>,
-    global: &'queue Injector<DatabaseEntry>,
-    stealers: &'queue [Stealer<DatabaseEntry>],
+
+    /// Facilities shared with other threads
+    shared: &'queue WorkQueue,
+
+    /// Last observed WorkQueue futex value
+    last_futex_value: u32,
 }
 //
 impl<'queue> WorkReceiver<'queue> {
     /// Set up the worker interface
-    pub fn new(local: Worker<DatabaseEntry>, queue: &'queue WorkQueue) -> Self {
+    pub fn new(local: Worker<DatabaseEntry>, shared: &'queue WorkQueue) -> Self {
+        let last_futex_value = shared.futex.load(Ordering::Acquire);
+        assert_eq!(last_futex_value, WorkQueue::FUTEX_INITIAL);
         Self {
             local,
-            global: &queue.global,
-            stealers: &queue.stealers,
+            shared,
+            last_futex_value,
         }
     }
+
+    /// Wait for work to come in (true) or for the termination signal (false)
+    pub fn wait(&mut self) -> WaitOutcome {
+        let futex = &self.shared.futex;
+        self.last_futex_value = loop {
+            let new_futex_value = futex.load(Ordering::Acquire);
+            if new_futex_value != self.last_futex_value {
+                break new_futex_value;
+            }
+            atomic_wait::wait(futex, new_futex_value);
+        };
+        match self.last_futex_value {
+            WorkQueue::FUTEX_FINISHED => WaitOutcome::Finished,
+            _ => WaitOutcome::NewJob,
+        }
+    }
+}
+//
+/// Outcome of waiting for the main thread's signal
+pub(super) enum WaitOutcome {
+    /// New job should have arrived
+    NewJob,
+
+    /// No job will be coming anymore
+    Finished,
 }
 //
 impl Iterator for WorkReceiver<'_> {
     type Item = DatabaseEntry;
 
     fn next(&mut self) -> Option<DatabaseEntry> {
-        // Start from our local queue
-        self.local.pop().or_else(|| {
-            // Otherwise, we need to look for a task elsewhere.
-            std::iter::repeat_with(|| {
-                // Try stealing a batch of tasks from the global queue or other threads
-                self.global.steal_batch_and_pop(&self.local).or_else(|| {
-                    self.stealers
-                        .iter()
-                        .map(|s| s.steal_batch_and_pop(&self.local))
-                        .collect()
+        loop {
+            // Look for work, starting with our thread-local queue
+            let pop_result = self.local.pop().or_else(|| {
+                // If no work is found locally, we need to look elsewhere.
+                std::iter::repeat_with(|| {
+                    // Try stealing a task from the global injector...
+                    self.shared.global.steal().or_else(|| {
+                        // ...or if that fails, try stealing from other workers
+                        self.shared
+                            .stealers
+                            .iter()
+                            .map(|s| s.steal_batch_and_pop(&self.local))
+                            .collect()
+                    })
                 })
-            })
-            // Loop while no task was stolen and any steal operation needs to be retried.
-            .find(|s| !s.is_retry())
-            // Extract the stolen task, if there is one.
-            .and_then(|s| s.success())
-        })
+                // Loop while no task was stolen and any steal operation needs to be retried.
+                .find(|s| !s.is_retry())
+                // Extract the stolen task, if there is one.
+                .and_then(|s| s.success())
+            });
+
+            // If a task was extracted, return it
+            if let Some(result) = pop_result {
+                return Some(result);
+            }
+
+            // Otherwise, wait for more work or a termination signal
+            match self.wait() {
+                WaitOutcome::NewJob => continue,
+                WaitOutcome::Finished => break None,
+            }
+        }
     }
 }
 
@@ -331,7 +384,7 @@ pub(super) struct MonitorClient<'monitor> {
 //
 impl<'monitor> MonitorClient<'monitor> {
     /// Set up the worker interface
-    pub(super) fn new(
+    pub fn new(
         monitor: &'monitor Monitor,
         elapsed: &'monitor AtomicUsize,
         stopped: StopClient<'monitor>,
@@ -365,15 +418,6 @@ impl<'monitor> MonitorClient<'monitor> {
             .system
             .read()
             .expect("System monitor has been poisoned")
-    }
-
-    /// Notify the main thread that this worker is shutting down
-    pub fn notify_shutdown(&mut self) {
-        let prev_live = self.monitor.alive.fetch_sub(1, Ordering::Release);
-        assert!(
-            prev_live > 0,
-            "There were more shutdown notifications than threads!"
-        );
     }
 
     /// Update the value of the elapsed counter

@@ -85,6 +85,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic-wait"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a55b94919229f2c42292fd71ffa4b75e83193bffdd77b1e858cd55fd2d0b0ea8"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -256,6 +266,7 @@ name = "cmakeperf"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
+ "atomic-wait",
  "crossbeam-deque",
  "crossbeam-utils",
  "csv",

@@ -15,7 +15,7 @@ use std::{
     panic::UnwindSafe,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         Arc, RwLock,
     },
     thread::JoinHandle,
@@ -93,6 +93,13 @@ struct WorkQueue {
 
     /// Interface to steal from each worker
     stealers: Vec<Stealer<DatabaseEntry>>,
+
+    /// Notification channel for `WorkSender`
+    ///
+    /// Takes a different nonzero value every time work is sent via
+    /// `WorkSender::push()` and goes to zero when the `WorkSender` is dropped.
+    ///
+    futex: AtomicU32,
 }
 //
 impl WorkQueue {
@@ -105,6 +112,7 @@ impl WorkQueue {
         Self {
             global,
             stealers: Vec::new(),
+            futex: AtomicU32::new(Self::FUTEX_INITIAL),
         }
     }
 
@@ -118,8 +126,9 @@ impl WorkQueue {
         &mut self,
         concurrency: usize,
     ) -> impl Iterator<Item = Worker<DatabaseEntry>> {
+        assert_eq!(self.stealers.len(), 0, "This should only be called once");
         assert!(concurrency > 0, "There should be at least one worker");
-        let local_queues = std::iter::repeat_with(Worker::new_lifo)
+        let local_queues = std::iter::repeat_with(Worker::new_fifo)
             .take(concurrency)
             .collect::<Vec<_>>();
         self.stealers
@@ -127,13 +136,22 @@ impl WorkQueue {
         local_queues.into_iter()
     }
 
-    /// Reinject a job
-    pub fn push(&self, job: DatabaseEntry) {
-        self.global.push(job);
-    }
+    /// Special value of `futex` that indicates the WorkQueue is closed
+    /// and will not receive more jobs.
+    const FUTEX_FINISHED: u32 = 0;
+
+    /// Initial value of `futex` that won't come back.
+    const FUTEX_INITIAL: u32 = 1;
 }
 
-/// Shared state for system monitoring and OOM handling
+/// Shared state for system monitoring and worker control
+///
+/// This handles the following responsibilities :
+/// - System monitoring by the main thread, readable by worker threads
+///   * If system RAM gets too low, main thread handles it by killing a worker
+/// - Tracking how long each worker has been at its task for OOM victim selection
+/// - Letting the main thread ask a worker thread to stop
+///
 struct Monitor {
     /// Shared system monitor state
     system: RwLock<System>,
@@ -143,9 +161,6 @@ struct Monitor {
 
     /// Request for workers to stop what they are doing
     stop: StopFlags,
-
-    /// Live thread counter
-    alive: AtomicUsize,
 }
 //
 impl Monitor {
@@ -157,7 +172,6 @@ impl Monitor {
                 .take(concurrency)
                 .collect(),
             stop: StopFlags::new(concurrency),
-            alive: AtomicUsize::new(concurrency),
         }
     }
 
@@ -351,7 +365,6 @@ mod tests {
         fn check_monitor(
             monitor: &Monitor,
             concurrency: usize,
-            num_alive: usize,
             mut expected_elapsed: impl FnMut(usize) -> usize,
         ) {
             assert_eq!(monitor.concurrency(), concurrency);
@@ -360,21 +373,20 @@ mod tests {
                 assert_eq!(elapsed.load(Ordering::Relaxed), expected_elapsed(idx));
             }
             assert_eq!(monitor.stop.clients().count(), concurrency);
-            assert_eq!(monitor.alive.load(Ordering::Relaxed), num_alive);
         }
 
         for concurrency in [1, 2] {
             // Test observable state at various construction stages
             let monitor = Monitor::new(concurrency);
-            check_monitor(&monitor, concurrency, concurrency, |_| 0);
+            check_monitor(&monitor, concurrency, |_| 0);
             let mut server = monitor.server();
-            check_monitor(&monitor, concurrency, concurrency, |_| 0);
+            check_monitor(&monitor, concurrency, |_| 0);
             let check_server_update_result = |server: &mut MonitorServer, result| {
                 assert_eq!(server.update(), result);
             };
             check_server_update_result(&mut server, MonitorStatus::Running);
             let mut clients = monitor.clients().collect::<Vec<_>>();
-            check_monitor(&monitor, concurrency, concurrency, |_| 0);
+            check_monitor(&monitor, concurrency, |_| 0);
             check_server_update_result(&mut server, MonitorStatus::Running);
             let check_system_not_poisoned = |clients: &Vec<MonitorClient>| {
                 clients.iter().for_each(|c| std::mem::drop(c.system()));
@@ -384,30 +396,13 @@ mod tests {
             // Try retaining and switching jobs
             for client_idx in 0..concurrency {
                 assert_eq!(clients[client_idx].keep_job(), Ok(()));
-                check_monitor(&monitor, concurrency, concurrency, |idx| {
-                    (idx == client_idx) as usize
-                });
+                check_monitor(&monitor, concurrency, |idx| (idx == client_idx) as usize);
                 check_server_update_result(&mut server, MonitorStatus::Running);
                 check_system_not_poisoned(&clients);
 
                 assert_eq!(clients[client_idx].switch_job(), Ok(()));
-                check_monitor(&monitor, concurrency, concurrency, |_| 0);
+                check_monitor(&monitor, concurrency, |_| 0);
                 check_server_update_result(&mut server, MonitorStatus::Running);
-                check_system_not_poisoned(&clients);
-            }
-
-            // Simulate all clients stopping
-            for client_idx in 0..concurrency {
-                clients[client_idx].notify_shutdown();
-                check_monitor(&monitor, concurrency, concurrency - client_idx - 1, |_| 0);
-                check_server_update_result(
-                    &mut server,
-                    if client_idx < concurrency - 1 {
-                        MonitorStatus::Running
-                    } else {
-                        MonitorStatus::AllThreadsDone
-                    },
-                );
                 check_system_not_poisoned(&clients);
             }
         }
