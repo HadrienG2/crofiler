@@ -411,5 +411,7 @@ mod tests {
     // TODO: Test WorkQueue
     // TODO: Test Measurement in an integration test using
     //       env!("CARGO_BIN_EXE_hog") as a workload and
-    //       env!("CARGO_TARGET_TMPDIR") as a file dump
+    //       env!("CARGO_TARGET_TMPDIR") as a file dump + simplelog to capture
+    //       and check logs + will also need a process that can print arbitrary
+    //       stdout and stderr and emit an arbitrary exit code.
 }
