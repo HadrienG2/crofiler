@@ -4,7 +4,7 @@ mod main;
 mod worker;
 
 use self::{
-    main::{MonitorServer, StopServer},
+    main::{MonitorServer, StopServer, WorkSender},
     worker::{MonitorClient, StopClient},
 };
 use crate::commands::{CompilationDatabase, DatabaseEntry};
@@ -134,6 +134,11 @@ impl WorkQueue {
         self.stealers
             .extend(local_queues.iter().map(Worker::stealer));
         local_queues.into_iter()
+    }
+
+    /// Set up main thread interface
+    pub fn sender(&self) -> WorkSender {
+        WorkSender::new(self)
     }
 
     /// Special value of `futex` that indicates the WorkQueue is closed
@@ -268,9 +273,13 @@ const POLLING_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
     use super::main::MonitorStatus;
+    use super::worker::WorkReceiver;
     use super::*;
-    use quickcheck::TestResult;
+    use quickcheck::{QuickCheck, TestResult};
     use quickcheck_macros::quickcheck;
 
     #[quickcheck]
@@ -408,7 +417,98 @@ mod tests {
         }
     }
 
-    // TODO: Test WorkQueue
+    fn work_queue_check(
+        initial: HashSet<DatabaseEntry>,
+        extra: HashSet<DatabaseEntry>,
+        num_workers: u8,
+    ) {
+        let num_workers = num_workers as usize % 3 + 1;
+        let remaining = Mutex::new(initial.clone());
+        let initial_len = initial.len();
+        let mut work_queue = WorkQueue::new(initial.into_iter().collect());
+
+        // Check initial queue state
+        assert_eq!(work_queue.global.len(), initial_len);
+        assert!(work_queue.stealers.is_empty());
+        assert_eq!(
+            work_queue.futex.load(Ordering::Relaxed),
+            WorkQueue::FUTEX_INITIAL
+        );
+
+        // Now add some worker threads
+        std::thread::scope(|scope| {
+            // Set up workers
+            for local_queue in work_queue.local_queues(num_workers) {
+                let work_queue = &work_queue;
+                let remaining = &remaining;
+                scope.spawn(move || {
+                    let receiver = WorkReceiver::new(local_queue, work_queue);
+                    for task in receiver {
+                        assert!(remaining.lock().unwrap().remove(&task));
+                    }
+                });
+            }
+            assert_eq!(work_queue.stealers.len(), num_workers);
+            assert_eq!(
+                work_queue.futex.load(Ordering::Relaxed),
+                WorkQueue::FUTEX_INITIAL
+            );
+
+            // Set up main thread interface to the work queue
+            let mut work_sender = work_queue.sender();
+            assert_eq!(work_queue.stealers.len(), num_workers);
+            assert_eq!(
+                work_queue.futex.load(Ordering::Relaxed),
+                WorkQueue::FUTEX_INITIAL
+            );
+
+            // Wait a bit for workers to have processed all tasks
+            loop {
+                std::thread::sleep(Duration::from_millis(1));
+                if remaining.lock().unwrap().is_empty() {
+                    break;
+                }
+            }
+
+            // Inject more tasks into the queue, in a fashion that purposely
+            // maximizes racy behavior at the cost of efficiency
+            let mut futex_values =
+                std::iter::once(WorkQueue::FUTEX_INITIAL).collect::<HashSet<_>>();
+            for task in extra {
+                assert!(remaining.lock().unwrap().insert(task.clone()));
+                work_sender.push(task);
+                assert!(futex_values.insert(work_queue.futex.load(Ordering::Relaxed)));
+                std::thread::yield_now();
+            }
+            assert!(!futex_values.contains(&WorkQueue::FUTEX_FINISHED));
+
+            // Drop the main thread interface to tell workers that no more work
+            // will be coming and they can exit after this batch.
+            std::mem::drop(work_sender);
+            assert_eq!(
+                work_queue.futex.load(Ordering::Relaxed),
+                WorkQueue::FUTEX_FINISHED
+            );
+        });
+
+        // Check that workers processed all tasks before exiting
+        assert!(work_queue.global.is_empty());
+        assert!(work_queue.stealers.iter().all(Stealer::is_empty));
+        assert_eq!(
+            work_queue.futex.load(Ordering::Relaxed),
+            WorkQueue::FUTEX_FINISHED
+        );
+        assert!(remaining.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn work_queue() {
+        // This test is pretty slow, can only afford few configurations
+        QuickCheck::new()
+            .tests(5)
+            .quickcheck(work_queue_check as fn(HashSet<DatabaseEntry>, HashSet<DatabaseEntry>, u8))
+    }
+
     // TODO: Test Measurement in an integration test using
     //       env!("CARGO_BIN_EXE_hog") as a workload and
     //       env!("CARGO_TARGET_TMPDIR") as a file dump + simplelog to capture

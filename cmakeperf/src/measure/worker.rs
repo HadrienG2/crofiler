@@ -304,6 +304,13 @@ impl<'queue> WorkReceiver<'queue> {
 
     /// Wait for work or a termination signal
     pub fn wait(&mut self) -> WaitOutcome {
+        // If we last observed the "finished" signal and checked the queue one
+        // last time for new jobs after that, we're done: no more jobs can come.
+        if self.last_futex_value == WorkQueue::FUTEX_FINISHED {
+            return WaitOutcome::Finished;
+        }
+
+        // Otherwise, wait for activity from the main thread, then check again
         let futex = &self.shared.futex;
         self.last_futex_value = loop {
             let new_futex_value = futex.load(Ordering::Acquire);
@@ -312,17 +319,14 @@ impl<'queue> WorkReceiver<'queue> {
             }
             atomic_wait::wait(futex, new_futex_value);
         };
-        match self.last_futex_value {
-            WorkQueue::FUTEX_FINISHED => WaitOutcome::Finished,
-            _ => WaitOutcome::NewJob,
-        }
+        WaitOutcome::Continue
     }
 }
 //
 /// Outcome of waiting for the main thread's signal
 pub(super) enum WaitOutcome {
-    /// New job should have arrived
-    NewJob,
+    /// New job might have arrived
+    Continue,
 
     /// No job will be coming anymore
     Finished,
@@ -359,7 +363,7 @@ impl Iterator for WorkReceiver<'_> {
 
             // Otherwise, wait for work or a termination signal
             match self.wait() {
-                WaitOutcome::NewJob => continue,
+                WaitOutcome::Continue => continue,
                 WaitOutcome::Finished => break None,
             }
         }

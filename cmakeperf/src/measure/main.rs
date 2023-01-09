@@ -67,7 +67,7 @@ pub(super) fn run(
             let mut last_poll = Instant::now();
             let mut next_poll = last_poll + POLLING_INTERVAL;
             let mut monitor_server = monitor.server();
-            let mut work_sender = WorkSender::new(&work_queue);
+            let mut work_sender = work_queue.sender();
             loop {
                 // Handle external request to terminate the job
                 if kill.load(Ordering::Relaxed) {
