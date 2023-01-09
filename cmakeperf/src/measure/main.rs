@@ -432,5 +432,32 @@ impl<'flags> StopServer<'flags> {
     }
 }
 
-// FIXME: Add unit tests ? Could do that by having a dummy binary that consumes
-//        X memory during Y time.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quickcheck_macros::quickcheck;
+
+    #[quickcheck]
+    fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) {
+        if let Some(val) = concurrency {
+            assert_eq!(
+                super::concurrency(measure_time, concurrency),
+                usize::from(val)
+            );
+        } else {
+            if measure_time {
+                assert_eq!(super::concurrency(measure_time, concurrency), 1);
+            } else if let Ok(par) = std::thread::available_parallelism() {
+                assert_eq!(
+                    super::concurrency(measure_time, concurrency),
+                    usize::from(par)
+                );
+            } else {
+                // Last-chance default should use at least one core and not
+                // oversubscribe lower-end CPUs too much
+                let result = super::concurrency(measure_time, concurrency);
+                assert!(result >= 1 && result <= 4);
+            }
+        }
+    }
+}
