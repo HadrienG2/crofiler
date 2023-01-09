@@ -144,7 +144,7 @@ impl WorkQueue {
     const FUTEX_INITIAL: u32 = 1;
 }
 
-/// Shared state for system monitoring and worker control
+/// Shared state for system monitoring and OOM handling
 ///
 /// This handles the following responsibilities :
 /// - System monitoring by the main thread, readable by worker threads

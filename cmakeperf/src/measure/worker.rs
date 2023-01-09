@@ -2,7 +2,7 @@
 
 use super::{Monitor, WorkQueue, POLLING_INTERVAL};
 use crate::{commands::DatabaseEntry, output::UnitProfile};
-use crossbeam_deque::Worker;
+use crossbeam_deque::{Steal, Worker};
 use std::{
     io::{self, Read},
     panic::AssertUnwindSafe,
@@ -337,15 +337,14 @@ impl Iterator for WorkReceiver<'_> {
             let pop_result = self.local.pop().or_else(|| {
                 // If no work is found locally, we need to look elsewhere.
                 std::iter::repeat_with(|| {
-                    // Try stealing a task from the global injector...
-                    self.shared.global.steal().or_else(|| {
-                        // ...or if that fails, try stealing from other workers
-                        self.shared
-                            .stealers
-                            .iter()
-                            .map(|s| s.steal_batch_and_pop(&self.local))
-                            .collect()
-                    })
+                    // Try stealing tasks from other workers...
+                    self.shared
+                        .stealers
+                        .iter()
+                        .map(|s| s.steal_batch_and_pop(&self.local))
+                        .collect::<Steal<_>>()
+                        // ...or if that fails, try the global injector
+                        .or_else(|| self.shared.global.steal())
                 })
                 // Loop while no task was stolen and any steal operation needs to be retried.
                 .find(|s| !s.is_retry())
