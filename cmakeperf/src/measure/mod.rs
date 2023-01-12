@@ -510,9 +510,8 @@ mod tests {
     }
 
     // TODO: Test Measurement in an integration test using
-    //       env!("CARGO_BIN_EXE_hog") as a workload and
+    //       env!("CARGO_BIN_EXE_mock") as a workload and
     //       env!("CARGO_TARGET_TMPDIR") as a file dump + simplelog to capture
-    //       and check logs + will also need a process that can print arbitrary
-    //       stdout and stderr and emit an arbitrary exit code and one that can
-    //       call back another process to create a process tree.
+    //       and check logs. Test with multi-layered process trees, exit codes,
+    //       various memory consumption patterns and stdout/stderr output.
 }
