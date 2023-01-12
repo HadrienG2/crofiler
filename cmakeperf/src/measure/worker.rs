@@ -491,7 +491,4 @@ mod tests {
         assert_eq!(flag.must_stop(), (init & flag.mask) == 0);
         TestResult::passed()
     }
-
-    // FIXME: Add more unit tests ? Could do that by having a dummy binary that consumes
-    //        X memory during Y time.
 }
