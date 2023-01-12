@@ -6,8 +6,6 @@
 
 use std::time::Duration;
 
-const PAGE_SIZE: usize = 4096;
-
 fn main() {
     for arg in std::env::args().skip(1) {
         // Decode how long we should hog memory
@@ -15,20 +13,26 @@ fn main() {
         let time = Duration::from_secs_f64(time_secs.parse().unwrap());
 
         // Decode how much memory we should hog
-        let mem_mb = mem_and_suffix.strip_suffix('M').unwrap();
-        let mem_mb: f64 = mem_mb.parse().unwrap();
-        let mem_pages = (mem_mb * 1_000_000.0 / PAGE_SIZE as f64).ceil() as usize;
-
-        // Create buffer and touch it to make sure Linux really allocates it
-        let mut alloc = vec![[0u8; PAGE_SIZE]; mem_pages];
-        for page in &mut alloc {
-            let first_byte = page.as_mut_slice() as *mut [u8] as *mut u8;
-            unsafe {
-                first_byte.write_volatile(1);
-            }
-        }
-
-        // Sleep for the requested duration
-        std::thread::sleep(time);
+        let mem_megs = mem_and_suffix.strip_suffix('M').unwrap();
+        hog(time, mem_megs.parse().unwrap());
     }
+}
+
+/// Hog onto a certain amount of memory for a certain amount of time
+fn hog(time: Duration, ram_megs: usize) {
+    // Express memory amount in pages, aka the granularity of OS fuckery
+    const PAGE_SIZE: usize = 4096;
+    let mem_pages = (ram_megs as f64 * 1_000_000.0 / PAGE_SIZE as f64).ceil() as usize;
+
+    // Create buffer and touch it to make sure the OS really does allocate it
+    let mut alloc = vec![[0u8; PAGE_SIZE]; mem_pages];
+    for page in &mut alloc {
+        let first_byte = page.as_mut_slice() as *mut [u8] as *mut u8;
+        unsafe {
+            first_byte.write_volatile(1);
+        }
+    }
+
+    // Sleep for the requested duration
+    std::thread::sleep(time);
 }
