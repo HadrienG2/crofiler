@@ -8,14 +8,21 @@ use std::time::Duration;
 
 fn main() {
     for arg in std::env::args().skip(1) {
-        // Decode how long we should hog memory
-        let (time_secs, mem_and_suffix) = arg.split_once("s:").unwrap();
-        let time = Duration::from_secs_f64(time_secs.parse().unwrap());
-
-        // Decode how much memory we should hog
-        let mem_megs = mem_and_suffix.strip_suffix('M').unwrap();
-        hog(time, mem_megs.parse().unwrap());
+        hog_cmd(&arg);
     }
+}
+
+/// Textual interface to `hog()`. Takes as input a `<time>s:<mem>M` pair such as
+/// "0.1s:50M" and consumes the requested amount of amount of RAM for the
+/// requested  amount of time, in the above example 50 MB of RAM for 0.1 seconds.
+fn hog_cmd(cmd: &str) {
+    // Decode how long we should hog memory
+    let (time_secs, mem_and_suffix) = cmd.split_once("s:").unwrap();
+    let time = Duration::from_secs_f64(time_secs.parse().unwrap());
+
+    // Decode how much memory we should hog
+    let mem_megs = mem_and_suffix.strip_suffix('M').unwrap();
+    hog(time, mem_megs.parse().unwrap());
 }
 
 /// Hog onto a certain amount of memory for a certain amount of time
