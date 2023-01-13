@@ -8,8 +8,9 @@ use std::{
 };
 
 fn main() {
-    // Parse argument
-    let mut args = std::env::args().skip(1);
+    // Parse executable arguments
+    let mut args = std::env::args();
+    let exe = args.next().expect("Expected executable name as argv[0]");
     let filename = args.next().expect("Expected a command file name");
     assert_eq!(
         args.next(),
@@ -43,11 +44,10 @@ fn main() {
             }
 
             // Spawn a child process
-            ("spawn", remainder) => {
-                let args = shlex::split(remainder).expect("Expected a shell command");
+            ("recurse", filename) => {
                 children.push(
-                    Command::new(&args[0])
-                        .args(args.into_iter().skip(1))
+                    Command::new(&exe)
+                        .arg(filename)
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
@@ -62,7 +62,7 @@ fn main() {
                 exit_code = Some(remainder.parse().expect("Expected integer exit code"));
             }
 
-            // Should not happen
+            // Unknown command, should not happen
             (unknown, remainder) => {
                 unreachable!("Got unknown command '{unknown}' with arguments '{remainder}'");
             }

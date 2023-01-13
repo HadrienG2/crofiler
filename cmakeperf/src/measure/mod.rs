@@ -509,9 +509,6 @@ mod tests {
             .quickcheck(work_queue_check as fn(HashSet<DatabaseEntry>, HashSet<DatabaseEntry>, u8))
     }
 
-    // TODO: Test Measurement in an integration test using
-    //       env!("CARGO_BIN_EXE_mock") as a workload and
-    //       env!("CARGO_TARGET_TMPDIR") as a file dump + simplelog to capture
-    //       and check logs. Test with multi-layered process trees, exit codes,
-    //       various memory consumption patterns and stdout/stderr output.
+    // NOTE: The main full-build profiling functionality is tested by
+    //       integration tests.
 }

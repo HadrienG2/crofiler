@@ -22,6 +22,16 @@ impl CompilationDatabase {
         Path::new("compile_commands.json")
     }
 
+    /// Create a compilation database from a bunch of entries
+    pub fn from_entries(entries: impl IntoIterator<Item = DatabaseEntry>) -> Self {
+        Self(
+            entries
+                .into_iter()
+                .map(|entry| (Box::from(entry.input()), entry))
+                .collect(),
+        )
+    }
+
     /// Load from working directory
     pub fn load() -> Result<Self, DatabaseLoadError> {
         let data = match std::fs::read_to_string(Self::location()) {
@@ -94,12 +104,7 @@ impl FromStr for CompilationDatabase {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let entries = json::from_str::<Vec<DatabaseEntry>>(s)?;
-        Ok(Self(
-            entries
-                .into_iter()
-                .map(|entry| (Box::from(entry.input()), entry))
-                .collect(),
-        ))
+        Ok(Self::from_entries(entries))
     }
 }
 
@@ -134,6 +139,19 @@ pub struct DatabaseEntry {
 }
 //
 impl DatabaseEntry {
+    /// Create a new database entry
+    pub fn new(
+        directory: impl Into<Box<Path>>,
+        command: impl Into<Box<str>>,
+        file: impl Into<Box<Path>>,
+    ) -> Self {
+        Self {
+            directory: directory.into(),
+            command: command.into(),
+            file: file.into(),
+        }
+    }
+
     /// Working directory
     pub fn current_dir(&self) -> &Path {
         &self.directory
