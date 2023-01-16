@@ -230,9 +230,9 @@ impl ProcessTree {
 fn report_process(process: Child, exit_status: ExitStatus) -> Result<(), JobError> {
     let stdpipe_report = report_stdpipe(process);
     if !exit_status.success() {
-        let mut message = format!("Job failed with exit status {exit_status}");
+        let mut message = format!("Job failed with {exit_status}");
         if !stdpipe_report.is_empty() {
-            message = format!(", it had {stdpipe_report}");
+            message = format!("{message}, it had {stdpipe_report}");
         }
         log::error!("{message}");
         return Err(JobError::JobFailed);

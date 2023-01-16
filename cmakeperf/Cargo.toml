@@ -45,3 +45,8 @@ quickcheck_macros = "1"
 # Temporary file management
 fs-set-times = "0.18"
 tempfile = "3.3"
+
+# Used for log analysis
+once_cell = "1.17"
+regex = "1.7"
+simplelog = "0.12"
