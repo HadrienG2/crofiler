@@ -60,7 +60,7 @@ impl LogClient {
 
                 // There should be at least one, otherwise the test failed
                 let Some(matching_key) = matching_keys.next() else {
-                    panic!("No log matching expectation {key:?}");
+                    panic!("No log matching expectation {key:#?}");
                 };
 
                 // The current implementation does not support regexes with
@@ -216,7 +216,7 @@ impl LogCollector {
     fn reached_quiescent_state(&mut self) {
         assert!(
             self.logs.is_empty(),
-            "Integration test(s) produced unexpected logs: {:?}",
+            "Integration test(s) produced unexpected logs: {:#?}",
             self.logs
         );
     }
@@ -232,7 +232,7 @@ impl LogCollector {
                     *entry.get_mut() = new_refcount;
                 }
             }
-            Entry::Vacant(v) => panic!("No log matching expectation {:?}", v.key()),
+            Entry::Vacant(v) => panic!("No log matching expectation {:#?}", v.key()),
         }
     }
 

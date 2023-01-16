@@ -242,14 +242,12 @@ fn basic_hog() {
                 .expect("Failed to compile regex"),
             ),
         });
+        //
         let output = assert_matches!(
             measurement.wait(TIMEOUT_MARGIN),
             Some(MeasurementEvent::MeasurementDone(Ok(output))) => output
         );
         assert_matches!(measurement.wait(TIMEOUT_MARGIN), None);
-
-        //
-
         output
     };
 
