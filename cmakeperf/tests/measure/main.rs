@@ -63,13 +63,13 @@ impl MeasurementTest {
         // Name of the mock executable
         const MOCK_EXE: &'static str = env!("CARGO_BIN_EXE_mock");
 
-        // Set up a command file
+        // Set up a command file, compute path relative to command workdir
         let (mut cmd_file, cmd_path) = self.make_tmpfile();
         writeln!(cmd_file, "{actions}").expect("Failed to write commands to file");
-        let rel_cmd_path = pathdiff::diff_paths(&cmd_path, Self::WORKDIR)
+        let rel_cmd_path = pathdiff::diff_paths(&cmd_path, self.tmpdir.path())
             .expect("Failed to compute relative command file path");
 
-        // Create a mock input file, check relative path to it
+        // Create a mock input file, compute path relative to main thread workdir
         let (_, input_path) = self.make_tmpfile();
         let rel_input_path = pathdiff::diff_paths(&input_path, Self::WORKDIR)
             .expect("Failed to compute relative input path");
@@ -207,9 +207,9 @@ pub const RSS_BYTES_MARGIN: u64 = 10_000_000;
 fn basic_hog() {
     // Define test job and set expectations
     let mut test = MeasurementTest::new();
-    let rel_path = test.add_job("hog 50M:0.1s 150M:0.1s 20M:0.1s");
-    let min_duration = Duration::from_millis(300);
-    let min_rss_bytes = 150_000_000;
+    let rel_path = test.add_job("hog 20M:0.2s 100M:0.2s 10M:0.2s");
+    let min_duration = Duration::from_millis(600);
+    let min_rss_bytes = 100_000_000;
 
     let output = {
         // Start the job
@@ -235,8 +235,9 @@ fn basic_hog() {
             thread: LogThread::Main,
             message: MessageKey::Regex(
                 &Regex::new(&format!(
-                    // FIXME: Use fuzzier matching for wall time
-                    "^Compiled {} (max-RSS 0.1[0-9]GB, wall-time Some(0.3s))",
+                    "^Compiled {} \\(\
+                    max-RSS 0\\.1[0-9]GB, \
+                    wall-time Some\\(Ok\\(6[0-9][0-9]\\.[0-9]+ms\\)\\)\\)",
                     rel_path.display()
                 ))
                 .expect("Failed to compile regex"),
