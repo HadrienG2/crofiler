@@ -109,7 +109,7 @@ impl MeasurementTest {
     /// Returns the command's relative input file path, which will be used as an
     /// identifier in the measurement's output.
     ///
-    // FIXME: Account for jobs that cannot succeed with special resource_usage
+    // FIXME: Expand JobProperties to handle more complex cases
     pub fn with_job(mut self, actions: &str, resource_usage: JobProperties) -> Self {
         // Name of the mock executable
         const MOCK_EXE: &'static str = env!("CARGO_BIN_EXE_mock");
@@ -264,7 +264,8 @@ impl RunningMeasurementTest {
         }
     }
 
-    /// Wait for the measurement to terminate normally
+    /// Wait for the measurement to terminate
+    // FIXME: Handle more complex cases
     pub fn finish(mut self) {
         if self.num_jobs() > 0 {
             self.wait_for_job();

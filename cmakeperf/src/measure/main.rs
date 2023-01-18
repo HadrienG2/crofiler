@@ -286,10 +286,7 @@ impl<'monitor> MonitorServer<'monitor> {
                 .with_processes(ProcessRefreshKind::new()),
             last_available_memory: None,
         };
-
-        // Do the initial system monitor refresh, which is slower
-        result.refresh_and_check_memory();
-
+        result.last_available_memory = Some(result.refresh_and_check_memory());
         result
     }
 
@@ -318,7 +315,9 @@ impl<'monitor> MonitorServer<'monitor> {
 
     /// Tighten OOM threshold if new measurements call for it
     fn update_oom_threshold(&mut self, available_memory: u64) {
-        let last_available_memory = self.last_available_memory.unwrap_or(available_memory);
+        let last_available_memory = self
+            .last_available_memory
+            .expect("Initialized at end of new()");
         self.last_available_memory = Some(available_memory);
         let newly_used_memory = last_available_memory.saturating_sub(available_memory);
         if newly_used_memory > self.oom_margin {
