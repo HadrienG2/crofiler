@@ -19,7 +19,7 @@ use std::{
         Arc, RwLock,
     },
     thread::JoinHandle,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use sysinfo::{System, SystemExt};
 
@@ -265,11 +265,62 @@ impl StopFlags {
 /// Number of bits in an `usize` integer
 const BITS_PER_USIZE: usize = std::mem::size_of::<usize>() * 8;
 
-/// Polling interval in seconds
+/// Polling clock, used for system monitoring tasks
+pub struct PollClock {
+    /// When the last poll occured
+    last_poll: Instant,
+}
+//
+impl PollClock {
+    /// Start the clock, should be done right after starting monitored task(s)
+    pub fn start() -> Self {
+        Self {
+            last_poll: Instant::now(),
+        }
+    }
+
+    /// Advance poll clock, tell how long till the next poll should occur
+    pub fn poll_delay(&mut self) -> Duration {
+        let poll_start = Instant::now();
+        let curr_polling_interval = Self::polling_interval();
+        let mut next_poll = self.last_poll + curr_polling_interval;
+        if next_poll < poll_start {
+            let actual_polling_interval = poll_start - self.last_poll;
+            let next_polling_interval_millis =
+                (actual_polling_interval.as_secs_f64() * 1.1 * 1000.0).ceil() as usize;
+            POLLING_INTERVAL_MILLIS.store(next_polling_interval_millis, Ordering::Relaxed);
+            let next_polling_interval = Duration::from_millis(next_polling_interval_millis as u64);
+            log::warn!("Cannot poll every {curr_polling_interval:?}, switching to {next_polling_interval:?}");
+            next_poll = self.last_poll + next_polling_interval;
+        }
+        self.last_poll = next_poll;
+        next_poll.saturating_duration_since(poll_start)
+    }
+
+    /// Manually adjust the polling interval
+    ///
+    /// Useful in scenarios like debug mode tests where the overhead of polling
+    /// is expectedly higher than usual, but with the realm of reason.
+    ///
+    pub fn set_polling_interval(duration: Duration) {
+        POLLING_INTERVAL_MILLIS.store(duration.as_millis() as usize, Ordering::Relaxed)
+    }
+
+    /// Polling interval to be used
+    fn polling_interval() -> Duration {
+        Duration::from_millis(POLLING_INTERVAL_MILLIS.load(Ordering::Relaxed) as u64)
+    }
+}
+//
+/// PollClock polling interval in milliseconds
 ///
-/// This is empirically enough to measure max-RSS with ~100MB precision.
+/// The default interval is empirically enough to measure the max-RSS of
+/// compilation tasks with ~100MB precision.
 ///
-const POLLING_INTERVAL: Duration = Duration::from_millis(1000 / 30);
+/// It may increase if it is detected that the code can't keep up with
+/// the expected cadence, in which case throttling is most appropriate.
+///
+static POLLING_INTERVAL_MILLIS: AtomicUsize = AtomicUsize::new(50);
 
 #[cfg(test)]
 mod tests {
@@ -442,7 +493,8 @@ mod tests {
                 let work_queue = &work_queue;
                 let remaining = &remaining;
                 scope.spawn(move || {
-                    let receiver = WorkReceiver::new(local_queue, work_queue);
+                    let mut receiver = WorkReceiver::new(local_queue, work_queue);
+                    receiver.wait();
                     for task in receiver {
                         assert!(remaining.lock().unwrap().remove(&task));
                     }
@@ -510,6 +562,40 @@ mod tests {
         QuickCheck::new()
             .tests(5)
             .quickcheck(work_queue_check as fn(HashSet<DatabaseEntry>, HashSet<DatabaseEntry>, u8))
+    }
+
+    #[test]
+    fn poll_clock() {
+        // Basic harness
+        let initial_interval = PollClock::polling_interval();
+        let duration_close = |expected: Duration, actual: Duration| {
+            (actual.as_secs_f64() - expected.as_secs_f64()).abs()
+                < 0.1 * initial_interval.as_secs_f64()
+        };
+        let instant_close = |expected: Instant, actual: Instant| {
+            duration_close(expected.elapsed(), actual.elapsed())
+        };
+
+        // Test initialization
+        let mut clock = PollClock::start();
+        assert!(instant_close(clock.last_poll, Instant::now()));
+        assert_eq!(PollClock::polling_interval(), initial_interval);
+
+        // Test normal operation
+        for _ in 0..2 {
+            assert!(duration_close(clock.poll_delay(), initial_interval));
+            std::thread::sleep(initial_interval);
+            assert!(instant_close(clock.last_poll, Instant::now()));
+            assert_eq!(PollClock::polling_interval(), initial_interval);
+        }
+
+        // Test what happens when a deadline is missed
+        std::thread::sleep(2 * initial_interval);
+        let next_delay = clock.poll_delay();
+        let new_interval = PollClock::polling_interval();
+        assert!(new_interval > 2 * initial_interval);
+        assert!(new_interval < 3 * initial_interval);
+        assert!(next_delay < initial_interval);
     }
 
     // NOTE: The main full-build profiling functionality is tested by

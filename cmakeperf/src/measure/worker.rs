@@ -1,6 +1,6 @@
 //! Worker threads measuring build performance
 
-use super::{Monitor, WorkQueue, POLLING_INTERVAL};
+use super::{Monitor, PollClock, WorkQueue};
 use crate::{commands::DatabaseEntry, output::UnitProfile};
 use crossbeam_deque::{Steal, Worker};
 use std::{
@@ -60,12 +60,13 @@ fn process_job(
     }
     let start = measure_time.then(Instant::now);
     let mut process = start_job(&job)?;
+    let mut poll_clock = PollClock::start();
 
     // Monitor the job to completion or error
     tree.set_root(Pid::from_u32(process.id()));
     let mut max_rss_bytes = 0;
     let exit_status = loop {
-        match process.wait_timeout(POLLING_INTERVAL) {
+        match process.wait_timeout(poll_clock.poll_delay()) {
             Ok(None) => {
                 let system = monitor_client.system();
                 tree.refresh(&system);

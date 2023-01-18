@@ -50,23 +50,24 @@ impl JobProperties {
 
     /// Compute range of wall-clock time expected in logs & final output
     fn wall_time_range(&self) -> (Duration, Duration) {
-        (self.wall_time, self.wall_time + Duration::from_millis(190))
+        (self.wall_time, self.wall_time + Duration::from_millis(150))
     }
 
     /// Lower expected measurement of max-RSS in megabytes
     ///
-    /// The extra margin accounts for measurement error
+    /// Adds a lower margin to account for measurement error
     ///
     fn lower_max_rss_mb(&self) -> u64 {
-        self.max_rss_mb.saturating_sub(9)
+        let measurement_precision = if cfg!(debug_assertions) { 9 } else { 1 };
+        self.max_rss_mb.saturating_sub(measurement_precision)
     }
 
     /// Maximal expected value of max-RSS in megabytes
     ///
-    /// The extra margin accounts for process-related overheads
+    /// Adds an upper margin to account for OS process overheads
     ///
     fn upper_max_rss_mb(&self) -> u64 {
-        self.max_rss_mb + 9
+        self.max_rss_mb + 5
     }
 }
 
@@ -138,6 +139,9 @@ impl MeasurementTest {
     /// that were previously added via `add_job()`.
     pub fn start(self, measure_time: bool) -> RunningMeasurementTest {
         cmakeperf::measure::assume_oversubscription();
+        if cfg!(debug_assertions) {
+            cmakeperf::measure::PollClock::set_polling_interval(Duration::from_millis(150));
+        }
         RunningMeasurementTest::start(self, measure_time)
     }
 
@@ -451,5 +455,5 @@ impl RunningMeasurementTest {
     }
 
     /// Margin of error to be used when waiting for things that should be instant
-    const TIMEOUT_MARGIN: Duration = Duration::from_millis(300);
+    const TIMEOUT_MARGIN: Duration = Duration::from_millis(1000);
 }

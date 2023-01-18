@@ -2,9 +2,9 @@
 
 use super::{
     worker::{self, JobError, WorkReceiver},
-    Monitor, StopFlags, WorkQueue, BITS_PER_USIZE, POLLING_INTERVAL,
+    Monitor, StopFlags, WorkQueue, BITS_PER_USIZE,
 };
-use crate::commands::DatabaseEntry;
+use crate::{commands::DatabaseEntry, measure::PollClock};
 use std::{
     any::Any,
     fs::File,
@@ -17,7 +17,6 @@ use std::{
         mpsc::{self, RecvTimeoutError},
         Arc,
     },
-    time::Instant,
 };
 use sysinfo::{ProcessRefreshKind, RefreshKind, SystemExt};
 use thiserror::Error;
@@ -64,11 +63,10 @@ pub(super) fn run(
             }
 
             // Wait for results while monitoring free RAM
-            let mut last_poll = Instant::now();
-            let mut next_poll = last_poll + POLLING_INTERVAL;
             let mut monitor_server = monitor.server();
             let mut work_sender = work_queue.sender();
             work_sender.start();
+            let mut poll_clock = PollClock::start();
             while remaining_jobs > 0 {
                 // Handle external request to terminate the job
                 if kill.load(Ordering::Relaxed) {
@@ -79,9 +77,7 @@ pub(super) fn run(
 
                 // Wait for a job to be complete or a timeout
                 // TODO: Move to recv_deadline once available
-                match results_receiver
-                    .recv_timeout(next_poll.saturating_duration_since(Instant::now()))
-                {
+                match results_receiver.recv_timeout(poll_clock.poll_delay()) {
                     // A worker had to abort its current job as a result of running
                     // out of memory, send it back to other workers.
                     Ok(Err(JobError::Killed(job))) => {
@@ -103,14 +99,10 @@ pub(super) fn run(
                     }
 
                     // System monitor wakeup
-                    Err(RecvTimeoutError::Timeout) => {
-                        match monitor_server.update() {
-                            MonitorStatus::Running => {}
-                            MonitorStatus::KilledEveryone => return Err(MeasureError::OutOfMemory),
-                        }
-                        last_poll = Instant::now();
-                        next_poll = last_poll + POLLING_INTERVAL;
-                    }
+                    Err(RecvTimeoutError::Timeout) => match monitor_server.update() {
+                        MonitorStatus::Running => {}
+                        MonitorStatus::KilledEveryone => return Err(MeasureError::OutOfMemory),
+                    },
 
                     // No worker threads left to send job results
                     //
@@ -283,7 +275,7 @@ impl<'monitor> MonitorServer<'monitor> {
     /// Set up main thread interface
     pub fn new(monitor: &'monitor Monitor) -> Self {
         let assumed_bkg_threads = OOM_ASSUMED_BKG_THREADS.load(Ordering::Relaxed);
-        Self {
+        let mut result = Self {
             monitor,
             stop_server: monitor.stop.server(),
             assumed_bkg_threads,
@@ -293,7 +285,12 @@ impl<'monitor> MonitorServer<'monitor> {
                 .with_memory()
                 .with_processes(ProcessRefreshKind::new()),
             last_available_memory: None,
-        }
+        };
+
+        // Do the initial system monitor refresh, which is slower
+        result.refresh_and_check_memory();
+
+        result
     }
 
     /// Update system monitor state and handle job lifecycle events

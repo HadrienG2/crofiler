@@ -101,6 +101,9 @@ pub struct LogKey<'a, Matcher: FnMut(&str) -> bool = fn(&str) -> bool> {
 /// Identity of the thread that emitted a log message
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LogThread {
+    /// Shared facility from root module
+    Root,
+
     /// Main thread
     Main,
 
@@ -262,6 +265,7 @@ impl Log for LogCollectorHandle {
                 .strip_prefix("cmakeperf::measure")
                 .expect("Should have been filtered out by enabled()");
             let thread = match submodule_path {
+                "" => LogThread::Root,
                 "::main" => LogThread::Main,
                 "::worker" => LogThread::Worker,
                 _ => unreachable!("No other module should emit logs"),
