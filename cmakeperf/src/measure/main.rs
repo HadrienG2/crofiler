@@ -68,7 +68,8 @@ pub(super) fn run(
             let mut next_poll = last_poll + POLLING_INTERVAL;
             let mut monitor_server = monitor.server();
             let mut work_sender = work_queue.sender();
-            loop {
+            work_sender.start();
+            while remaining_jobs > 0 {
                 // Handle external request to terminate the job
                 if kill.load(Ordering::Relaxed) {
                     atomic::fence(Ordering::Acquire);
@@ -99,10 +100,6 @@ pub(super) fn run(
                         writer.serialize(unit_profile)?;
                         step_done();
                         remaining_jobs -= 1;
-                        if remaining_jobs == 0 {
-                            // This was the last job, we're done
-                            break;
-                        }
                     }
 
                     // System monitor wakeup
@@ -200,6 +197,18 @@ impl<'queue> WorkSender<'queue> {
             queue,
             last_futex_value,
         }
+    }
+
+    /// Allow workers to start
+    ///
+    /// This should only be done once the main thread is ready to start
+    /// system monitoring on a short notice.
+    ///
+    pub fn start(&mut self) {
+        assert_eq!(self.last_futex_value, WorkQueue::FUTEX_INITIAL);
+        self.last_futex_value = WorkQueue::FUTEX_INITIAL + 1;
+        self.update_futex();
+        atomic_wait::wake_all(&self.queue.futex);
     }
 
     /// (Re)submit a job to workers

@@ -13,7 +13,7 @@ use std::{
 use thiserror::Error;
 
 /// Full compilation database
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CompilationDatabase(HashMap<Box<Path>, DatabaseEntry>);
 //
 impl CompilationDatabase {
@@ -32,7 +32,7 @@ impl CompilationDatabase {
         )
     }
 
-    /// Load from working directory
+    /// Load the compilation database from the working directory
     pub fn load() -> Result<Self, DatabaseLoadError> {
         let data = match std::fs::read_to_string(Self::location()) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -41,6 +41,25 @@ impl CompilationDatabase {
             other => other?,
         };
         Ok(Self::from_str(&data)?)
+    }
+
+    /// Create an empty compilation database
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    /// Add an entry to an existing compilation database
+    pub fn push(&mut self, entry: DatabaseEntry) {
+        assert_eq!(
+            self.0.insert(Box::from(entry.input()), entry),
+            None,
+            "Duplicate entry in compilation database"
+        );
+    }
+
+    /// Remove all entries from this compilation database
+    pub fn clear(&mut self) {
+        self.0.clear()
     }
 
     /// List the database entries in arbitrary order
@@ -457,16 +476,6 @@ pub(crate) mod tests {
         {
             let mut database_json =
                 File::create(tmp_workdir.path().join(CompilationDatabase::location())).unwrap();
-            eprintln!(
-                "[\
-                {{\"directory\":\"{}\",\"command\":\"{cmd_1}\",\"file\":\"{}\"}},\
-                {{\"directory\":\"{}\",\"command\":\"{cmd_2}\",\"file\":\"{}\"}}\
-                ]",
-                tmp_output_dir_1.path().display(),
-                input_path_1.display(),
-                tmp_output_dir_2.path().display(),
-                input_path_2.display()
-            );
             write!(
                 database_json,
                 "[\

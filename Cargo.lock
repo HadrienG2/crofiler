@@ -276,7 +276,6 @@ dependencies = [
  "pathdiff",
  "quickcheck",
  "quickcheck_macros",
- "regex",
  "serde",
  "serde_json",
  "shlex",

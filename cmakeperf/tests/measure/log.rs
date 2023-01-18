@@ -2,10 +2,10 @@
 
 use log::{LevelFilter, Log};
 use once_cell::sync::Lazy;
-use regex::Regex;
 use simplelog::{ColorChoice, CombinedLogger, Config, SharedLogger, TermLogger, TerminalMode};
 use std::{
     collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
     hash::Hash,
     sync::{Mutex, MutexGuard},
 };
@@ -38,29 +38,27 @@ impl LogClient {
     /// This will assert that a matching log has indeed been produced, and
     /// if so remove it from the list of observed logs.
     ///
-    pub fn expect_log(&self, key: LogKey) {
+    pub fn expect_log(&self, key: LogKey<impl FnMut(&str) -> bool>) {
         let mut lock = LogCollector::instance();
         match key.message {
             // Exact log match : find and remove a matching log in LogCollector
-            MessageKey::Exact(exact_message) => lock.remove(LogData {
+            MessageKey::Exact(message) => lock.remove(LogData {
                 level: key.level,
                 thread: key.thread,
-                message: exact_message.to_owned(),
+                message: message.to_owned(),
             }),
 
             // Approximate log match using a regex of the message
-            MessageKey::Regex(message_regex) => {
+            MessageKey::Approx(mut matcher) => {
                 // Iterate over logs matching this query
                 let key_matches = |data: &&LogData| {
-                    data.level == key.level
-                        && data.thread == key.thread
-                        && message_regex.is_match(&data.message)
+                    data.level == key.level && data.thread == key.thread && matcher(&data.message)
                 };
                 let mut matching_keys = lock.logs.keys().filter(key_matches);
 
                 // There should be at least one, otherwise the test failed
                 let Some(matching_key) = matching_keys.next() else {
-                    panic!("No log matching expectation {key:#?}");
+                    panic!("No log matching expectation inside log data {:#?}", lock.logs);
                 };
 
                 // The current implementation does not support regexes with
@@ -89,7 +87,7 @@ impl Drop for LogClient {
 
 /// Search query to look up a log
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LogKey<'a> {
+pub struct LogKey<'a, Matcher: FnMut(&str) -> bool = fn(&str) -> bool> {
     /// Verbosity level of the message
     pub level: LogLevel,
 
@@ -97,7 +95,7 @@ pub struct LogKey<'a> {
     pub thread: LogThread,
 
     /// Message string matching criterion
-    pub message: MessageKey<'a>,
+    pub message: MessageKey<'a, Matcher>,
 }
 
 /// Identity of the thread that emitted a log message
@@ -112,31 +110,31 @@ pub enum LogThread {
 
 /// Log message search query
 #[derive(Clone, Debug)]
-pub enum MessageKey<'a> {
+pub enum MessageKey<'a, Matcher: FnMut(&str) -> bool = fn(&str) -> bool> {
     /// Exact match
     Exact(&'a str),
 
-    /// Regex match
+    /// Approximate match
     ///
     /// Used for cases where the message cannot be exactly predicted, typically
-    /// for CPU counts in parallel builds. Beware that ambiguity resolution is
-    /// not supported, so if multiple logs match this query, the test will fail.
-    /// Be as specific as possible!
+    /// for resource usage numbers like execution times. Beware that ambiguity
+    /// resolution is not supported, so if multiple logs match this query, the
+    /// test will fail. Be as specific as possible and make tests varied!
     ///
-    Regex(&'a Regex),
+    Approx(Matcher),
 }
 //
-impl PartialEq for MessageKey<'_> {
+impl<Matcher: PartialEq + FnMut(&str) -> bool> PartialEq for MessageKey<'_, Matcher> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (MessageKey::Exact(e1), MessageKey::Exact(e2)) => e1.eq(e2),
-            (MessageKey::Regex(r1), MessageKey::Regex(r2)) => r1.as_str().eq(r2.as_str()),
+            (MessageKey::Approx(a1), MessageKey::Approx(a2)) => a1.eq(a2),
             _ => false,
         }
     }
 }
 //
-impl Eq for MessageKey<'_> {}
+impl<Matcher: Eq + FnMut(&str) -> bool> Eq for MessageKey<'_, Matcher> {}
 
 /// Global log collector
 ///

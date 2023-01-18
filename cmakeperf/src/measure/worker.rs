@@ -20,7 +20,7 @@ use wait_timeout::ChildExt;
 
 /// Worker thread of the full-build profiling process
 pub(super) fn run(
-    input: WorkReceiver,
+    mut input: WorkReceiver,
     output: Sender<Result<UnitProfile, JobError>>,
     mut monitor_client: MonitorClient,
     measure_time: bool,
@@ -29,6 +29,7 @@ pub(super) fn run(
     let mut monitor_client = AssertUnwindSafe(&mut monitor_client);
     let maybe_panic = std::panic::catch_unwind(move || {
         let mut tree = ProcessTree::new();
+        input.wait();
         for job in input {
             let result = process_job(&mut tree, job, &mut monitor_client, measure_time);
             let failed = result.is_err();
@@ -293,16 +294,14 @@ pub(super) struct WorkReceiver<'queue> {
 impl<'queue> WorkReceiver<'queue> {
     /// Set up the worker interface
     pub fn new(local: Worker<DatabaseEntry>, shared: &'queue WorkQueue) -> Self {
-        let last_futex_value = shared.futex.load(Ordering::Acquire);
-        assert_eq!(last_futex_value, WorkQueue::FUTEX_INITIAL);
         Self {
             local,
             shared,
-            last_futex_value,
+            last_futex_value: WorkQueue::FUTEX_INITIAL,
         }
     }
 
-    /// Wait for work or a termination signal
+    /// Wait for a start signal, new work or a termination signal
     pub fn wait(&mut self) -> WaitOutcome {
         // If we last observed the "finished" signal and checked the queue one
         // last time for new jobs after that, we're done: no more jobs can come.
@@ -324,6 +323,7 @@ impl<'queue> WorkReceiver<'queue> {
 }
 //
 /// Outcome of waiting for the main thread's signal
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(super) enum WaitOutcome {
     /// New job might have arrived
     Continue,
@@ -361,7 +361,7 @@ impl Iterator for WorkReceiver<'_> {
                 return Some(result);
             }
 
-            // Otherwise, wait for work or a termination signal
+            // Otherwise, wait for new tasks
             match self.wait() {
                 WaitOutcome::Continue => continue,
                 WaitOutcome::Finished => break None,

@@ -448,6 +448,7 @@ mod tests {
                     }
                 });
             }
+            assert_eq!(work_queue.global.len(), initial_len);
             assert_eq!(work_queue.stealers.len(), num_workers);
             assert_eq!(
                 work_queue.futex.load(Ordering::Relaxed),
@@ -456,13 +457,15 @@ mod tests {
 
             // Set up main thread interface to the work queue
             let mut work_sender = work_queue.sender();
+            assert_eq!(work_queue.global.len(), initial_len);
             assert_eq!(work_queue.stealers.len(), num_workers);
             assert_eq!(
                 work_queue.futex.load(Ordering::Relaxed),
                 WorkQueue::FUTEX_INITIAL
             );
 
-            // Wait a bit for workers to have processed all tasks
+            // Start workers, wait a bit for them to have processed all tasks
+            work_sender.start();
             loop {
                 std::thread::sleep(Duration::from_millis(1));
                 if remaining.lock().unwrap().is_empty() {
@@ -473,7 +476,7 @@ mod tests {
             // Inject more tasks into the queue, in a fashion that purposely
             // maximizes racy behavior at the cost of efficiency
             let mut futex_values =
-                std::iter::once(WorkQueue::FUTEX_INITIAL).collect::<HashSet<_>>();
+                std::iter::once(WorkQueue::FUTEX_INITIAL + 1).collect::<HashSet<_>>();
             for task in extra {
                 assert!(remaining.lock().unwrap().insert(task.clone()));
                 work_sender.push(task);
