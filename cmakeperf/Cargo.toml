@@ -51,4 +51,4 @@ fs-set-times = "0.18"
 
 # Used for log analysis
 once_cell = "1.17"
-simplelog = "0.12"
+simplelog = { version = "0.12", features = ["test"] }

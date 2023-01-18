@@ -170,12 +170,18 @@ fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) -> usize {
     concurrency.map(usize::from).unwrap_or(if measure_time {
         1
     } else {
-        std::thread::available_parallelism()
-            .map(usize::from)
-            // Minimal amount of CPU threads expected on a dev machine in the
-            // unlikely scenario where we have no OS-level CPU enumeration API.
-            .unwrap_or(4)
+        available_parallelism()
     })
+}
+
+/// Infaillible version of std::thread::available_parallelism that takes a
+/// guess at the amount of parallelism when it's not known
+fn available_parallelism() -> usize {
+    std::thread::available_parallelism()
+        .map(usize::from)
+        // Minimal amount of CPU threads expected on a dev machine in the
+        // unlikely scenario where we have no OS-level CPU enumeration API.
+        .unwrap_or(4)
 }
 
 /// Main thread interface to send work to worker threads
@@ -257,11 +263,14 @@ pub(super) struct MonitorServer<'monitor> {
     /// Interface to ask threads to stop
     stop_server: StopServer<'monitor>,
 
-    /// Out of memory threshold in bytes
+    /// Assumed number of background threads
+    assumed_bkg_threads: usize,
+
+    /// Out-of-memory killer margin
     ///
     /// A worker will be killed if free memory gets below this threshold.
     ///
-    oom_threshold: u64,
+    oom_margin: u64,
 
     /// System monitor refresh settings
     refresh_kind: RefreshKind,
@@ -273,10 +282,13 @@ pub(super) struct MonitorServer<'monitor> {
 impl<'monitor> MonitorServer<'monitor> {
     /// Set up main thread interface
     pub fn new(monitor: &'monitor Monitor) -> Self {
+        let assumed_bkg_threads = OOM_ASSUMED_BKG_THREADS.load(Ordering::Relaxed);
         Self {
             monitor,
             stop_server: monitor.stop.server(),
-            oom_threshold: OOM_MARGIN_PER_THREAD * monitor.concurrency() as u64,
+            assumed_bkg_threads,
+            oom_margin: OOM_MARGIN_PER_THREAD
+                * (monitor.concurrency() + assumed_bkg_threads) as u64,
             refresh_kind: RefreshKind::new()
                 .with_memory()
                 .with_processes(ProcessRefreshKind::new()),
@@ -312,37 +324,38 @@ impl<'monitor> MonitorServer<'monitor> {
         let last_available_memory = self.last_available_memory.unwrap_or(available_memory);
         self.last_available_memory = Some(available_memory);
         let newly_used_memory = last_available_memory.saturating_sub(available_memory);
-        if newly_used_memory > self.oom_threshold {
-            let live_threads = self.stop_server.num_active() as u64;
-            let old_margin_per_thread = self.oom_threshold / live_threads;
-            let new_margin_per_thread = newly_used_memory / live_threads + 1;
+        if newly_used_memory > self.oom_margin {
+            let assumed_threads = self.assumed_threads() as u64;
+            let old_margin_per_thread = self.oom_margin / assumed_threads;
+            let new_margin_per_thread = newly_used_memory / assumed_threads + 1;
             log::warn!(
                 "OOM threshold of {:.6}MB/thread is too low, observed +{:.6}MB/thread across monitor tick. Moving to that.",
                 old_margin_per_thread as f32 / 1_000_000.0,
                 new_margin_per_thread as f32 / 1_000_000.0,
             );
-            self.oom_threshold = new_margin_per_thread * live_threads;
+            self.oom_margin = new_margin_per_thread * assumed_threads;
         }
     }
 
     /// Handle out-of-memory and worker termination conditions
     fn handle_oom_and_termination(&mut self, available_memory: u64) -> MonitorStatus {
         // Handle out-of-memory conditions
-        if available_memory < self.oom_threshold {
-            let old_live_threads = self.stop_server.num_active() as u64;
+        while available_memory < self.oom_margin {
+            let old_assumed_threads = self.assumed_threads();
             let youngest_alive_worker = self
                 .stop_server
                 .enumerate_active()
                 // Relaxed is fine here since we're not reading `elapsed` to synchronize
                 .min_by_key(|&idx| self.monitor.elapsed[idx].load(Ordering::Relaxed))
-                .expect("There should be at least one worker thread");
+                .expect("There should be at least one active worker thread");
             self.stop_server.stop(youngest_alive_worker);
-            let new_live_threads = old_live_threads - 1;
-            self.oom_threshold = self.oom_threshold / old_live_threads * new_live_threads;
+            let new_assumed_threads = old_assumed_threads - 1;
+            self.oom_margin =
+                self.oom_margin / old_assumed_threads as u64 * new_assumed_threads as u64;
             log::warn!(
                 "Killed worker thread #{youngest_alive_worker} due to out-of-memory condition"
             );
-            if new_live_threads == 0 {
+            if self.stop_server.num_active() == 0 {
                 atomic::fence(Ordering::Acquire);
                 return MonitorStatus::KilledEveryone;
             }
@@ -350,6 +363,11 @@ impl<'monitor> MonitorServer<'monitor> {
 
         // Make sure there still are threads left
         MonitorStatus::Running
+    }
+
+    /// Assumed number of live threads, including background OS threads
+    fn assumed_threads(&self) -> usize {
+        self.stop_server.num_active() + self.assumed_bkg_threads
     }
 }
 //
@@ -375,6 +393,22 @@ pub enum MonitorStatus {
 /// be auto-tuned upwards if it turns out to be too optimistic.
 ///
 const OOM_MARGIN_PER_THREAD: u64 = 100_000_000;
+
+/// Assume existence of one thread per system CPU core hogging memory
+///
+/// This will drastically strengthen the safety margin of the out-of-memory
+/// killer and as a result will result in more false-positive OOM kills, but
+/// can be convenient in scenarios like integration testing.
+///
+/// Previously started measurements will not be affected, you need to call this
+/// before starting measurements. You can safely call it multiple times.
+///
+pub fn assume_oversubscription() {
+    OOM_ASSUMED_BKG_THREADS.store(available_parallelism(), Ordering::Relaxed);
+}
+
+/// Out-of-memory killer marging, accounting for background system load
+static OOM_ASSUMED_BKG_THREADS: AtomicUsize = AtomicUsize::new(1);
 
 /// Main thread interface to StopFlags
 pub(super) struct StopServer<'flags>(&'flags StopFlags);

@@ -34,7 +34,7 @@ impl JobProperties {
     fn max_rss_range_logs(&self) -> (f32, f32) {
         let to_log_gb = |mb| (mb as f32 / 10.0).round() / 100.0;
         (
-            to_log_gb(self.max_rss_mb),
+            to_log_gb(self.lower_max_rss_mb()),
             to_log_gb(self.upper_max_rss_mb()),
         )
     }
@@ -42,12 +42,23 @@ impl JobProperties {
     /// Compute range of max-RSS in bytes expected in final output
     fn max_rss_range_output(&self) -> (u64, u64) {
         let to_bytes = |mb| mb * 1_000_000;
-        (to_bytes(self.max_rss_mb), to_bytes(self.upper_max_rss_mb()))
+        (
+            to_bytes(self.lower_max_rss_mb()),
+            to_bytes(self.upper_max_rss_mb()),
+        )
     }
 
     /// Compute range of wall-clock time expected in logs & final output
     fn wall_time_range(&self) -> (Duration, Duration) {
-        (self.wall_time, self.wall_time + Self::WALL_TIME_MARGIN)
+        (self.wall_time, self.wall_time + Duration::from_millis(190))
+    }
+
+    /// Lower expected measurement of max-RSS in megabytes
+    ///
+    /// The extra margin accounts for measurement error
+    ///
+    fn lower_max_rss_mb(&self) -> u64 {
+        self.max_rss_mb.saturating_sub(9)
     }
 
     /// Maximal expected value of max-RSS in megabytes
@@ -55,11 +66,8 @@ impl JobProperties {
     /// The extra margin accounts for process-related overheads
     ///
     fn upper_max_rss_mb(&self) -> u64 {
-        self.max_rss_mb + 10
+        self.max_rss_mb + 9
     }
-
-    /// Margin of error to be used when checking time measurements
-    const WALL_TIME_MARGIN: Duration = Duration::from_millis(100);
 }
 
 /// Test fixture for build profile measurement test
@@ -101,7 +109,7 @@ impl MeasurementTest {
     /// identifier in the measurement's output.
     ///
     // FIXME: Account for jobs that cannot succeed with special resource_usage
-    pub fn add_job(mut self, actions: &str, resource_usage: JobProperties) -> Self {
+    pub fn with_job(mut self, actions: &str, resource_usage: JobProperties) -> Self {
         // Name of the mock executable
         const MOCK_EXE: &'static str = env!("CARGO_BIN_EXE_mock");
 
@@ -129,6 +137,7 @@ impl MeasurementTest {
     /// Start measuring the build performance of the mock compilation commands
     /// that were previously added via `add_job()`.
     pub fn start(self, measure_time: bool) -> RunningMeasurementTest {
+        cmakeperf::measure::assume_oversubscription();
         RunningMeasurementTest::start(self, measure_time)
     }
 

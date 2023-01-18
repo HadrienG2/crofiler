@@ -2,7 +2,7 @@
 
 use log::{LevelFilter, Log};
 use once_cell::sync::Lazy;
-use simplelog::{ColorChoice, CombinedLogger, Config, SharedLogger, TermLogger, TerminalMode};
+use simplelog::{CombinedLogger, Config, SharedLogger, TestLogger};
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
@@ -167,12 +167,7 @@ static LOG_COLLECTOR: Lazy<Mutex<LogCollector>> = Lazy::new(|| {
     // Set up a global logger that logs to stderr and also feeds logs into the
     // global LogCollector
     CombinedLogger::init(vec![
-        TermLogger::new(
-            LevelFilter::Debug,
-            Config::default(),
-            TerminalMode::Stderr,
-            ColorChoice::Auto,
-        ),
+        TestLogger::new(LevelFilter::Debug, Config::default()),
         Box::new(LogCollectorHandle),
     ])
     .expect("Failed to initialize logger");

@@ -2,8 +2,10 @@
 //!
 //! Available commands are:
 //!
-//! - `hog [<mem>M:<time>s ...]` follows a programmed memory consumption,
-//!   at each step of which it consumes <mem> MB of RAM for <time> seconds.
+//! - `hog [<mem>M:<time>s ...]` follows a programmed memory and time
+//!   consumption pattern based on a set of key points. For example,
+//!   `hog 50M:0.5s 0M:0.1s` will start by reaching a peak memory consumption
+//!   of 50 MB over a period of 0.5s, then drop to 0 MB for 0.1s.
 //! - `stdout <line>` and `stderr <line>` print a line of output on stdout and
 //!   stderr respectively.
 //! - `exit <code>` sets the process' eventual exit code. This can only be done
@@ -41,7 +43,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, Command, Stdio},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tempfile::{NamedTempFile, TempPath};
 
@@ -72,10 +74,8 @@ fn main() {
             .split_once(' ')
             .expect("Expected command file syntax <command> <args>...")
         {
-            ("hog", remainder) => {
-                for cmd in remainder.split(' ') {
-                    hog_cmd(cmd);
-                }
+            ("hog", cmd) => {
+                hog_cmd(cmd);
             }
 
             ("stdout", remainder) => {
@@ -120,48 +120,95 @@ fn main() {
     std::process::exit(exit_code.unwrap_or(0));
 }
 
-/// Textual interface to `hog()`. Takes as input a `<mem>M:<time>s` pair such as
-/// "50M:0.1s" and consumes the requested amount of amount of RAM for the
-/// requested amount of time, in the above example 50 MB of RAM for 0.1 seconds.
+/// Textual interface to `hog()`, see module-level docs
 fn hog_cmd(cmd: &str) {
-    // Decode how much memory we should hog
-    let (mem_megs, time_and_suffix) = cmd
-        .split_once("M:")
-        .expect("Expected syntax <mem>M:<time>s");
-    let mem_megs = mem_megs
-        .parse()
-        .expect("Memory amount should be an integer number of megabytes");
-
-    // Decode how long we should hog that memory
-    let time_secs = time_and_suffix
-        .strip_suffix('s')
-        .expect("Expected syntax <mem>M:<time>s");
-    let time = Duration::from_secs_f64(
-        time_secs
+    let mut blocks = Vec::new();
+    for keypoint in cmd.split(' ') {
+        // Decode how much memory we should eventually hog
+        let (mem_megs, duration_and_suffix) = keypoint
+            .split_once("M:")
+            .expect("Expected syntax <mem>M:<time>s");
+        let mem_megs: usize = mem_megs
             .parse()
-            .expect("Duration should be a floating-point second count"),
-    );
-    hog(mem_megs, time);
+            .expect("Target memory amount should be an integer number of megabytes");
+        let mem_blocks = (mem_megs as f64 * 1_000_000.0 / BLOCK_SIZE as f64).ceil() as usize;
+
+        // Decode how long it should take us to reach that memory usage
+        let duration_secs = duration_and_suffix
+            .strip_suffix('s')
+            .expect("Expected syntax <mem>M:<time>s");
+        let duration = Duration::from_secs_f64(
+            duration_secs
+                .parse()
+                .expect("Duration should be a floating-point second count"),
+        );
+        hog(&mut blocks, mem_blocks, duration);
+    }
 }
 
-/// Hog onto a certain amount of memory for a certain amount of time
-fn hog(ram_megs: usize, time: Duration) {
-    // Express memory amount in pages, aka the granularity of OS fuckery
-    const PAGE_SIZE: usize = 4096;
-    let mem_pages = (ram_megs as f64 * 1_000_000.0 / PAGE_SIZE as f64).ceil() as usize;
-
-    // Create buffer and touch it to make sure the OS really does allocate it
-    let mut alloc = vec![[0u8; PAGE_SIZE]; mem_pages];
-    for page in &mut alloc {
-        let first_byte = page.as_mut_slice() as *mut [u8] as *mut u8;
-        unsafe {
-            first_byte.write_volatile(1);
-        }
+/// Reach a certain memory consumption over a certain amount of time
+fn hog(blocks: &mut Vec<Block>, target_blocks: usize, duration: Duration) {
+    // No need for ramp down memory usage when it decreases
+    if target_blocks <= blocks.len() {
+        blocks.truncate(target_blocks);
+        std::hint::black_box(&mut *blocks);
+        std::thread::sleep(duration);
+        return;
     }
 
-    // Sleep for the requested duration
-    std::thread::sleep(time);
+    // Prepare to increase memory usage
+    blocks.reserve_exact(target_blocks);
+    let initial_blocks = blocks.len();
+    let mut grow = |target_blocks| {
+        let new_blocks = target_blocks - blocks.len();
+        blocks.extend(
+            std::iter::repeat_with(|| {
+                // Allocate a new memory block
+                let mut block = vec![0u8; BLOCK_SIZE].into_boxed_slice();
+                // Make sure each page of the block is actually allocated by the OS
+                for page in 0..BLOCK_LEN {
+                    unsafe {
+                        (&mut block[page * PAGE_SIZE] as *mut u8).write_volatile(1u8);
+                    }
+                }
+                block
+            })
+            .take(new_blocks),
+        );
+        std::hint::black_box(&mut *blocks);
+    };
+
+    // Ramp up memory usage gradually
+    let ramp_up_rate = (target_blocks - initial_blocks) as f64 / duration.as_secs_f64();
+    let ramp_up_granularity = Duration::from_secs_f64(1.0 / ramp_up_rate);
+    let start = Instant::now();
+    loop {
+        let elapsed = start.elapsed();
+        if elapsed >= duration {
+            break;
+        }
+        grow(initial_blocks + (elapsed.as_secs_f64() * ramp_up_rate).round() as usize);
+        std::thread::sleep(ramp_up_granularity);
+    }
+
+    // Reach the memory usage setpoint
+    grow(target_blocks);
 }
+
+/// Lower bound on the hardware paging side
+///
+/// This is the granularity of OS memory management tricks. One such trick, that
+/// is a liability to us here, is that if an aligned contiguous block of memory
+/// of size `PAGE_SIZE` is "allocated" (via e.g. malloc()) but not written to,
+/// the OS may not truly allocate it because it's lazy.
+///
+const PAGE_SIZE: usize = 4096;
+
+/// To reduce allocation overhead, on our side we manage memory with a coarser
+/// granularity, a little less than a megabyte.
+const BLOCK_LEN: usize = 1_000_000 / PAGE_SIZE;
+const BLOCK_SIZE: usize = PAGE_SIZE * BLOCK_LEN;
+type Block = Box<[u8]>;
 
 /// Extract the indentation whitespace from a line of text
 fn indentation(s: &str) -> String {

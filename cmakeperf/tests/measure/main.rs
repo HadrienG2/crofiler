@@ -14,11 +14,11 @@ fn nothing() {
 #[test]
 fn single() {
     MeasurementTest::new()
-        .add_job(
-            "hog 1M:0.5s 10M:0.1s 1M:0.1s",
+        .with_job(
+            "hog 30M:0.5s 0M:0.1s",
             JobProperties {
-                max_rss_mb: 10,
-                wall_time: Duration::from_millis(700),
+                max_rss_mb: 30,
+                wall_time: Duration::from_millis(500),
                 ..Default::default()
             },
         )
@@ -29,19 +29,19 @@ fn single() {
 #[test]
 fn dual_seq() {
     MeasurementTest::new()
-        .add_job(
-            "hog 1M:0.5s 21M:0.1s 1M:0.15s",
+        .with_job(
+            "hog 45M:0.75s 0M:0.1s",
             JobProperties {
-                max_rss_mb: 21,
-                wall_time: Duration::from_millis(750),
+                max_rss_mb: 45,
+                wall_time: Duration::from_millis(850),
                 ..Default::default()
             },
         )
-        .add_job(
-            "hog 1M:0.5s 32M:0.1s 1M:0.2s",
+        .with_job(
+            "hog 60M:1.0s 0M:0.1s",
             JobProperties {
-                max_rss_mb: 32,
-                wall_time: Duration::from_millis(800),
+                max_rss_mb: 60,
+                wall_time: Duration::from_millis(1100),
                 ..Default::default()
             },
         )
@@ -52,19 +52,19 @@ fn dual_seq() {
 #[test]
 fn dual_par() {
     MeasurementTest::new()
-        .add_job(
-            "hog 30M:0.5s 43M:0.1s 1M:0.25s",
+        .with_job(
+            "hog 75M:1.25s 0M:0.1s",
             JobProperties {
-                max_rss_mb: 43,
-                wall_time: Duration::from_millis(850),
+                max_rss_mb: 75,
+                wall_time: Duration::from_millis(1350),
                 ..Default::default()
             },
         )
-        .add_job(
-            "hog 30M:0.5s 54M:0.1s 1M:0.3s",
+        .with_job(
+            "hog 90M:1.5s 0M:0.1s",
             JobProperties {
-                max_rss_mb: 54,
-                wall_time: Duration::from_millis(900),
+                max_rss_mb: 90,
+                wall_time: Duration::from_millis(1600),
                 ..Default::default()
             },
         )
@@ -75,10 +75,10 @@ fn dual_par() {
 #[test]
 fn kill() {
     MeasurementTest::new()
-        .add_job(
-            "hog 1M:30s",
+        .with_job(
+            "hog 0M:30s",
             JobProperties {
-                max_rss_mb: 1,
+                max_rss_mb: 0,
                 wall_time: Duration::from_secs(30),
                 ..Default::default()
             },

@@ -23,7 +23,7 @@ use std::{
 };
 use sysinfo::{System, SystemExt};
 
-pub use self::main::MeasureError;
+pub use self::main::{assume_oversubscription, MeasureError};
 
 /// Ongoing full-build profile measurement process
 pub struct Measurement {
