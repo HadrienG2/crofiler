@@ -58,7 +58,7 @@ impl JobProperties {
     /// Adds a lower margin to account for measurement error
     ///
     fn lower_max_rss_mb(&self) -> u64 {
-        let measurement_precision = if cfg!(debug_assertions) { 9 } else { 1 };
+        let measurement_precision = if cfg!(debug_assertions) { 5 } else { 1 };
         self.max_rss_mb.saturating_sub(measurement_precision)
     }
 
