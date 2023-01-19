@@ -300,7 +300,7 @@ impl PollClock {
     /// Manually adjust the polling interval
     ///
     /// Useful in scenarios like debug mode tests where the overhead of polling
-    /// is expectedly higher than usual, but with the realm of reason.
+    /// is expectedly higher than usual, but within some upper bound.
     ///
     pub fn set_polling_interval(duration: Duration) {
         POLLING_INTERVAL_MILLIS.store(duration.as_millis() as usize, Ordering::Relaxed)
