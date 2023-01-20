@@ -122,9 +122,8 @@ mod tests {
     // Unit profile construction from Rust code
     #[quickcheck]
     fn unit_profile_new(rel_path: PathBuf, max_rss_bytes: u64, wall_time: Option<Duration>) {
-        let rel_path_2 = rel_path.clone();
-        let unit_profile = UnitProfile::new(rel_path, max_rss_bytes, wall_time);
-        assert_eq!(unit_profile.rel_path(), rel_path_2);
+        let unit_profile = UnitProfile::new(rel_path.clone(), max_rss_bytes, wall_time);
+        assert_eq!(unit_profile.rel_path(), rel_path);
         assert_eq!(unit_profile.max_rss_bytes(), max_rss_bytes);
 
         let Some(expected_wall_time) = wall_time else { assert_eq!(unit_profile.wall_time(), None); return; };

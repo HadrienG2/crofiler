@@ -321,10 +321,10 @@ impl CancelableClang {
 
         // Set up cancelation
         let canceled = Arc::new(AtomicBool::new(false));
-        let canceled2 = canceled.clone();
+        let cancel_trigger = CancelTrigger(canceled.clone());
 
         // Return all of that
-        Ok((Self { child, canceled }, CancelTrigger(canceled2)))
+        Ok((Self { child, canceled }, cancel_trigger))
     }
 
     /// Wait for the process to terminate or be canceled

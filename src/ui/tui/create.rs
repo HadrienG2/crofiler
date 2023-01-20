@@ -53,21 +53,25 @@ impl CreatePrompt {
         cursive: &mut Cursive,
         handle_reply: impl FnOnce(&mut Cursive, bool) + 'static,
     ) {
+        // Make handle_reply callable from multiple button callbacks
         let handle_reply = Cell::new(Some(handle_reply));
         let handle_reply = Rc::new(move |cursive: &mut Cursive, should_create| {
             cursive.pop_layer();
             let handle_reply = handle_reply.take().expect("This can only be called once");
             handle_reply(cursive, should_create)
         });
-        let handle_reply_2 = handle_reply.clone();
+
+        // Build and show the dialog with the two buttons
+        let handle_default_reply = {
+            let handle_reply = handle_reply.clone();
+            move |cursive: &mut Cursive| handle_reply(cursive, self.default_means_create)
+        };
+        let handle_other_reply =
+            move |cursive: &mut Cursive| handle_reply(cursive, !self.default_means_create);
         cursive.add_layer(
             Dialog::text(self.question)
-                .button(self.default_reply, move |cursive| {
-                    handle_reply(cursive, self.default_means_create)
-                })
-                .button(self.other_reply, move |cursive| {
-                    handle_reply_2(cursive, !self.default_means_create)
-                }),
+                .button(self.default_reply, handle_default_reply)
+                .button(self.other_reply, handle_other_reply),
         );
     }
 
@@ -78,11 +82,14 @@ impl CreatePrompt {
     ///
     pub fn ask(self, cursive: &mut CursiveRunnable) -> Option<bool> {
         let should_create = Rc::new(Cell::default());
-        let should_create_2 = should_create.clone();
-        self.show(cursive, move |cursive, should_create| {
-            should_create_2.set(Some(should_create));
-            cursive.quit();
-        });
+        let handle_reply = {
+            let should_create = should_create.clone();
+            move |cursive: &mut Cursive, create| {
+                should_create.set(Some(create));
+                cursive.quit();
+            }
+        };
+        self.show(cursive, handle_reply);
         cursive.run();
         should_create.get()
     }

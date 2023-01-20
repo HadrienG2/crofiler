@@ -97,7 +97,6 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
     // - First load completes and displays on screen instead of being dropped
     //
     let canceled = Arc::new(AtomicBool::new(false));
-    let canceled2 = canceled.clone();
 
     // Set up the loading screen and its cancelation mechanism
     //
@@ -108,9 +107,10 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
     // CPU time, but the alternative of making the trace loading process
     // interruptible would be much more complex at the code level.
     //
-    cursive.add_layer(
-        Dialog::text("Processing time trace...").button("Abort", move |cursive| {
-            canceled2.store(true, atomic::Ordering::Release);
+    let handle_abort = {
+        let canceled = canceled.clone();
+        move |cursive: &mut Cursive| {
+            canceled.store(true, atomic::Ordering::Release);
             end_wait_for_input(cursive, state);
             if cursive.screen().is_empty() {
                 cursive.quit();
@@ -119,8 +119,9 @@ fn start_wait_for_input(cursive: &mut Cursive) -> (WaitForInputState, Arc<Atomic
                     state.processing_thread = ProcessingThread::start();
                 });
             }
-        }),
-    );
+        }
+    };
+    cursive.add_layer(Dialog::text("Processing time trace...").button("Abort", handle_abort));
 
     // Return saved Cursive state
     (state, canceled)

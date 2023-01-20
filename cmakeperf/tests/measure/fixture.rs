@@ -229,15 +229,16 @@ impl RunningMeasurementTest {
 
         // Set up measurement progress reporting
         let (events_in, events_out) = mpsc::channel();
-        let events_in_1 = AssertUnwindSafe(events_in);
-        let events_in_2 = events_in_1.clone();
-        let job_done = move || {
-            events_in_1
-                .send(MeasurementEvent::JobDone)
-                .expect("Test thread has panicked")
+        let job_done = {
+            let events_in = AssertUnwindSafe(events_in.clone());
+            move || {
+                events_in
+                    .send(MeasurementEvent::JobDone)
+                    .expect("Test thread has panicked")
+            }
         };
         let measurement_done = move |res| {
-            events_in_2
+            events_in
                 .send(MeasurementEvent::MeasurementDone(res))
                 .expect("Test thread has panicked")
         };

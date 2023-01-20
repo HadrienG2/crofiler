@@ -62,17 +62,19 @@ impl Measurement {
         let path = path.into();
         let jobs = database.entries().cloned().collect::<Vec<_>>();
         let kill = Arc::new(AtomicBool::new(false));
-        let kill2 = kill.clone();
-        let main_thread = Some(std::thread::spawn(move || {
-            build_done(main::run(
-                path,
-                jobs,
-                measure_time,
-                concurrency,
-                step_done,
-                kill2,
-            ))
-        }));
+        let main_thread = {
+            let kill = kill.clone();
+            Some(std::thread::spawn(move || {
+                build_done(main::run(
+                    path,
+                    jobs,
+                    measure_time,
+                    concurrency,
+                    step_done,
+                    kill,
+                ))
+            }))
+        };
         Self { main_thread, kill }
     }
 }

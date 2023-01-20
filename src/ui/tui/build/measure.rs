@@ -40,22 +40,30 @@ pub fn measure_profile(
         let layers_below_profile = cursive.screen().len();
         let cb_sink = cursive.cb_sink().clone();
         let outcome = Arc::new(Mutex::new(None));
-        let outcome2 = outcome.clone();
         let progress_counter = Counter::new(0);
-        let progress_counter_2 = progress_counter.clone();
+
+        // Set up progress report callbacks
+        let notify_progress = {
+            let progress_counter = progress_counter.clone();
+            move || progress_counter.tick(1)
+        };
+        let notify_end = {
+            let outcome = outcome.clone();
+            move |result| {
+                *outcome.lock().expect("Main thread has panicked") = Some(result);
+                cb_sink
+                    .send(Box::new(Cursive::quit))
+                    .expect("Failed to exit cursive");
+            }
+        };
 
         // Start data collection process
         let mut measurement = match MeasureHandle::start(
             cursive,
             output_path,
             compilation_database,
-            move || progress_counter_2.tick(1),
-            move |result| {
-                *outcome2.lock().expect("Main thread has panicked") = Some(result);
-                cb_sink
-                    .send(Box::new(Cursive::quit))
-                    .expect("Failed to exit cursive");
-            },
+            notify_progress,
+            notify_end,
         ) {
             Some(tuple) => tuple,
             None => return false,
@@ -163,7 +171,15 @@ impl<'cursive, 'output> MeasureHandle<'cursive, 'output> {
 
         // Start data collection
         let success = Arc::new(AtomicBool::new(false));
-        let success2 = success.clone();
+        let notify_end = {
+            let success = success.clone();
+            move |result: Result<(), _>| {
+                if result.is_ok() {
+                    success.store(true, Ordering::Release);
+                }
+                build_done(result)
+            }
+        };
         let measurement = Measurement::start(
             output_path,
             compilation_database,
@@ -172,12 +188,7 @@ impl<'cursive, 'output> MeasureHandle<'cursive, 'output> {
             // FIXME: Let user set this
             None,
             step_done,
-            move |result| {
-                if result.is_ok() {
-                    success2.store(true, Ordering::Release);
-                }
-                build_done(result)
-            },
+            notify_end,
         );
 
         // Emit process and stdout handles
