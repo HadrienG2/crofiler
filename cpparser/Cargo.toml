@@ -10,7 +10,6 @@ nom-supreme = "0.8"
 reffers = "0.7"
 thiserror = "1.0"
 unicode-xid = { version = "0.2", optional = true }
-# FIXME: Remove after dispplay refactoring
 unicode-width = "0.1"
 
 [dev-dependencies]

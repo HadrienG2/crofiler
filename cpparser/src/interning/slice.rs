@@ -1,5 +1,4 @@
 //! Tools for dealing with interned slices
-// FIXME: Move to asylum after dispplay refactoring
 
 use crate::{
     asylum::{lasso::Spur, sequence::SequenceKey, InternerKey, Resolver},
