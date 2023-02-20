@@ -203,37 +203,38 @@ impl<'queue> WorkSender<'queue> {
     /// system monitoring on a short notice.
     ///
     pub fn start(&mut self) {
-        assert_eq!(self.last_futex_value, WorkQueue::FUTEX_INITIAL);
-        self.last_futex_value = WorkQueue::FUTEX_INITIAL + 1;
-        self.update_futex();
+        self.update_futex(|last_value| {
+            assert_eq!(last_value, WorkQueue::FUTEX_INITIAL);
+            WorkQueue::FUTEX_INITIAL + 1
+        });
         atomic_wait::wake_all(&self.queue.futex);
     }
 
     /// (Re)submit a job to workers
     pub fn push(&mut self, job: DatabaseEntry) {
-        assert_ne!(
-            self.last_futex_value,
-            WorkQueue::FUTEX_FINISHED,
-            "Closed WorkQueue can't accept more jobs"
-        );
         self.queue.global.push(job);
-        self.last_futex_value = self
-            .last_futex_value
-            .checked_add(1)
-            .unwrap_or(WorkQueue::FUTEX_INITIAL + 1);
-        self.update_futex();
+        self.update_futex(|last_value| {
+            assert_ne!(
+                last_value,
+                WorkQueue::FUTEX_FINISHED,
+                "Closed WorkQueue can't accept more jobs"
+            );
+            last_value
+                .checked_add(1)
+                .unwrap_or(WorkQueue::FUTEX_INITIAL + 1)
+        });
         atomic_wait::wake_one(&self.queue.futex);
     }
 
     /// Tell workers we won't be sending work anymore
     fn close(&mut self) {
-        self.last_futex_value = WorkQueue::FUTEX_FINISHED;
-        self.update_futex();
+        self.update_futex(|_| WorkQueue::FUTEX_FINISHED);
         atomic_wait::wake_all(&self.queue.futex);
     }
 
     /// Sync up `queue.futex` with `last_futex_value`
-    fn update_futex(&self) {
+    fn update_futex(&mut self, updater: impl FnOnce(u32) -> u32) {
+        self.last_futex_value = updater(self.last_futex_value);
         self.queue
             .futex
             .store(self.last_futex_value, Ordering::Release);
