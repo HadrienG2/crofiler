@@ -23,7 +23,7 @@ tag-name = "v{{version}}"
 
 [package]
 name = "crofiler"
-version = "0.1.2"
+version = "1.0.0"
 edition = "2021"
 
 [features]
