@@ -1,4 +1,7 @@
 //! Tests of the compilation profile measurement facility
+//!
+//! They are all ignored by default because you must run them on a reasonably
+//! quiet system (i.e. not Github CI nodes) for them to succeed.
 
 mod fixture;
 mod log;
@@ -7,11 +10,13 @@ use fixture::{JobProperties, MeasurementTest};
 use std::time::Duration;
 
 #[test]
+#[ignore = "Need a quied system"]
 fn nothing() {
     MeasurementTest::new().start(true).finish()
 }
 
 #[test]
+#[ignore = "Need a quied system"]
 fn single() {
     MeasurementTest::new()
         .with_job(
@@ -27,6 +32,7 @@ fn single() {
 }
 
 #[test]
+#[ignore = "Need a quied system"]
 fn dual_seq() {
     MeasurementTest::new()
         .with_job(
@@ -50,6 +56,7 @@ fn dual_seq() {
 }
 
 #[test]
+#[ignore = "Need a quied system"]
 fn dual_par() {
     MeasurementTest::new()
         .with_job(
@@ -73,6 +80,7 @@ fn dual_par() {
 }
 
 #[test]
+#[ignore = "Need a quied system"]
 fn kill() {
     MeasurementTest::new()
         .with_job(
