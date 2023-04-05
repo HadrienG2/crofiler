@@ -6,7 +6,7 @@ mod clang;
 mod trace;
 mod ui;
 
-use clap::{ArgEnum, Parser};
+use clap::{Parser, ValueEnum};
 use std::{io, path::PathBuf};
 
 /// Analyze where your compilation time is spent in order to optimize it
@@ -37,7 +37,7 @@ pub struct CliArgs {
     ///
     /// "auto" selects the TUI if connected to a terminal, otherwise stdio
     ///
-    #[clap(short, long, default_value = "auto", arg_enum)]
+    #[clap(short, long, default_value = "auto", value_enum)]
     ui: UI,
 
     /// Self-profile display threshold, as a percentage of total duration
@@ -93,7 +93,7 @@ pub struct CliArgs {
 }
 //
 /// Select desired user interface
-#[derive(ArgEnum, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UI {
     /// Use Tui if connected to a tty, otherwise stdio
     Auto,
