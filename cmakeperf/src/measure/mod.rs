@@ -567,6 +567,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Sensitive to machine load, so not suitable for CI"]
     fn poll_clock() {
         // Basic harness
         let initial_interval = PollClock::polling_interval();

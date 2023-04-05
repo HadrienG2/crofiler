@@ -417,7 +417,10 @@ pub(crate) mod tests {
             assert_eq!(actual.as_ref(), expected);
         }
         assert_eq!(entry.input(), input_path);
-        assert_eq!(entry.output(), Some(abs_output_path.clone()));
+        assert_eq!(
+            entry.output(),
+            Some(abs_output_path.canonicalize().unwrap())
+        );
         WORKING_DIRECTORY.lock().unwrap().with(&tmp_workdir, || {
             // Products may not exist yet
             let derived_path = tmp_output_base.path().join("stuff.json");
