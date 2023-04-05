@@ -67,7 +67,7 @@ once_cell = "1.10"
 syslog = "6.0"
 
 # Used for low-level terminal interaction, mostly TTY detection & teminal size
-termion = "1.5"
+termion = "2.0"
 
 # Used for typesetting hierarchical profiles in stdio mode
 termtree = "0.4"
