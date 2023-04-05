@@ -33,6 +33,7 @@ impl GlobalStat {
     }
 
     /// Decode a TraceEvent which is expected to contain global statistics
+    #[allow(clippy::result_large_err)]
     pub fn parse(t: TraceEvent) -> Result<(Box<str>, Self), GlobalStatParseError> {
         match t {
             TraceEvent::X {

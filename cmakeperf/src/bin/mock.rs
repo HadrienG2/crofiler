@@ -226,11 +226,11 @@ fn indentation(s: &str) -> String {
 
 /// Spawn a child process that runs the specified command list
 fn spawn_recurse(exe: &str, workdir: &Path, commands: &str) -> (Child, TempPath) {
-    let mut file = NamedTempFile::new_in(&workdir).expect("Failed to create child command file");
+    let mut file = NamedTempFile::new_in(workdir).expect("Failed to create child command file");
     write!(file, "{commands}").expect("Failed to write child command file");
     let path = file.into_temp_path();
     (
-        Command::new(&exe)
+        Command::new(exe)
             .arg(&path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

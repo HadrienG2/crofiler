@@ -50,7 +50,7 @@ jobs:
           components: rustfmt,clippy
 
       - name: Check format
-        run: cargo fmt --workspace -- --check
+        run: cargo fmt --all -- --check
 
       - name: Type-check the program
         run: cargo check --workspace

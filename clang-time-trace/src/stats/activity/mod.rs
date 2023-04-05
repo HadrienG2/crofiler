@@ -41,6 +41,7 @@ impl ActivityStat {
     }
 
     /// Decode a TraceEvent which is expected to contain a timed activity
+    #[allow(clippy::result_large_err)]
     pub fn parse(t: TraceEvent) -> Result<Self, ActivityStatParseError> {
         match t {
             TraceEvent::X {

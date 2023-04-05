@@ -198,7 +198,7 @@ impl Monitor {
         self.elapsed
             .iter()
             .zip(self.stop.clients())
-            .map(|(elapsed, stop_client)| MonitorClient::new(self, &elapsed, stop_client))
+            .map(|(elapsed, stop_client)| MonitorClient::new(self, elapsed, stop_client))
     }
 }
 
