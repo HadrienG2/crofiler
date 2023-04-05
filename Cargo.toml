@@ -12,6 +12,14 @@ ci = ["github"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
 
+# Config for "cargo release"
+[workspace.metadata.release]
+# Not ready to publish to crates.io yet
+publish = false
+# Everything shared a single version number
+shared-version = true
+tag-name = "v{{version}}"
+
 [package]
 name = "crofiler"
 version = "0.1.0"
