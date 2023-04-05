@@ -390,7 +390,7 @@ pub(crate) mod tests {
         let output_file = Path::new("out.o");
         let rel_output_path = rel_output_dir.join(output_file);
         let rel_output_path_str = format!("{}", rel_output_path.display());
-        let abs_output_path = output_dir.join(output_file);
+        let abs_output_path = output_dir.canonicalize().unwrap().join(output_file);
         //
         let command = format!(
             "SuperGoodCompiler --useless pointless -options -o {rel_output_path_str} -more fluff"
@@ -417,10 +417,7 @@ pub(crate) mod tests {
             assert_eq!(actual.as_ref(), expected);
         }
         assert_eq!(entry.input(), input_path);
-        assert_eq!(
-            entry.output(),
-            Some(abs_output_path.canonicalize().unwrap())
-        );
+        assert_eq!(entry.output(), Some(abs_output_path.clone()));
         WORKING_DIRECTORY.lock().unwrap().with(&tmp_workdir, || {
             // Products may not exist yet
             let derived_path = tmp_output_base.path().join("stuff.json");
