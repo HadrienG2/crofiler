@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 atty = "0.2"
-clap = { version = "3.2", features = ["derive"] }
+clap = { version = "4.1", features = ["derive"] }
 cpparser = { path = "../cpparser" }

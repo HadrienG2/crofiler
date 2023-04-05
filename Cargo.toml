@@ -42,7 +42,7 @@ chrono = "0.4"
 clang-time-trace = { path = "clang-time-trace" }
 
 # Used for CLI options
-clap = { version = "3.2", features = ["derive"] }
+clap = { version = "4.1", features = ["derive"] }
 
 # Used to measure and process full-build profiles
 cmakeperf = { path = "cmakeperf" }
