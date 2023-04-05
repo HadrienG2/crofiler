@@ -52,7 +52,8 @@ pub fn metadata(trace: &ClangTrace, max_cols: u16) -> String {
         let seconds = (bot / SECOND).floor();
         let nanoseconds = (bot - seconds * SECOND) / MICROSECOND * 1000.0;
         let bot = chrono::Utc
-            .timestamp(seconds as _, nanoseconds as _)
+            .timestamp_opt(seconds as _, nanoseconds as _)
+            .unwrap()
             .to_rfc3339_opts(SecondsFormat::AutoSi, true);
         display.push_str(&bot);
         display_more(&mut buf, display);
