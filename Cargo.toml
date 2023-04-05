@@ -1,6 +1,17 @@
 [workspace]
 members = ["simpp"]
 
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.0.5"
+# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
+rust-toolchain-version = "1.67.1"
+# CI backends to support (see 'cargo dist generate-ci')
+ci = ["github"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+
 [package]
 name = "crofiler"
 version = "0.1.0"
@@ -74,3 +85,8 @@ debug = 1  # Needed for profiling
 [profile.bench]
 debug = 1  # Needed for profiling
 codegen-units = 1  # Needed for inlining decision determinism
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

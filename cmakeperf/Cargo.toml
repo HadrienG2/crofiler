@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 # Used for communication with jobs during build profiling
 atomic-wait = "1.1"
