@@ -187,7 +187,7 @@ impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceIn
             self.sequences
                 .iter()
                 .map(|bucket| {
-                    let range = bucket.read();
+                    let range = bucket.as_ref();
                     range.into_impl_key().count()
                 })
                 .max()
