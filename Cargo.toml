@@ -76,7 +76,7 @@ termtree = "0.4"
 thiserror = "1.0"
 
 # Used to find appropriate points for cutting Unicode strings
-unicode-segmentation = "1.9"
+unicode-segmentation = "1.10"
 
 # Used to evaluate terminal width of strings
 unicode-width = "0.1"
