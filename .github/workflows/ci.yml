@@ -1,0 +1,122 @@
+# There are two kinds of continuous integration jobs in this project:
+#
+# - Every code submission or master push passes continuous integration on the
+#   minimal supported Rust version and the current stable Rust version.
+# - Two times a month, a scheduled job makes sure that the code remains
+#   compatible and lint-free on upcoming Rust toolchains (beta and nightly).
+#
+# No caching of Rust toolchains or target directories is performed on unstable
+# runs, since those runs are rare and the caches would be invalidated inbetween
+# two of them (especially for nightly toolchains).
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 0 3,17 * *'
+
+name: Continuous Integration
+
+env:
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Auto-format, clippy and rustc lints do not depend on the operating system
+  # and only need to be tested on the latest supported release of each CI run.
+  # We don't care about warnings on the minimum supported Rust version, only
+  # about building and running correctly.
+  lints:
+    # Only run on "pull_request" event for external PRs. This is to avoid
+    # duplicate builds for PRs created from internal branches.
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name != github.repository
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Set up stable toolchain
+        if: github.event_name != 'schedule'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt,clippy
+
+      - name: Set up nightly toolchain
+        if: github.event_name == 'schedule'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt,clippy
+
+      - name: Check format
+        run: cargo fmt --workspace -- --check
+
+      - name: Type-check the program
+        run: cargo check --workspace
+
+      - name: Check clippy lints
+        run: cargo clippy --workspace -- -D warnings
+
+
+  # Run the tests on all supported OSes and Rust versions (main CI)
+  test-contrib:
+    # Only run on "pull_request" event for external PRs. This is to avoid
+    # duplicate builds for PRs created from internal branches.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        rust:
+          - stable
+          - 1.67.1  # Minimum supported Rust version
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Set up toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Run basic tests
+        run: cargo test --workspace
+
+
+  # Check compatibility with newer Rust/deps versions (scheduled CI)
+  #
+  # FIXME: There should be a way to use conditional build matrices without
+  #        duplicating the whole job recipe...
+  #
+  test-scheduled:
+    if: github.event_name == 'schedule'
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        rust:
+          - beta
+          - nightly
+          - 1.67.1  # Minimum supported Rust version (can be broken by deps)
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Set up toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Run basic tests
+        run: cargo test --workspace
