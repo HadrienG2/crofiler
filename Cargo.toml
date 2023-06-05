@@ -61,7 +61,7 @@ env_logger = "0.10"
 log = "0.4"
 
 # Used for lazy stuff: path separator, test trace...
-once_cell = "1.17"
+once_cell = "1.18"
 
 # Used for logging in TUI mode
 syslog = "6.1"
