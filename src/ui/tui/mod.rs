@@ -26,7 +26,16 @@ use syslog::Facility;
 /// Run the analysis using the textual user interface
 pub fn run(args: CliArgs) {
     // Set up logging using syslog
-    syslog::init(Facility::LOG_USER, LevelFilter::Info, None).expect("Failed to initialize syslog");
+    syslog::init(
+        Facility::LOG_USER,
+        if cfg!(debug_assertions) {
+            LevelFilter::Debug
+        } else {
+            LevelFilter::Info
+        },
+        None,
+    )
+    .expect("Failed to initialize syslog");
 
     // Warn that logs will be emitted on syslog
     eprintln!("Since stderr is not usable inside of a TUI, logs will be emitted on syslog...");
