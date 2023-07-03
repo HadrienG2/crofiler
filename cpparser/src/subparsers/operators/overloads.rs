@@ -65,7 +65,7 @@ impl EntityParser {
     /// stream, as it strongly suggests that the entirety of the operator name was
     /// not parsed and the parse must be retried at a greater LEN.
     ///
-    #[inline(always)]
+    #[inline]
     fn parse_arith_and_templates_imut<'source>(
         &self,
         s: &'source str,

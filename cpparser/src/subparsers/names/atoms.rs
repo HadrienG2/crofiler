@@ -142,7 +142,7 @@ fn identifier(s: &str) -> IResult<&str> {
 }
 
 /// Parser recognizing the end of an identifier, without consuming it
-#[inline(always)]
+#[inline]
 fn end_of_identifier(s: &str) -> IResult<()> {
     #[cfg(feature = "unicode_xid")]
     {
@@ -165,7 +165,7 @@ fn end_of_identifier(s: &str) -> IResult<()> {
 /// Truth that a character can be used as the start of a C++ identifier
 // This version supports Unicode identifiers
 #[cfg(feature = "unicode-xid")]
-#[inline(always)]
+#[inline]
 fn is_id_start(c: char) -> bool {
     unicode_xid::UnicodeXID::is_xid_start(c) || c == '_'
 }
@@ -173,7 +173,7 @@ fn is_id_start(c: char) -> bool {
 /// Truth that a character can be used as the start of a C++ identifier
 // This version assumes ASCII input
 #[cfg(not(feature = "unicode-xid"))]
-#[inline(always)]
+#[inline]
 fn is_id_start(b: u8) -> bool {
     debug_assert!(b.is_ascii());
     b.is_ascii_alphabetic() || (b == b'_') || (b == b'$')
@@ -182,7 +182,7 @@ fn is_id_start(b: u8) -> bool {
 /// Truth that a character can be used in the middle of a C++ identifier
 // This version supports Unicode identifiers
 #[cfg(feature = "unicode-xid")]
-#[inline(always)]
+#[inline]
 fn is_id_continue(c: char) -> bool {
     unicode_xid::UnicodeXID::is_xid_continue(c)
 }
@@ -190,7 +190,7 @@ fn is_id_continue(c: char) -> bool {
 /// Truth that a character can be used in the middle of a C++ identifier
 // This version assumes ASCII input
 #[cfg(not(feature = "unicode-xid"))]
-#[inline(always)]
+#[inline]
 fn is_id_continue(b: u8) -> bool {
     debug_assert!(b.is_ascii());
     is_id_start(b) || b.is_ascii_digit()

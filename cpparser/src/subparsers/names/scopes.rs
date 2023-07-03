@@ -95,7 +95,7 @@ impl EntityParser {
     /// If you make the final UnqualifiedId mandatory, you get the id_expression
     /// grammar and if you backtrack on it you get the nested_name_specifier one.
     ///
-    #[inline(always)]
+    #[inline]
     fn parse_proto_id_expression_imut<'source>(
         &self,
         mut input: &'source str,

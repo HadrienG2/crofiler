@@ -23,7 +23,7 @@ impl EntityParser {
 ///
 /// See EntityParser::parse_legacy_name for semantics.
 ///
-#[inline(always)]
+#[inline]
 pub(crate) fn legacy_name_parser() -> impl Fn(&str) -> IResult<LegacyName> {
     use nom::{character::complete::multispace0, multi::fold_many1};
 
