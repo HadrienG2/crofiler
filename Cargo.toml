@@ -35,9 +35,6 @@ edition = "2021"
 unstable_interner_stats = []
 
 [dependencies]
-# Used to format ISO dates from clang Unix timestamps
-chrono = "0.4"
-
 # Used to decode clang output
 clang-time-trace = { path = "clang-time-trace" }
 
@@ -74,6 +71,9 @@ termtree = "0.4"
 
 # Used to simplify error handling
 thiserror = "1.0"
+
+# Used to format ISO dates from clang Unix timestamps
+time = "0.3"
 
 # Used to find appropriate points for cutting Unicode strings
 unicode-segmentation = "1.10"

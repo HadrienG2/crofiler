@@ -1,7 +1,7 @@
 //! Display for top-level trace metadata
 
-use chrono::{SecondsFormat, TimeZone};
-use clang_time_trace::{ClangTrace, MICROSECOND, SECOND};
+use clang_time_trace::{ClangTrace, MICROSECOND};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use unicode_width::UnicodeWidthStr;
 
 /// Display a trace's metadata, honoring a certain column budget but using up
@@ -49,12 +49,10 @@ pub fn metadata(trace: &ClangTrace, max_cols: u16) -> String {
     }
     if let Some(bot) = trace.beginning_of_time() {
         let mut display = "recorded ".to_owned();
-        let seconds = (bot / SECOND).floor();
-        let nanoseconds = (bot - seconds * SECOND) / MICROSECOND * 1000.0;
-        let bot = chrono::Utc
-            .timestamp_opt(seconds as _, nanoseconds as _)
+        let bot = OffsetDateTime::from_unix_timestamp_nanos((bot / MICROSECOND) as i128 * 1000)
             .unwrap()
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true);
+            .format(&Rfc3339)
+            .unwrap();
         display.push_str(&bot);
         display_more(&mut buf, display);
     }
