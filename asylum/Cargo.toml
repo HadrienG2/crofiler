@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 ahash = "0.8"
-hashbrown = { version = "0.13", features = ["raw"] }
+hashbrown = { version = "0.14", features = ["raw"] }
 lasso = { version = "0.7", features = ["ahasher"] }
 reffers = { version = "0.7", optional = true }
 thiserror = "1.0"
