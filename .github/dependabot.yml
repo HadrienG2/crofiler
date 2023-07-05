@@ -1,8 +1,45 @@
 version: 2
+
 updates:
+
+- package-ecosystem: cargo
+  directory: "/asylum"
+  schedule:
+    interval: daily
+    time: "22:00"
+  open-pull-requests-limit: 10
+
+- package-ecosystem: cargo
+  directory: "/cpparser"
+  schedule:
+    interval: daily
+    time: "23:00"
+  open-pull-requests-limit: 10
+
+- package-ecosystem: cargo
+  directory: "/clang-time-trace"
+  schedule:
+    interval: daily
+    time: "00:00"
+  open-pull-requests-limit: 10
+
+- package-ecosystem: cargo
+  directory: "/simpp"
+  schedule:
+    interval: daily
+    time: "01:00"
+  open-pull-requests-limit: 10
+
+- package-ecosystem: cargo
+  directory: "/cmakeperf"
+  schedule:
+    interval: daily
+    time: "02:00"
+  open-pull-requests-limit: 10
+
 - package-ecosystem: cargo
   directory: "/"
   schedule:
     interval: daily
-    time: "04:00"
+    time: "03:00"
   open-pull-requests-limit: 10
