@@ -126,7 +126,10 @@ mod tests {
         assert_eq!(unit_profile.rel_path(), rel_path);
         assert_eq!(unit_profile.max_rss_bytes(), max_rss_bytes);
 
-        let Some(expected_wall_time) = wall_time else { assert_eq!(unit_profile.wall_time(), None); return; };
+        let Some(expected_wall_time) = wall_time else {
+            assert_eq!(unit_profile.wall_time(), None);
+            return;
+        };
         let actual_wall_time = unit_profile
             .wall_time()
             .expect("A wall_time should be present if provided to the constructor")

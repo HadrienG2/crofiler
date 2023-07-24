@@ -58,7 +58,10 @@ impl LogClient {
 
                 // There should be at least one, otherwise the test failed
                 let Some(matching_key) = matching_keys.next() else {
-                    panic!("No log matching expectation inside log data {:#?}", lock.logs);
+                    panic!(
+                        "No log matching expectation inside log data {:#?}",
+                        lock.logs
+                    );
                 };
 
                 // The current implementation does not support regexes with
