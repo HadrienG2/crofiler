@@ -783,7 +783,7 @@ fn description_column_width(profile_kind: ProfileKind, terminal_width: u16) -> u
 /// This does not display the view on screen, that's the job of show_profile
 ///
 fn make_description_view(
-    cursive: &mut Cursive,
+    cursive: &Cursive,
     terminal_width: u16,
     profile_id: usize,
 ) -> (
@@ -867,7 +867,7 @@ fn make_profile_data(
 ) -> Vec<HierarchicalData> {
     activity_infos
         .iter()
-        .zip(activity_descs.into_vec().into_iter())
+        .zip(activity_descs.into_vec())
         .map(|(activity_info, description)| {
             let description = match profile_kind {
                 // Hierarchical profiles have little "+" indicators that tell
