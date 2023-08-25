@@ -1,8 +1,10 @@
 [package]
 name = "simpp"
-version = "1.0.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-clap = { version = "4.3", features = ["derive", "wrap_help"] }
+clap = { version = "4.4", features = ["derive", "wrap_help"] }
 cpparser = { path = "../cpparser" }

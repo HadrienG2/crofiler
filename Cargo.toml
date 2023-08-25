@@ -1,6 +1,12 @@
 [workspace]
 members = ["simpp"]
 
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+repository = "https://github.com/HadrienG2/crofiler"
+rust-version = "1.71.0"
+
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
@@ -23,10 +29,10 @@ tag-name = "v{{version}}"
 
 [package]
 name = "crofiler"
-version = "2.0.0"
-edition = "2021"
-repository = "https://github.com/HadrienG2/crofiler"
-rust-version = "1.71.0"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [features]
 # Display statistics on the usage of the C++ entity interners

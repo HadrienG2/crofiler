@@ -1,7 +1,9 @@
 [package]
 name = "clang-time-trace"
-version = "1.0.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 cpp_demangle = "0.4"
