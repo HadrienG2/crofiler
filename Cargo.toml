@@ -26,7 +26,7 @@ name = "crofiler"
 version = "2.0.0"
 edition = "2021"
 repository = "https://github.com/HadrienG2/crofiler"
-rust-version = "1.70.0"
+rust-version = "1.71.0"
 
 [features]
 # Display statistics on the usage of the C++ entity interners
