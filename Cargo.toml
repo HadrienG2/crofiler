@@ -1,5 +1,7 @@
+### Workspace-wide configuration ###
+
 [workspace]
-members = ["simpp"]
+members = ["asylum", "clang-time-trace", "cmakeperf", "cpparser", "simpp"]
 
 [workspace.package]
 version = "2.0.0"
@@ -26,6 +28,20 @@ publish = false
 # Everything shared a single version number
 shared-version = true
 tag-name = "v{{version}}"
+
+[profile.release]
+debug = "line-tables-only"  # Needed for profiling
+
+[profile.bench]
+debug = "line-tables-only"  # Needed for profiling
+codegen-units = 1  # Needed for inlining decision determinism
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+### Crofiler-specific configuration ###
 
 [package]
 name = "crofiler"
@@ -92,15 +108,3 @@ wait-timeout = "0.2"
 [dev-dependencies]
 # Used to simplify tests
 assert_matches = "1.5"
-
-[profile.release]
-debug = "line-tables-only"  # Needed for profiling
-
-[profile.bench]
-debug = "line-tables-only"  # Needed for profiling
-codegen-units = 1  # Needed for inlining decision determinism
-
-# The profile that 'cargo dist' will build with
-[profile.dist]
-inherits = "release"
-lto = "thin"
