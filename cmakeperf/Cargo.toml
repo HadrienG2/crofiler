@@ -53,5 +53,4 @@ quickcheck_macros = "1"
 fs-set-times = "0.20"
 
 # Used for log analysis
-once_cell = "1.17"
 simplelog = { version = "0.12", features = ["test"] }

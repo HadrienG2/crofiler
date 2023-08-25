@@ -50,7 +50,7 @@ pub fn hottest_activities<'activities>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::TEST_TRACE;
+    use crate::tests::with_test_trace;
     use clang_time_trace::{MICROSECOND, MILLISECOND, SECOND};
 
     fn assert_close(actual: Duration, reference: Duration) {
@@ -59,8 +59,7 @@ mod tests {
 
     #[test]
     fn duration_norm() {
-        TEST_TRACE.with(|trace| {
-            let trace = trace.borrow();
+        with_test_trace(|trace| {
             assert_close(
                 super::duration_norm(trace.root_activities()),
                 1.0 / (3.77 * SECOND),
@@ -123,8 +122,7 @@ mod tests {
             ("DeadArgumentEliminationPass", 546.0 * MICROSECOND),
             ("PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>", 531.0 * MICROSECOND),
         ];
-        TEST_TRACE.with(|trace| {
-            let trace = trace.borrow();
+        with_test_trace(|trace| {
             let actual = super::activity_type_breakdown(&*&trace);
             for ((expected_name, expected_duration), (actual_name, actual_duration)) in
                 expected.iter().zip(actual.iter())
@@ -150,8 +148,7 @@ mod tests {
             ("JumpThreadingPass", 20.21 * MILLISECOND),
             ("InlinerPass", 17.24 * MILLISECOND),
         ];
-        TEST_TRACE.with(|trace| {
-            let trace = trace.borrow();
+        with_test_trace(|trace| {
             let actual = super::hottest_activities(
                 trace.all_activities(),
                 |activity| activity.self_duration(),

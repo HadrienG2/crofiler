@@ -2,8 +2,7 @@
 
 use super::DisplayConfig;
 use clang_time_trace::InternedPath;
-use once_cell::sync::Lazy;
-use std::path::MAIN_SEPARATOR as PATH_SEPARATOR;
+use std::{path::MAIN_SEPARATOR as PATH_SEPARATOR, sync::OnceLock};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -87,6 +86,7 @@ fn select_components(
     // Check how many path components we can print on the front & back sides
     // We start from the back as that's where the filename lies, and that's the
     // single most important info we can display.
+    let root_component = root_component();
     let num_components = components.clone().count();
     let mut accepted_front = 0;
     let mut accepted_back = 0;
@@ -110,7 +110,7 @@ fn select_components(
             // by one, but the fs root needs no separator and the last component
             // will use the separator of the following/preceding element.
             let candidate = candidate.as_ref();
-            let need_separator = !(is_last_component || (candidate == ROOT_COMPONENT.as_ref()));
+            let need_separator = !(is_last_component || (candidate == root_component));
             let width_with_separator = candidate.width() + (need_separator as usize);
 
             // Until we reach the last path component, we must keep one terminal
@@ -154,6 +154,7 @@ fn display_components(
     (accepted_front, accepted_back): (usize, usize),
 ) -> Box<str> {
     // Set up storage
+    let root_component = root_component();
     let num_components = components.clone().count();
     let mut buffer = String::new();
 
@@ -164,7 +165,7 @@ fn display_components(
             .expect("There should be more components than accepted components");
         let component = component.as_ref();
         buffer.push_str(component);
-        if component != ROOT_COMPONENT.as_ref() {
+        if component != root_component {
             buffer.push(PATH_SEPARATOR);
         }
     }
@@ -199,7 +200,12 @@ fn display_components(
 }
 
 /// Path component to be treated as the path root
-static ROOT_COMPONENT: Lazy<Box<str>> = Lazy::new(|| PATH_SEPARATOR.to_string().into());
+fn root_component() -> &'static str {
+    static ROOT_COMPONENT: OnceLock<Box<str>> = OnceLock::new();
+    ROOT_COMPONENT
+        .get_or_init(|| PATH_SEPARATOR.to_string().into())
+        .as_ref()
+}
 
 /// Display only a file name, eliding some characters in the middle
 fn display_filename(file_name: &str, mut cols: usize) -> Box<str> {

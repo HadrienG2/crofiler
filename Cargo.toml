@@ -6,7 +6,7 @@ members = ["simpp"]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.0.5"
 # The preferred Rust toolchain to use in CI (rustup toolchain syntax)
-rust-toolchain-version = "1.67.1"
+rust-toolchain-version = "1.70.0"
 # CI backends to support (see 'cargo dist generate-ci')
 ci = ["github"]
 # Target platforms to build apps for (Rust target-triple syntax)
@@ -25,6 +25,7 @@ tag-name = "v{{version}}"
 name = "crofiler"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.70.0"
 
 [features]
 # Display statistics on the usage of the C++ entity interners
@@ -39,7 +40,7 @@ unstable_interner_stats = []
 clang-time-trace = { path = "clang-time-trace" }
 
 # Used for CLI options
-clap = { version = "4.3", features = ["derive", "wrap_help"] }
+clap = { version = "4.4", features = ["derive", "wrap_help"] }
 
 # Used to measure and process full-build profiles
 cmakeperf = { path = "cmakeperf" }
@@ -56,9 +57,6 @@ env_logger = "0.10"
 
 # Used for logging
 log = "0.4"
-
-# Used for lazy stuff: path separator, test trace...
-once_cell = "1.18"
 
 # Used for logging in TUI mode
 syslog = "6.1"
@@ -89,10 +87,10 @@ wait-timeout = "0.2"
 assert_matches = "1.5"
 
 [profile.release]
-debug = 1  # Needed for profiling
+debug = "line-tables-only"  # Needed for profiling
 
 [profile.bench]
-debug = 1  # Needed for profiling
+debug = "line-tables-only"  # Needed for profiling
 codegen-units = 1  # Needed for inlining decision determinism
 
 # The profile that 'cargo dist' will build with

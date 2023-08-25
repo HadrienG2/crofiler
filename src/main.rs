@@ -124,13 +124,23 @@ fn main() {
 #[cfg(test)]
 pub(crate) mod tests {
     use clang_time_trace::ClangTrace;
-    use once_cell::unsync::Lazy;
-    use std::{cell::RefCell, str::FromStr};
+    use std::{cell::OnceCell, cell::RefCell, str::FromStr};
 
     // Reference ClangTrace used by all tests which need one
-    thread_local! {
-        pub static TEST_TRACE: RefCell<Lazy<ClangTrace>> = RefCell::new(Lazy::new(|| {
-            ClangTrace::from_str(include_str!("../tests/7-GMSTests_main.json")).unwrap()
-        }));
+    //
+    // Although an &mut is provided to allow for lazy content initialization,
+    // you should not use this &mut to logically change the contents of the
+    // ClangTrace as this make test results non reproducible.
+    pub fn with_test_trace<R>(f: impl FnOnce(&mut ClangTrace) -> R) -> R {
+        thread_local! {
+            static TEST_TRACE: RefCell<OnceCell<ClangTrace>> = RefCell::new(OnceCell::new());
+        }
+        TEST_TRACE.with(|cell| {
+            let mut cell = cell.borrow_mut();
+            cell.get_or_init(|| {
+                ClangTrace::from_str(include_str!("../tests/7-GMSTests_main.json")).unwrap()
+            });
+            f(&mut cell.get_mut().unwrap())
+        })
     }
 }

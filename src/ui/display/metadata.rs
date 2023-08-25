@@ -62,12 +62,11 @@ pub fn metadata(trace: &ClangTrace, max_cols: u16) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::TEST_TRACE;
+    use crate::tests::with_test_trace;
 
     #[test]
     fn metadata() {
-        TEST_TRACE.with(|trace| {
-            let trace = trace.borrow();
+        with_test_trace(|trace| {
             assert_eq!(super::metadata(&trace, 89), "Data from clang-14.0.5, pid 5884, thread \"clang++\", recorded 2022-06-29T13:18:22.311015Z.");
             assert_eq!(super::metadata(&trace, 88), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");
             assert_eq!(super::metadata(&trace, 51), "Data from clang-14.0.5, pid 5884, thread \"clang++\",\nrecorded 2022-06-29T13:18:22.311015Z.");

@@ -110,10 +110,10 @@ pub enum ActivityDescError {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::TEST_TRACE;
+    use crate::tests::with_test_trace;
     use assert_matches::assert_matches;
     use clang_time_trace::{
-        ActivityArgumentType, ActivityTraceId, ParsedActivityArgument, ParsedSymbol,
+        ActivityArgumentType, ActivityTraceId, ClangTrace, ParsedActivityArgument, ParsedSymbol,
     };
 
     use super::*;
@@ -121,16 +121,19 @@ mod tests {
     #[test]
     fn display_activity_id() {
         let mut display = Vec::new();
-        TEST_TRACE.with(|trace| {
-            let mut check_display = |(id, parsed_arg): &(ActivityTraceId, ParsedActivityArgument),
+        with_test_trace(|trace| {
+            let mut check_display = |trace: &ClangTrace,
+                                     (id, parsed_arg): &(
+                ActivityTraceId,
+                ParsedActivityArgument,
+            ),
                                      max_cols,
                                      expected_display: &str| {
-                let trace = trace.borrow();
                 display.clear();
                 let result = super::display_activity_desc(
                     &mut display,
                     trace.activity_trace(*id).activity().id(),
-                    &parsed_arg.resolve(&trace),
+                    &parsed_arg.resolve(trace),
                     // FIXME: Also test MultiLine once pretty printing is ironed out
                     DisplayConfig::SingleLine { max_cols },
                 );
@@ -160,15 +163,14 @@ mod tests {
             {
                 let id_and_parsed_arg;
                 {
-                    let mut trace = trace.borrow_mut();
                     let execute_compiler = trace.root_activities().next().unwrap();
                     let id = execute_compiler.id();
                     let raw_arg = execute_compiler.activity().raw_argument().clone();
-                    let parsed_arg = raw_arg.parse(&mut trace).unwrap();
+                    let parsed_arg = raw_arg.parse(trace).unwrap();
                     id_and_parsed_arg = (id, parsed_arg);
                 }
-                check_display(&id_and_parsed_arg, 14, "");
-                check_display(&id_and_parsed_arg, 15, "ExecuteCompiler");
+                check_display(trace, &id_and_parsed_arg, 14, "");
+                check_display(trace, &id_and_parsed_arg, 15, "ExecuteCompiler");
             }
 
             // Find a representative of every activity type in the test dataset
@@ -180,9 +182,11 @@ mod tests {
             let mut first_mangled_arg = None;
             let mut first_parsed_mangled_arg = None;
             {
-                let mut trace = trace.borrow_mut();
                 let mut remaining_args = 6;
-                let activity_trace_ids = trace.all_activities().map(|activity_trace| activity_trace.id()).collect::<Vec<_>>();
+                let activity_trace_ids = trace
+                    .all_activities()
+                    .map(|activity_trace| activity_trace.id())
+                    .collect::<Vec<_>>();
                 for id in activity_trace_ids {
                     // Exit once all desired activity types have been seen
                     if remaining_args == 0 {
@@ -190,11 +194,17 @@ mod tests {
                     }
 
                     // Otherwise, check out what we have here
-                    match trace.activity_trace(id).activity().raw_argument().arg_type() {
+                    match trace
+                        .activity_trace(id)
+                        .activity()
+                        .raw_argument()
+                        .arg_type()
+                    {
                         ActivityArgumentType::String => {
                             if !first_string_arg.is_some() {
-                                let raw_arg = trace.activity_trace(id).activity().raw_argument().clone();
-                                let parsed_arg = raw_arg.parse(&mut trace).unwrap();
+                                let raw_arg =
+                                    trace.activity_trace(id).activity().raw_argument().clone();
+                                let parsed_arg = raw_arg.parse(trace).unwrap();
                                 first_string_arg = Some((id, parsed_arg));
                                 remaining_args -= 1;
                             }
@@ -202,8 +212,9 @@ mod tests {
 
                         ActivityArgumentType::FilePath => {
                             if !first_path_arg.is_some() {
-                                let raw_arg = trace.activity_trace(id).activity().raw_argument().clone();
-                                let parsed_arg = raw_arg.parse(&mut trace).unwrap();
+                                let raw_arg =
+                                    trace.activity_trace(id).activity().raw_argument().clone();
+                                let parsed_arg = raw_arg.parse(trace).unwrap();
                                 first_path_arg = Some((id, parsed_arg));
                                 remaining_args -= 1;
                             }
@@ -211,28 +222,39 @@ mod tests {
 
                         ActivityArgumentType::CppEntity => {
                             if !first_entity_arg.is_some() {
-                                let raw_arg = trace.activity_trace(id).activity().raw_argument().clone();
-                                let parsed_arg = raw_arg.parse(&mut trace).unwrap();
+                                let raw_arg =
+                                    trace.activity_trace(id).activity().raw_argument().clone();
+                                let parsed_arg = raw_arg.parse(trace).unwrap();
                                 first_entity_arg = Some((id, parsed_arg));
                                 remaining_args -= 1;
                             }
                         }
 
                         ActivityArgumentType::Symbol => {
-                            if !first_mangled_arg.is_some() || !first_demangled_arg.is_some() || !first_parsed_mangled_arg.is_some() {
-                                let raw_arg = trace.activity_trace(id).activity().raw_argument().clone();
-                                let parsed_arg = raw_arg.parse(&mut trace).unwrap();
+                            if !first_mangled_arg.is_some()
+                                || !first_demangled_arg.is_some()
+                                || !first_parsed_mangled_arg.is_some()
+                            {
+                                let raw_arg =
+                                    trace.activity_trace(id).activity().raw_argument().clone();
+                                let parsed_arg = raw_arg.parse(trace).unwrap();
                                 if let ParsedActivityArgument::Symbol(m) = &parsed_arg {
                                     match m {
-                                        ParsedSymbol::Parsed(_) if first_parsed_mangled_arg.is_none() => {
+                                        ParsedSymbol::Parsed(_)
+                                            if first_parsed_mangled_arg.is_none() =>
+                                        {
                                             first_parsed_mangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }
-                                        ParsedSymbol::Demangled(_) if first_demangled_arg.is_none() => {
+                                        ParsedSymbol::Demangled(_)
+                                            if first_demangled_arg.is_none() =>
+                                        {
                                             first_demangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }
-                                        ParsedSymbol::MaybeMangled(_) if first_mangled_arg.is_none() => {
+                                        ParsedSymbol::MaybeMangled(_)
+                                            if first_mangled_arg.is_none() =>
+                                        {
                                             first_mangled_arg = Some((id, parsed_arg));
                                             remaining_args -= 1;
                                         }
@@ -253,61 +275,87 @@ mod tests {
 
             {
                 let first_string_arg = first_string_arg.unwrap();
-                check_display(&first_string_arg, 9, "");
-                check_display(&first_string_arg, 10, "RunPass(…)");
-                check_display(&first_string_arg, 25, "RunPass(Loop Pa… Manager)");
-                check_display(&first_string_arg, 26, "RunPass(Loop Pass Manager)");
+                check_display(trace, &first_string_arg, 9, "");
+                check_display(trace, &first_string_arg, 10, "RunPass(…)");
+                check_display(trace, &first_string_arg, 25, "RunPass(Loop Pa… Manager)");
+                check_display(trace, &first_string_arg, 26, "RunPass(Loop Pass Manager)");
             }
 
             {
                 let first_path_arg = first_path_arg.unwrap();
-                check_display(&first_path_arg, 8, "");
-                check_display(&first_path_arg, 9, "Source(…)");
-                check_display(&first_path_arg, 19, "Source(…)");
-                check_display(&first_path_arg, 20, "Source(…/features.h)");
-                check_display(&first_path_arg, 21, "Source(/…/features.h)");
-                check_display(&first_path_arg, 24, "Source(/…/features.h)");
-                check_display(&first_path_arg, 25, "Source(/usr/…/features.h)");
-                check_display(&first_path_arg, 28, "Source(/usr/…/features.h)");
-                check_display(&first_path_arg, 29, "Source(/…/include/features.h)");
-                check_display(&first_path_arg, 30, "Source(/…/include/features.h)");
-                check_display(&first_path_arg, 31, "Source(/usr/include/features.h)");
+                check_display(trace, &first_path_arg, 8, "");
+                check_display(trace, &first_path_arg, 9, "Source(…)");
+                check_display(trace, &first_path_arg, 19, "Source(…)");
+                check_display(trace, &first_path_arg, 20, "Source(…/features.h)");
+                check_display(trace, &first_path_arg, 21, "Source(/…/features.h)");
+                check_display(trace, &first_path_arg, 24, "Source(/…/features.h)");
+                check_display(trace, &first_path_arg, 25, "Source(/usr/…/features.h)");
+                check_display(trace, &first_path_arg, 28, "Source(/usr/…/features.h)");
+                check_display(trace, &first_path_arg, 29, "Source(/…/include/features.h)");
+                check_display(trace, &first_path_arg, 30, "Source(/…/include/features.h)");
+                check_display(
+                    trace,
+                    &first_path_arg,
+                    31,
+                    "Source(/usr/include/features.h)",
+                );
             }
 
             {
                 let first_entity_arg = first_entity_arg.unwrap();
-                check_display(&first_entity_arg, 12, "");
-                check_display(&first_entity_arg, 13, "ParseClass(…)");
-                check_display(&first_entity_arg, 25, "ParseClass(…)");
-                check_display(&first_entity_arg, 26, "ParseClass(…::char_traits)");
-                check_display(&first_entity_arg, 27, "ParseClass(…::char_traits)");
-                check_display(&first_entity_arg, 28, "ParseClass(std::char_traits)");
+                check_display(trace, &first_entity_arg, 12, "");
+                check_display(trace, &first_entity_arg, 13, "ParseClass(…)");
+                check_display(trace, &first_entity_arg, 25, "ParseClass(…)");
+                check_display(trace, &first_entity_arg, 26, "ParseClass(…::char_traits)");
+                check_display(trace, &first_entity_arg, 27, "ParseClass(…::char_traits)");
+                check_display(trace, &first_entity_arg, 28, "ParseClass(std::char_traits)");
             }
 
             {
                 let first_demangled_arg = first_demangled_arg.unwrap();
-                check_display(&first_demangled_arg, 16, "");
-                check_display(&first_demangled_arg, 17, "LoopUnrollPass(…)");
-                check_display(&first_demangled_arg, 217, "LoopUnrollPass(std::vector<std::bitset<36>, std::allocator<std::bitset<36> > >::_M_realloc_insert<>(__gnu_cxx::__no…al_iterator<std::bitset<36>*, std::vector<std::bitset<36>, std::allocator<std::bitset<36> > > >, &&))");
-                check_display(&first_demangled_arg, 218, "LoopUnrollPass(std::vector<std::bitset<36>, std::allocator<std::bitset<36> > >::_M_realloc_insert<>(__gnu_cxx::__normal_iterator<std::bitset<36>*, std::vector<std::bitset<36>, std::allocator<std::bitset<36> > > >, &&))");
+                check_display(trace, &first_demangled_arg, 16, "");
+                check_display(trace, &first_demangled_arg, 17, "LoopUnrollPass(…)");
+                check_display(trace, &first_demangled_arg, 217, "LoopUnrollPass(std::vector<std::bitset<36>, std::allocator<std::bitset<36> > >::_M_realloc_insert<>(__gnu_cxx::__no…al_iterator<std::bitset<36>*, std::vector<std::bitset<36>, std::allocator<std::bitset<36> > > >, &&))");
+                check_display(trace, &first_demangled_arg, 218, "LoopUnrollPass(std::vector<std::bitset<36>, std::allocator<std::bitset<36> > >::_M_realloc_insert<>(__gnu_cxx::__normal_iterator<std::bitset<36>*, std::vector<std::bitset<36>, std::allocator<std::bitset<36> > > >, &&))");
             }
 
             {
                 let first_mangled_arg = first_mangled_arg.unwrap();
-                check_display(&first_mangled_arg, 13, "");
-                check_display(&first_mangled_arg, 14, "PromotePass(…)");
-                check_display(&first_mangled_arg, 33, "PromotePass(__cxx_glo…l_var_init)");
-                check_display(&first_mangled_arg, 34, "PromotePass(__cxx_global_var_init)");
+                check_display(trace, &first_mangled_arg, 13, "");
+                check_display(trace, &first_mangled_arg, 14, "PromotePass(…)");
+                check_display(
+                    trace,
+                    &first_mangled_arg,
+                    33,
+                    "PromotePass(__cxx_glo…l_var_init)",
+                );
+                check_display(
+                    trace,
+                    &first_mangled_arg,
+                    34,
+                    "PromotePass(__cxx_global_var_init)",
+                );
             }
 
             {
                 let first_parsed_mangled_arg = first_parsed_mangled_arg.unwrap();
-                check_display(&first_parsed_mangled_arg, 10, "");
-                check_display(&first_parsed_mangled_arg, 11, "SROAPass(…)");
-                check_display(&first_parsed_mangled_arg, 24, "SROAPass(…)");
-                check_display(&first_parsed_mangled_arg, 25, "SROAPass(…::test_method…)");
-                check_display(&first_parsed_mangled_arg, 62, "SROAPass(…::test_method…)");
+                check_display(trace, &first_parsed_mangled_arg, 10, "");
+                check_display(trace, &first_parsed_mangled_arg, 11, "SROAPass(…)");
+                check_display(trace, &first_parsed_mangled_arg, 24, "SROAPass(…)");
                 check_display(
+                    trace,
+                    &first_parsed_mangled_arg,
+                    25,
+                    "SROAPass(…::test_method…)",
+                );
+                check_display(
+                    trace,
+                    &first_parsed_mangled_arg,
+                    62,
+                    "SROAPass(…::test_method…)",
+                );
+                check_display(
+                    trace,
                     &first_parsed_mangled_arg,
                     63,
                     "SROAPass(TrackFittingGainMatrixSmoother::Smooth::test_method())",

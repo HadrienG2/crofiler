@@ -1,7 +1,6 @@
 use clap::Parser;
 use cpparser::{display::CustomDisplay, EntityParser};
-use is_terminal::IsTerminal;
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 
 /// Simplify a C++ entity name into a human-readable form
 ///

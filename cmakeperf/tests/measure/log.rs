@@ -1,13 +1,12 @@
 //! Checking logs from build performance measurements
 
 use log::{LevelFilter, Log};
-use once_cell::sync::Lazy;
 use simplelog::{CombinedLogger, Config, SharedLogger, TestLogger};
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::Hash,
-    sync::{Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard, OnceLock},
 };
 
 pub use log::Level as LogLevel;
@@ -169,21 +168,25 @@ struct LogData {
     message: String,
 }
 //
-static LOG_COLLECTOR: Lazy<Mutex<LogCollector>> = Lazy::new(|| {
-    // Set up a global logger that logs to stderr and also feeds logs into the
-    // global LogCollector
-    CombinedLogger::init(vec![
-        TestLogger::new(LevelFilter::Debug, Config::default()),
-        Box::new(LogCollectorHandle),
-    ])
-    .expect("Failed to initialize logger");
+/// Access the global log collector, lazily initializing it as needed
+fn log_collector() -> &'static Mutex<LogCollector> {
+    static LOG_COLLECTOR: OnceLock<Mutex<LogCollector>> = OnceLock::new();
+    LOG_COLLECTOR.get_or_init(|| {
+        // Set up a global logger that logs to stderr and also feeds logs into the
+        // global LogCollector
+        CombinedLogger::init(vec![
+            TestLogger::new(LevelFilter::Debug, Config::default()),
+            Box::new(LogCollectorHandle),
+        ])
+        .expect("Failed to initialize logger");
 
-    // Initial log collector state
-    Mutex::new(LogCollector {
-        active_clients: 0,
-        logs: HashMap::new(),
+        // Initial log collector state
+        Mutex::new(LogCollector {
+            active_clients: 0,
+            logs: HashMap::new(),
+        })
     })
-});
+}
 //
 impl LogCollector {
     /// Take note that a new integration test may be producing logs
@@ -237,7 +240,7 @@ impl LogCollector {
 
     /// Acquire access to the global log collector, setting it up as needed
     fn instance() -> MutexGuard<'static, Self> {
-        LOG_COLLECTOR.lock().expect("Log collector was poisoned")
+        log_collector().lock().expect("Log collector was poisoned")
     }
 }
 

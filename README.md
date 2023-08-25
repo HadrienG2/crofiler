@@ -5,7 +5,7 @@
 [![On docs.rs](https://docs.rs/crofiler/badge.svg)](https://docs.rs/crofiler/)
 -->
 [![Continuous Integration](https://github.com/HadrienG2/crofiler/workflows/Continuous%20Integration/badge.svg)](https://github.com/HadrienG2/crofiler/actions?query=workflow%3A%22Continuous+Integration%22)
-![Requires rustc 1.67.1+](https://img.shields.io/badge/rustc-1.67.1+-red.svg)
+![Requires rustc 1.70.0+](https://img.shields.io/badge/rustc-1.70.0+-red.svg)
 
 Understanding why C++ builds get slow and end up using a lot of RAM has become a
 lot easier since `clang` introduced their `-ftime-trace` build tracing feature.
