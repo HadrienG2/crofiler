@@ -4,14 +4,14 @@ members = ["simpp"]
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.0.5"
-# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
-rust-toolchain-version = "1.70.0"
+cargo-dist-version = "0.1.0"
 # CI backends to support (see 'cargo dist generate-ci')
 ci = ["github"]
 # Target platforms to build apps for (Rust target-triple syntax)
 # Windows is not supported atm because we use Unix-specific ANSI terminal tricks
 targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"]
+# The installers to generate for each app
+installers = ["shell"]
 
 # Config for "cargo release"
 [workspace.metadata.release]
@@ -25,6 +25,7 @@ tag-name = "v{{version}}"
 name = "crofiler"
 version = "2.0.0"
 edition = "2021"
+repository = "https://github.com/HadrienG2/crofiler"
 rust-version = "1.70.0"
 
 [features]
