@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 is-terminal = "0.4"
-clap = { version = "4.3", features = ["derive", "wrap_help"] }
+clap = { version = "4.4", features = ["derive", "wrap_help"] }
 cpparser = { path = "../cpparser" }
