@@ -53,7 +53,8 @@ indiscriminate replacement of inheritance with templating.
 
 At present, `crofiler` has only been tested on Linux. It is expected to be fully
 functional on other Unices like macOS or FreeBSD, but not on Windows as it
-currently relies on VT100 terminal commands.
+currently makes some Unixey assumptions (VT100 terminal, filesystem root is
+`/`...).
 
 To be able to profile compilation units, you will need a `clang` version newer
 than 9 (to have the `-ftime-trace` feature) and otherwise suitable for building
