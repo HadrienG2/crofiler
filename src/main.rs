@@ -51,7 +51,7 @@ pub struct CliArgs {
     ///
     /// Only used by the stdio user interface, the TUI displays everything.
     ///
-    #[clap(short, long, default_value = "0.5")]
+    #[clap(short = 'i', long, default_value = "0.5")]
     hierarchical_threshold: f32,
 
     /// Maximal number of terminal columns to be used in the display
