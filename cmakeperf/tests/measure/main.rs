@@ -10,13 +10,13 @@ use fixture::{JobProperties, MeasurementTest};
 use std::time::Duration;
 
 #[test]
-#[ignore = "Need a quied system"]
+#[ignore = "Need a quiet system"]
 fn nothing() {
     MeasurementTest::new().start(true).finish()
 }
 
 #[test]
-#[ignore = "Need a quied system"]
+#[ignore = "Need a quiet system"]
 fn single() {
     MeasurementTest::new()
         .with_job(
@@ -32,7 +32,7 @@ fn single() {
 }
 
 #[test]
-#[ignore = "Need a quied system"]
+#[ignore = "Need a quiet system"]
 fn dual_seq() {
     MeasurementTest::new()
         .with_job(
@@ -56,7 +56,7 @@ fn dual_seq() {
 }
 
 #[test]
-#[ignore = "Need a quied system"]
+#[ignore = "Need a quiet system"]
 fn dual_par() {
     MeasurementTest::new()
         .with_job(
@@ -80,7 +80,7 @@ fn dual_par() {
 }
 
 #[test]
-#[ignore = "Need a quied system"]
+#[ignore = "Need a quiet system"]
 fn kill() {
     MeasurementTest::new()
         .with_job(
