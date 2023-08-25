@@ -133,7 +133,7 @@ pub(crate) mod tests {
     // ClangTrace as this make test results non reproducible.
     pub fn with_test_trace<R>(f: impl FnOnce(&mut ClangTrace) -> R) -> R {
         thread_local! {
-            static TEST_TRACE: RefCell<OnceCell<ClangTrace>> = RefCell::new(OnceCell::new());
+            static TEST_TRACE: RefCell<OnceCell<ClangTrace>> = const { RefCell::new(OnceCell::new()) };
         }
         TEST_TRACE.with(|cell| {
             let mut cell = cell.borrow_mut();
