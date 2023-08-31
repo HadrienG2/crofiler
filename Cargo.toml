@@ -12,14 +12,13 @@ rust-version = "1.71.0"
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.1.0"
+cargo-dist-version = "0.2.0"
 # CI backends to support (see 'cargo dist generate-ci')
 ci = ["github"]
 # Target platforms to build apps for (Rust target-triple syntax)
-# Windows is not supported atm because we use Unix-specific ANSI terminal tricks
 targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"]
 # The installers to generate for each app
-installers = ["shell"]
+installers = ["shell", "homebrew"]
 
 # Config for "cargo release"
 [workspace.metadata.release]
