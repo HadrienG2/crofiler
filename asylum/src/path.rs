@@ -120,8 +120,7 @@ impl<'parent, Parent: PathResolver + ?Sized> InternedPath<'parent, Parent> {
     /// Iterate over path components
     pub fn components<'self_>(
         &'self_ self,
-    ) -> impl Iterator<Item = InternedComponent<'self_, Parent::ComponentKey>>
-           + DoubleEndedIterator
+    ) -> impl DoubleEndedIterator<Item = InternedComponent<'self_, Parent::ComponentKey>>
            + Clone
            + 'self_
            + Captures<'parent> {

@@ -72,9 +72,8 @@ impl<
     /// Iterate over items from the slice view
     pub fn iter(
         &self,
-    ) -> impl Iterator<Item = ItemView>
+    ) -> impl DoubleEndedIterator<Item = ItemView>
            + Clone
-           + DoubleEndedIterator
            + ExactSizeIterator
            + FusedIterator
            + '_

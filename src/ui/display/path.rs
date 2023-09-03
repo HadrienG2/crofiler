@@ -33,7 +33,7 @@ pub fn display_path(path: &InternedPath, config: DisplayConfig) -> Box<str> {
 /// Easily testable implementation of truncate_path that takes an iterator of
 /// path components as input instead of an InternedPath
 pub fn truncate_path_iter(
-    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
+    mut components: impl DoubleEndedIterator<Item = impl AsRef<str>> + Clone,
     cols: u16,
 ) -> Box<str> {
     // Track remaining column budget, keeping 1 spare column to insert an
@@ -80,7 +80,7 @@ const MIN_FILENAME_WIDTH: usize = 15;
 ///
 /// Return the number of selected components at the front and the back
 fn select_components(
-    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
+    mut components: impl DoubleEndedIterator<Item = impl AsRef<str>> + Clone,
     mut cols: usize,
 ) -> (usize, usize) {
     // Check how many path components we can print on the front & back sides
@@ -150,7 +150,7 @@ fn select_components(
 
 /// Display the set of path components selected by select_components
 fn display_components(
-    mut components: impl Iterator<Item = impl AsRef<str>> + DoubleEndedIterator + Clone,
+    mut components: impl DoubleEndedIterator<Item = impl AsRef<str>> + Clone,
     (accepted_front, accepted_back): (usize, usize),
 ) -> Box<str> {
     // Set up storage
@@ -261,7 +261,7 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn path_components(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator + Clone {
+    fn path_components(path: &str) -> impl DoubleEndedIterator<Item = &str> + Clone {
         Path::new(path).components().map(|c| {
             c.as_os_str()
                 .to_str()
