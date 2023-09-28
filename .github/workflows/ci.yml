@@ -19,6 +19,7 @@ name: Continuous Integration
 
 env:
   RUSTFLAGS: -D warnings
+  MINIMAL_RUST: 1.71.0 # Minimal Supported Rust Version
 
 jobs:
   # Auto-format, clippy and rustc lints do not depend on the operating system
@@ -74,7 +75,7 @@ jobs:
           - macos-latest
         rust:
           - stable
-          - 1.71.0  # Minimum supported Rust version
+          - $MINIMAL_RUST
 
     steps:
       - name: Checkout sources
@@ -107,7 +108,7 @@ jobs:
         rust:
           - beta
           - nightly
-          - 1.71.0  # Minimum supported Rust version (can be broken by deps)
+          - $MINIMAL_RUST # Can be broken by deps
 
     steps:
       - name: Checkout sources
