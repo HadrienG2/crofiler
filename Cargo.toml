@@ -30,6 +30,15 @@ publish = false
 shared-version = true
 tag-name = "v{{version}}"
 
+[profile.test]
+opt-level = 1
+
+[profile.test.package.proptest]
+opt-level = 3
+
+[profile.test.package.rand_chacha]
+opt-level = 3
+
 [profile.release]
 debug = "line-tables-only"  # Needed for profiling
 

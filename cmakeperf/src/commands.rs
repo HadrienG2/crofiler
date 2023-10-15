@@ -144,6 +144,7 @@ pub enum DatabaseLoadError {
 }
 
 /// One entry from the compilation database
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseEntry {
@@ -241,33 +242,6 @@ impl FromStr for DatabaseEntry {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         json::from_str(s)
-    }
-}
-//
-#[cfg(test)]
-impl quickcheck::Arbitrary for DatabaseEntry {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        Self {
-            directory: PathBuf::arbitrary(g).into(),
-            command: String::arbitrary(g).into(),
-            file: PathBuf::arbitrary(g).into(),
-        }
-    }
-
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(
-            self.directory
-                .clone()
-                .into_path_buf()
-                .shrink()
-                .zip(self.command.to_string().shrink())
-                .zip(self.file.clone().into_path_buf().shrink())
-                .map(|((directory, command), file)| Self {
-                    directory: directory.into(),
-                    command: command.into(),
-                    file: file.into(),
-                }),
-        )
     }
 }
 

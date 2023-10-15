@@ -332,94 +332,93 @@ mod tests {
     use super::main::MonitorStatus;
     use super::worker::WorkReceiver;
     use super::*;
-    use quickcheck::{QuickCheck, TestResult};
-    use quickcheck_macros::quickcheck;
+    use proptest::prelude::*;
 
-    #[quickcheck]
-    fn stop_flags_init(len: u8) {
-        // Extract useful parameters
-        let len = len as usize;
-        let has_trailer = (len % BITS_PER_USIZE) != 0;
-        let num_full_words = len / BITS_PER_USIZE;
+    // Maximum stop flags length used in tests
+    const MAX_LEN: usize = 256;
 
-        // Check initial state
-        let flags = StopFlags::new(len);
-        assert_eq!(flags.0.len(), num_full_words + has_trailer as usize);
-        //
-        let clients = flags.clients().collect::<Vec<_>>();
-        let server = flags.server();
-        //
-        assert_eq!(server.num_active(), len);
-        assert_eq!(server.enumerate_active().count(), len);
-        for (expected, actual) in server.enumerate_active().enumerate() {
-            assert_eq!(expected, actual);
-        }
-        //
-        assert_eq!(clients.len(), len);
-        for client in clients {
-            assert!(!client.must_stop());
-        }
+    // Strategy that picks a stop flags length and two distinct indices within
+    fn len_and_distinct_idx_pair() -> impl Strategy<Value = (usize, usize, usize)> {
+        (2..MAX_LEN)
+            .prop_flat_map(|len| (Just(len), (0..len)))
+            .prop_flat_map(|(len, idx1)| (Just(len), Just(idx1), 0..(len - 1)))
+            .prop_map(|(len, idx1, pre_idx2)| (len, idx1, pre_idx2 + (pre_idx2 >= idx1) as usize))
     }
 
-    #[quickcheck]
-    fn stop_flags_raise(len: u8, raise_idx_1: u8, raise_idx_2: u8) -> TestResult {
-        // Wrap around raise_idx, ignore invalid requests
-        if len == 0 {
-            return TestResult::discard();
-        }
-        let raise_idx_1 = raise_idx_1 % len;
-        let raise_idx_2 = raise_idx_2 % len;
-        if raise_idx_1 == raise_idx_2 {
-            return TestResult::discard();
+    proptest! {
+        #[test]
+        fn stop_flags_init(len in 0..MAX_LEN) {
+            // Extract useful parameters
+            let has_trailer = (len % BITS_PER_USIZE) != 0;
+            let num_full_words = len / BITS_PER_USIZE;
+
+            // Check initial state
+            let flags = StopFlags::new(len);
+            prop_assert_eq!(flags.0.len(), num_full_words + has_trailer as usize);
+            //
+            let clients = flags.clients().collect::<Vec<_>>();
+            let server = flags.server();
+            //
+            prop_assert_eq!(server.num_active(), len);
+            prop_assert_eq!(server.enumerate_active().count(), len);
+            for (expected, actual) in server.enumerate_active().enumerate() {
+                prop_assert_eq!(expected, actual);
+            }
+            //
+            prop_assert_eq!(clients.len(), len);
+            for client in clients {
+                prop_assert!(!client.must_stop());
+            }
         }
 
-        // Set things up
-        let len = len as usize;
-        let mut raise_idx_1 = raise_idx_1 as usize;
-        let mut raise_idx_2 = raise_idx_2 as usize;
-        let flags = StopFlags::new(len);
-        let clients = flags.clients().collect::<Vec<_>>();
-        let server = flags.server();
+        #[test]
+        fn stop_flags_raise(
+            (len, mut raise_idx_1, mut raise_idx_2) in len_and_distinct_idx_pair()
+        ) {
+            // Set things up
+            let flags = StopFlags::new(len);
+            let clients = flags.clients().collect::<Vec<_>>();
+            let server = flags.server();
 
-        // Raise the first flag
-        server.stop(raise_idx_1);
-        assert_eq!(server.num_active(), len - 1);
-        assert_eq!(server.enumerate_active().count(), len - 1);
-        for (expected, actual) in
-            ((0..raise_idx_1).chain(raise_idx_1 + 1..len)).zip(server.enumerate_active())
-        {
-            assert_eq!(expected, actual);
-        }
-        for (idx, client) in clients.iter().enumerate() {
-            assert_eq!(client.must_stop(), idx == raise_idx_1);
-        }
+            // Raise the first flag
+            server.stop(raise_idx_1);
+            prop_assert_eq!(server.num_active(), len - 1);
+            prop_assert_eq!(server.enumerate_active().count(), len - 1);
+            for (expected, actual) in
+                ((0..raise_idx_1).chain(raise_idx_1 + 1..len)).zip(server.enumerate_active())
+            {
+                prop_assert_eq!(expected, actual);
+            }
+            for (idx, client) in clients.iter().enumerate() {
+                prop_assert_eq!(client.must_stop(), idx == raise_idx_1);
+            }
 
-        // Raise the second flag
-        server.stop(raise_idx_2);
-        assert_eq!(server.num_active(), len - 2);
-        assert_eq!(server.enumerate_active().count(), len - 2);
-        if raise_idx_1 > raise_idx_2 {
-            std::mem::swap(&mut raise_idx_1, &mut raise_idx_2);
-        }
-        for (expected, actual) in ((0..raise_idx_1)
-            .chain(raise_idx_1 + 1..raise_idx_2)
-            .chain(raise_idx_2 + 1..len))
-        .zip(server.enumerate_active())
-        {
-            assert_eq!(expected, actual);
-        }
-        for (idx, client) in clients.iter().enumerate() {
-            assert_eq!(client.must_stop(), idx == raise_idx_1 || idx == raise_idx_2);
-        }
+            // Raise the second flag
+            server.stop(raise_idx_2);
+            prop_assert_eq!(server.num_active(), len - 2);
+            prop_assert_eq!(server.enumerate_active().count(), len - 2);
+            if raise_idx_1 > raise_idx_2 {
+                std::mem::swap(&mut raise_idx_1, &mut raise_idx_2);
+            }
+            for (expected, actual) in ((0..raise_idx_1)
+                .chain(raise_idx_1 + 1..raise_idx_2)
+                .chain(raise_idx_2 + 1..len))
+            .zip(server.enumerate_active())
+            {
+                prop_assert_eq!(expected, actual);
+            }
+            for (idx, client) in clients.iter().enumerate() {
+                prop_assert_eq!(client.must_stop(), idx == raise_idx_1 || idx == raise_idx_2);
+            }
 
-        // Raise all the remaining flags
-        server.stop_all();
-        assert_eq!(server.num_active(), 0);
-        assert_eq!(server.enumerate_active().count(), 0);
-        for client in clients {
-            assert!(client.must_stop());
+            // Raise all the remaining flags
+            server.stop_all();
+            prop_assert_eq!(server.num_active(), 0);
+            prop_assert_eq!(server.enumerate_active().count(), 0);
+            for client in clients {
+                prop_assert!(client.must_stop());
+            }
         }
-        TestResult::passed()
     }
 
     #[test]
@@ -470,100 +469,99 @@ mod tests {
         }
     }
 
-    fn work_queue_check(
-        initial: HashSet<DatabaseEntry>,
-        extra: HashSet<DatabaseEntry>,
-        num_workers: u8,
-    ) {
-        let num_workers = num_workers as usize % 3 + 1;
-        let remaining = Mutex::new(initial.clone());
-        let initial_len = initial.len();
-        let mut work_queue = WorkQueue::new(initial.into_iter().collect());
+    proptest! {
+        // This test is pretty slow, can't afford too many runs
+        #![proptest_config(ProptestConfig::with_cases(50))]
+        #[test]
+        fn work_queue_check(
+            initial: HashSet<DatabaseEntry>,
+            extra: HashSet<DatabaseEntry>,
+            num_workers: u8,
+        ) {
+            let num_workers = num_workers as usize % 3 + 1;
+            let remaining = Mutex::new(initial.clone());
+            let initial_len = initial.len();
+            let mut work_queue = WorkQueue::new(initial.into_iter().collect());
 
-        // Check initial queue state
-        assert_eq!(work_queue.global.len(), initial_len);
-        assert!(work_queue.stealers.is_empty());
-        assert_eq!(
-            work_queue.futex.load(Ordering::Relaxed),
-            WorkQueue::FUTEX_INITIAL
-        );
-
-        // Now add some worker threads
-        std::thread::scope(|scope| {
-            // Set up workers
-            for local_queue in work_queue.local_queues(num_workers) {
-                let work_queue = &work_queue;
-                let remaining = &remaining;
-                scope.spawn(move || {
-                    let mut receiver = WorkReceiver::new(local_queue, work_queue);
-                    receiver.wait();
-                    for task in receiver {
-                        assert!(remaining.lock().unwrap().remove(&task));
-                    }
-                });
-            }
-            assert_eq!(work_queue.global.len(), initial_len);
-            assert_eq!(work_queue.stealers.len(), num_workers);
-            assert_eq!(
+            // Check initial queue state
+            prop_assert_eq!(work_queue.global.len(), initial_len);
+            prop_assert!(work_queue.stealers.is_empty());
+            prop_assert_eq!(
                 work_queue.futex.load(Ordering::Relaxed),
                 WorkQueue::FUTEX_INITIAL
             );
 
-            // Set up main thread interface to the work queue
-            let mut work_sender = work_queue.sender();
-            assert_eq!(work_queue.global.len(), initial_len);
-            assert_eq!(work_queue.stealers.len(), num_workers);
-            assert_eq!(
-                work_queue.futex.load(Ordering::Relaxed),
-                WorkQueue::FUTEX_INITIAL
-            );
-
-            // Start workers, wait a bit for them to have processed all tasks
-            work_sender.start();
-            loop {
-                std::thread::sleep(Duration::from_millis(1));
-                if remaining.lock().unwrap().is_empty() {
-                    break;
+            // Now add some worker threads
+            std::thread::scope(|scope| {
+                // Set up workers
+                for local_queue in work_queue.local_queues(num_workers) {
+                    let work_queue = &work_queue;
+                    let remaining = &remaining;
+                    scope.spawn(move || {
+                        let mut receiver = WorkReceiver::new(local_queue, work_queue);
+                        receiver.wait();
+                        for task in receiver {
+                            prop_assert!(remaining.lock().unwrap().remove(&task));
+                        }
+                        Ok(())
+                    });
                 }
-            }
+                prop_assert_eq!(work_queue.global.len(), initial_len);
+                prop_assert_eq!(work_queue.stealers.len(), num_workers);
+                prop_assert_eq!(
+                    work_queue.futex.load(Ordering::Relaxed),
+                    WorkQueue::FUTEX_INITIAL
+                );
 
-            // Inject more tasks into the queue, in a fashion that purposely
-            // maximizes racy behavior at the cost of efficiency
-            let mut futex_values =
-                std::iter::once(WorkQueue::FUTEX_INITIAL + 1).collect::<HashSet<_>>();
-            for task in extra {
-                assert!(remaining.lock().unwrap().insert(task.clone()));
-                work_sender.push(task);
-                assert!(futex_values.insert(work_queue.futex.load(Ordering::Relaxed)));
-                std::thread::yield_now();
-            }
-            assert!(!futex_values.contains(&WorkQueue::FUTEX_FINISHED));
+                // Set up main thread interface to the work queue
+                let mut work_sender = work_queue.sender();
+                prop_assert_eq!(work_queue.global.len(), initial_len);
+                prop_assert_eq!(work_queue.stealers.len(), num_workers);
+                prop_assert_eq!(
+                    work_queue.futex.load(Ordering::Relaxed),
+                    WorkQueue::FUTEX_INITIAL
+                );
 
-            // Drop the main thread interface to tell workers that no more work
-            // will be coming and they can exit after this batch.
-            std::mem::drop(work_sender);
-            assert_eq!(
+                // Start workers, wait a bit for them to have processed all tasks
+                work_sender.start();
+                loop {
+                    std::thread::sleep(Duration::from_millis(1));
+                    if remaining.lock().unwrap().is_empty() {
+                        break;
+                    }
+                }
+
+                // Inject more tasks into the queue, in a fashion that purposely
+                // maximizes racy behavior at the cost of efficiency
+                let mut futex_values =
+                    std::iter::once(WorkQueue::FUTEX_INITIAL + 1).collect::<HashSet<_>>();
+                for task in extra {
+                    prop_assert!(remaining.lock().unwrap().insert(task.clone()));
+                    work_sender.push(task);
+                    prop_assert!(futex_values.insert(work_queue.futex.load(Ordering::Relaxed)));
+                    std::thread::yield_now();
+                }
+                prop_assert!(!futex_values.contains(&WorkQueue::FUTEX_FINISHED));
+
+                // Drop the main thread interface to tell workers that no more work
+                // will be coming and they can exit after this batch.
+                std::mem::drop(work_sender);
+                prop_assert_eq!(
+                    work_queue.futex.load(Ordering::Relaxed),
+                    WorkQueue::FUTEX_FINISHED
+                );
+                Ok(())
+            })?;
+
+            // Check that workers processed all tasks before exiting
+            prop_assert!(work_queue.global.is_empty());
+            prop_assert!(work_queue.stealers.iter().all(Stealer::is_empty));
+            prop_assert_eq!(
                 work_queue.futex.load(Ordering::Relaxed),
                 WorkQueue::FUTEX_FINISHED
             );
-        });
-
-        // Check that workers processed all tasks before exiting
-        assert!(work_queue.global.is_empty());
-        assert!(work_queue.stealers.iter().all(Stealer::is_empty));
-        assert_eq!(
-            work_queue.futex.load(Ordering::Relaxed),
-            WorkQueue::FUTEX_FINISHED
-        );
-        assert!(remaining.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn work_queue() {
-        // This test is pretty slow, can only afford few configurations
-        QuickCheck::new()
-            .tests(5)
-            .quickcheck(work_queue_check as fn(HashSet<DatabaseEntry>, HashSet<DatabaseEntry>, u8))
+            prop_assert!(remaining.lock().unwrap().is_empty());
+        }
     }
 
     #[test]
