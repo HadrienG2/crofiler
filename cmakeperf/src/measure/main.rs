@@ -475,20 +475,20 @@ impl<'flags> StopServer<'flags> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickcheck_macros::quickcheck;
+    use proptest::prelude::*;
 
-    #[quickcheck]
-    fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) {
-        if let Some(val) = concurrency {
-            assert_eq!(
-                super::concurrency(measure_time, concurrency),
-                usize::from(val)
-            );
-        } else {
-            if measure_time {
-                assert_eq!(super::concurrency(measure_time, concurrency), 1);
+    proptest! {
+        #[test]
+        fn concurrency(measure_time: bool, concurrency: Option<NonZeroUsize>) {
+            if let Some(val) = concurrency {
+                prop_assert_eq!(
+                    super::concurrency(measure_time, concurrency),
+                    usize::from(val)
+                );
+            } else if measure_time {
+                prop_assert_eq!(super::concurrency(measure_time, concurrency), 1);
             } else if let Ok(par) = std::thread::available_parallelism() {
-                assert_eq!(
+                prop_assert_eq!(
                     super::concurrency(measure_time, concurrency),
                     usize::from(par)
                 );
@@ -496,7 +496,7 @@ mod tests {
                 // Last-chance default should use at least one core and not
                 // oversubscribe lower-end CPUs too much
                 let result = super::concurrency(measure_time, concurrency);
-                assert!(result >= 1 && result <= 4);
+                prop_assert!(result >= 1 && result <= 4);
             }
         }
     }

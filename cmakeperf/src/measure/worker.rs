@@ -473,23 +473,17 @@ impl<'word> StopClient<'word> {
 mod tests {
     use super::*;
     use crate::measure::BITS_PER_USIZE;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::prelude::*;
 
-    #[quickcheck]
-    fn stop_client(init: usize, bit_idx: u8) -> TestResult {
-        // Ignore invalid bit indices
-        if bit_idx as usize >= BITS_PER_USIZE {
-            return TestResult::discard();
+    proptest! {
+        #[test]
+        fn stop_client(init: usize, bit_idx in 0..BITS_PER_USIZE) {
+            let word = AtomicUsize::new(init);
+            let mask = 1 << bit_idx;
+            let flag = StopClient::new(&word, mask);
+            prop_assert_eq!(word.load(Ordering::Relaxed), init);
+            prop_assert_eq!(flag.mask, mask);
+            prop_assert_eq!(flag.must_stop(), (init & flag.mask) == 0);
         }
-
-        // Test stop client
-        let word = AtomicUsize::new(init);
-        let mask = 1 << bit_idx;
-        let flag = StopClient::new(&word, mask);
-        assert_eq!(word.load(Ordering::Relaxed), init);
-        assert_eq!(flag.mask, mask);
-        assert_eq!(flag.must_stop(), (init & flag.mask) == 0);
-        TestResult::passed()
     }
 }

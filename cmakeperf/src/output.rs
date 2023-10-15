@@ -116,28 +116,30 @@ pub type BuildProfile = Vec<UnitProfile>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickcheck_macros::quickcheck;
+    use proptest::prelude::*;
     use std::path::PathBuf;
 
     // Unit profile construction from Rust code
-    #[quickcheck]
-    fn unit_profile_new(rel_path: PathBuf, max_rss_bytes: u64, wall_time: Option<Duration>) {
-        let unit_profile = UnitProfile::new(rel_path.clone(), max_rss_bytes, wall_time);
-        assert_eq!(unit_profile.rel_path(), rel_path);
-        assert_eq!(unit_profile.max_rss_bytes(), max_rss_bytes);
+    proptest! {
+        #[test]
+        fn unit_profile_new(rel_path: PathBuf, max_rss_bytes: u64, wall_time: Option<Duration>) {
+            let unit_profile = UnitProfile::new(rel_path.clone(), max_rss_bytes, wall_time);
+            prop_assert_eq!(unit_profile.rel_path(), rel_path);
+            prop_assert_eq!(unit_profile.max_rss_bytes(), max_rss_bytes);
 
-        let Some(expected_wall_time) = wall_time else {
-            assert_eq!(unit_profile.wall_time(), None);
-            return;
-        };
-        let actual_wall_time = unit_profile
-            .wall_time()
-            .expect("A wall_time should be present if provided to the constructor")
-            .expect("No invalid f32 time states expected when constructing from Duration");
-        assert_eq!(
-            expected_wall_time.as_secs_f32(),
-            actual_wall_time.as_secs_f32()
-        );
+            let Some(expected_wall_time) = wall_time else {
+                prop_assert_eq!(unit_profile.wall_time(), None);
+                return Ok(());
+            };
+            let actual_wall_time = unit_profile
+                .wall_time()
+                .expect("A wall_time should be present if provided to the constructor")
+                .expect("No invalid f32 time states expected when constructing from Duration");
+            prop_assert_eq!(
+                expected_wall_time.as_secs_f32(),
+                actual_wall_time.as_secs_f32()
+            );
+        }
     }
 
     // Build profile decoding from CSV
