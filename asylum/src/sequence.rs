@@ -4,11 +4,7 @@ use crate::{InternerKey, Resolver};
 use ahash::RandomState;
 use hashbrown::raw::RawTable;
 use lasso::{Key, Spur};
-use std::{
-    hash::{BuildHasher, Hash, Hasher},
-    marker::PhantomData,
-    ops::Range,
-};
+use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 /// Key to retrieve a previously interned sequence
 ///
@@ -131,7 +127,8 @@ impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceIn
     ///
     fn insert_sequence_key(&mut self, sequence_hash: u64, sequence_key: K) {
         self.sequences.insert(sequence_hash, sequence_key, |key| {
-            hash(&self.random_state, &self.concatenated[key.into_impl_key()])
+            self.random_state
+                .hash_one(&self.concatenated[key.into_impl_key()])
         });
     }
 
@@ -147,7 +144,7 @@ impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceIn
     /// Intern a new sequence
     pub fn intern(&mut self, sequence: &[Item]) -> K {
         // Hash the input sequence
-        let hash = hash(&self.random_state, sequence);
+        let hash = self.random_state.hash_one(sequence);
 
         // If this sequence was interned before, return the same key
         self.get_sequence_key(hash, sequence).unwrap_or_else(|| {
@@ -220,13 +217,6 @@ impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Resolver
         &self.concatenated[key.into_impl_key()]
     }
 }
-//
-/// Hash an input sequence
-fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, sequence: &[Item]) -> u64 {
-    let mut hasher = random_state.build_hasher();
-    sequence.hash(&mut hasher);
-    hasher.finish()
-}
 
 /// Mechanism to gradually intern a sequence element by element
 pub struct SequenceEntry<
@@ -272,7 +262,7 @@ impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
     pub fn intern(self) -> K {
         // Hash the input sequence and figure what its interning key would be
         let sequence = &self.interner.concatenated[self.initial_concatenated_len..];
-        let hash = hash(&self.interner.random_state, sequence);
+        let hash = self.interner.random_state.hash_one(sequence);
         let start = self.initial_concatenated_len;
         let new_key = K::try_from_impl_key(start..start + sequence.len())
             .expect("Key space exhausted, please use a bigger K");

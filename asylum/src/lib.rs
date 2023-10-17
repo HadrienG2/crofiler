@@ -5,10 +5,7 @@
 use ahash::RandomState;
 use hashbrown::raw::RawTable;
 use lasso::{Key, Spur};
-use std::{
-    hash::{BuildHasher, Hash, Hasher},
-    marker::PhantomData,
-};
+use std::{hash::Hash, marker::PhantomData};
 
 pub mod path;
 pub mod sequence;
@@ -116,7 +113,7 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
     ///
     pub fn intern(&mut self, item: Item) -> K {
         // Hash the item
-        let item_hash = hash(&self.random_state, &item);
+        let item_hash = self.random_state.hash_one(&item);
 
         // If this item was interned before, return the same key
         self.keys
@@ -130,7 +127,7 @@ impl<Item: Clone + Eq + Hash, K: Key> Interner<Item, K> {
 
                 // Take note that this item was interned
                 self.keys.insert(item_hash, key, |key| {
-                    hash(&self.random_state, &self.items[key.into_usize()])
+                    self.random_state.hash_one(&self.items[key.into_usize()])
                 });
                 key
             })
@@ -170,13 +167,6 @@ impl<Item: Clone + Eq + Hash, K: Key> Resolver for Interner<Item, K> {
     fn get(&self, key: Self::Key) -> &Item {
         &self.items[key.into_impl_key()]
     }
-}
-//
-/// Hash an item
-fn hash<Item: Clone + Eq + Hash>(random_state: &RandomState, item: &Item) -> u64 {
-    let mut hasher = random_state.build_hasher();
-    item.hash(&mut hasher);
-    hasher.finish()
 }
 
 #[cfg(test)]
