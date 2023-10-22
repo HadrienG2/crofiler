@@ -180,6 +180,7 @@ impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceIn
 
     /// Query maximal inner sequence length
     pub fn max_sequence_len(&self) -> Option<usize> {
+        // SAFETY: This iterator does not outlive the underlying table
         unsafe {
             self.sequences
                 .iter()
