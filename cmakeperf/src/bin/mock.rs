@@ -167,6 +167,9 @@ fn hog(blocks: &mut Vec<Block>, target_blocks: usize, duration: Duration) {
                 let mut block = vec![0u8; BLOCK_SIZE].into_boxed_slice();
                 // Make sure each page of the block is actually allocated by the OS
                 for page in 0..BLOCK_LEN {
+                    // SAFETY: BLOCK_SIZE = BLOCK_LEN * PAGE_SIZE so all writes
+                    //         are in bounds. This is only unsafe because
+                    //         there's no safe way to volatile writes in std...
                     unsafe {
                         (&mut block[page * PAGE_SIZE] as *mut u8).write_volatile(1u8);
                     }
