@@ -471,7 +471,7 @@ mod tests {
                 let parameters = parser.raw_function_parameters(parameter_set.parameters).to_owned();
                 assert_eq!(parameters.len(), expected_types.len());
                 for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
-                    let expected = unwrap_parse(parser.parse_type_like(*expected));
+                    let expected = unwrap_parse(parser.parse_type_like(expected));
                     assert_eq!(expected, actual);
                 }
                 assert_eq!(parameter_set.variadic, expected_variadic);
@@ -618,7 +618,7 @@ mod tests {
                 let arguments = parser.raw_function_arguments(key).to_owned();
                 assert_eq!(arguments.len(), expected_values.len());
                 for (expected, actual) in expected_values.iter().zip(arguments.to_vec()) {
-                    let expected = unwrap_parse(parser.parse_value_like(*expected, true, true));
+                    let expected = unwrap_parse(parser.parse_value_like(expected, true, true));
                     assert_eq!(expected, actual);
                 }
                 check_custom_display(parser.function_arguments(key), displays);

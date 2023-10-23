@@ -507,14 +507,14 @@ mod tests {
         let mut parser = EntityParser::new();
 
         // Symbol that demangles
-        const VALID: &'static str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
+        const VALID: &str = "_ZN4Acts4Test29comb_kalman_filter_zero_field11test_methodEv";
         let key = parser
             .parse_entity("Acts::Test::comb_kalman_filter_zero_field::test_method()")
             .expect("Known-good parse, shouldn't fail");
         test_symbol(&mut parser, VALID, ParsedSymbol::Parsed(key));
 
         // Symbol that doesn't demangle
-        const INVALID: &'static str = "__cxx_global_var_init.1";
+        const INVALID: &str = "__cxx_global_var_init.1";
         test_symbol(
             &mut parser,
             INVALID,

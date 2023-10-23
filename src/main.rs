@@ -140,7 +140,7 @@ pub(crate) mod tests {
             cell.get_or_init(|| {
                 ClangTrace::from_str(include_str!("../tests/7-GMSTests_main.json")).unwrap()
             });
-            f(&mut cell.get_mut().unwrap())
+            f(cell.get_mut().unwrap())
         })
     }
 }

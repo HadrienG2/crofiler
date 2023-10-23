@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn truncate_long_name() {
-        const FILENAME: &'static str = "WowSuchALongHeaderName.hpp";
+        const FILENAME: &str = "WowSuchALongHeaderName.hpp";
         assert!(MIN_FILENAME_WIDTH <= FILENAME.width());
         for cols in 1..MIN_FILENAME_WIDTH + 2 {
             test_truncate_path("/usr/include/WowSuchALongHeaderName.hpp", cols, "…");

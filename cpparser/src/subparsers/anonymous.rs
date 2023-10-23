@@ -612,12 +612,9 @@ mod tests {
         {
             let libiberty_lambda = "{lambda()#1}";
             let expected = AnonymousEntity::LibibertyLambda(unwrap_parse(
-                parser.parse_libiberty_lambda_imut(&libiberty_lambda),
+                parser.parse_libiberty_lambda_imut(libiberty_lambda),
             ));
-            assert_eq!(
-                parser.parse_anonymous(&libiberty_lambda),
-                Ok(("", expected))
-            );
+            assert_eq!(parser.parse_anonymous(libiberty_lambda), Ok(("", expected)));
         }
 
         {

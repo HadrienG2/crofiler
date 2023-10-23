@@ -123,7 +123,7 @@ mod tests {
             ("PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>", 531.0 * MICROSECOND),
         ];
         with_test_trace(|trace| {
-            let actual = super::activity_type_breakdown(&*&trace);
+            let actual = super::activity_type_breakdown(trace);
             for ((expected_name, expected_duration), (actual_name, actual_duration)) in
                 expected.iter().zip(actual.iter())
             {

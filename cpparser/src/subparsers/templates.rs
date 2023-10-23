@@ -287,7 +287,7 @@ mod tests {
                                        text_wo_sep: &str,
                                        expected: TemplateParameter,
                                        displays: &[&str]| {
-            test_template_parameter_sep(parser, text_wo_sep, ",", expected.clone(), displays);
+            test_template_parameter_sep(parser, text_wo_sep, ",", expected, displays);
             test_template_parameter_sep(parser, text_wo_sep, ">", expected, displays);
         };
 
@@ -322,7 +322,7 @@ mod tests {
                     let parameters = parser.raw_template_parameters(key).to_owned();
                     assert_eq!(parameters.len(), expected_types.len());
                     for (expected, actual) in expected_types.iter().zip(parameters.to_vec()) {
-                        let expected = TemplateParameter::TypeLike(unwrap_parse(parser.parse_type_like(*expected)));
+                        let expected = TemplateParameter::TypeLike(unwrap_parse(parser.parse_type_like(expected)));
                         assert_eq!(expected, actual);
                     }
                     check_custom_display(parser.template_parameters(Some(key)), displays);

@@ -521,7 +521,7 @@ pub mod tests {
             let mut entry = parser.scope_sequences.entry();
             let scopes: Vec<Scope> = ss
                 .iter()
-                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(*s))))
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(s))))
                 .collect();
 
             // Intern it
@@ -679,7 +679,7 @@ pub mod tests {
             let mut entry = parser.scope_sequences.entry();
             for scope in ss
                 .iter()
-                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(*s))))
+                .map(|s| Scope::from(unwrap_parse(parser.parse_unqualified_id_imut(s))))
             {
                 entry.push(scope);
             }

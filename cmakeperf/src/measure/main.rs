@@ -496,7 +496,7 @@ mod tests {
                 // Last-chance default should use at least one core and not
                 // oversubscribe lower-end CPUs too much
                 let result = super::concurrency(measure_time, concurrency);
-                prop_assert!(result >= 1 && result <= 4);
+                prop_assert!((1..=4).contains(&result));
             }
         }
     }
