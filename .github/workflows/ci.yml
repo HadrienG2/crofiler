@@ -23,13 +23,13 @@ env:
   RUSTDOCFLAGS: -D warnings
   MINIMAL_RUST: 1.71.0  # Minimal Supported Rust Version
 
-format-lints:
+jobs:
   # Format doesn't depend on configuraiton, and lints don't depend on the
   # operating system since there's no OS-specific code path in this crate.
   # 
   # We don't care about warnings on the minimum supported Rust version, only
   # about building and running correctly.
-  lints:
+  format-lints:
     # Don't run CI twice when a PR is created from a branch internal to the repo
     if: github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name != github.repository
 
