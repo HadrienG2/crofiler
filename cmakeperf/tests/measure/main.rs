@@ -24,7 +24,6 @@ fn single() {
             JobProperties {
                 max_rss_mb: 30,
                 wall_time: Duration::from_millis(1200),
-                ..Default::default()
             },
         )
         .start(true)
@@ -40,7 +39,6 @@ fn dual_seq() {
             JobProperties {
                 max_rss_mb: 45,
                 wall_time: Duration::from_millis(1700),
-                ..Default::default()
             },
         )
         .with_job(
@@ -48,7 +46,6 @@ fn dual_seq() {
             JobProperties {
                 max_rss_mb: 60,
                 wall_time: Duration::from_millis(2200),
-                ..Default::default()
             },
         )
         .start(true)
@@ -64,7 +61,6 @@ fn dual_par() {
             JobProperties {
                 max_rss_mb: 75,
                 wall_time: Duration::from_millis(2700),
-                ..Default::default()
             },
         )
         .with_job(
@@ -72,7 +68,6 @@ fn dual_par() {
             JobProperties {
                 max_rss_mb: 90,
                 wall_time: Duration::from_millis(3200),
-                ..Default::default()
             },
         )
         .start(false)
@@ -88,7 +83,6 @@ fn kill() {
             JobProperties {
                 max_rss_mb: 0,
                 wall_time: Duration::from_secs(30),
-                ..Default::default()
             },
         )
         .start(true)

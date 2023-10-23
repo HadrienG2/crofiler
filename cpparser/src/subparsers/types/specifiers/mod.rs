@@ -253,7 +253,7 @@ mod tests {
         check_simple_type(
             &mut parser,
             "auto:1",
-            SimpleType::LibibertyAuto(1).into(),
+            SimpleType::LibibertyAuto(1),
             &["auto:1"],
         );
 

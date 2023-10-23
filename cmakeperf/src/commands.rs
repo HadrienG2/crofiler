@@ -479,46 +479,46 @@ pub(crate) mod tests {
 
             let profile_path = Path::new("my_super_build_profile.csv");
             assert_eq!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::Nonexistent
             );
 
-            File::create(&profile_path).unwrap();
+            File::create(profile_path).unwrap();
             assert_matches!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::MaybeOutdated(Some(_))
             );
 
             std::thread::sleep(FS_CLOCK_GRANULARITY);
             touch(CompilationDatabase::location()).unwrap();
             assert_eq!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::Outdated
             );
 
-            touch(&profile_path).unwrap();
+            touch(profile_path).unwrap();
             assert_matches!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::MaybeOutdated(Some(_))
             );
 
             std::thread::sleep(FS_CLOCK_GRANULARITY);
             touch(&input_path_1).unwrap();
             assert_eq!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::Outdated
             );
 
-            touch(&profile_path).unwrap();
+            touch(profile_path).unwrap();
             assert_matches!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::MaybeOutdated(Some(_))
             );
 
             std::thread::sleep(FS_CLOCK_GRANULARITY);
             touch(&input_path_2).unwrap();
             assert_eq!(
-                db.profile_freshness(&profile_path).unwrap(),
+                db.profile_freshness(profile_path).unwrap(),
                 ProductFreshness::Outdated
             );
         });

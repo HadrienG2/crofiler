@@ -666,7 +666,7 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
-            let value = parser.raw_value_like(key).clone();
+            let value = *parser.raw_value_like(key);
             assert_eq!(
                 value,
                 ValueLike {
@@ -732,7 +732,7 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
-            let value = parser.raw_value_like(key).clone();
+            let value = *parser.raw_value_like(key);
             assert_eq!(
                 value,
                 ValueLike {
@@ -796,7 +796,7 @@ mod tests {
         let literal = |parser: &mut EntityParser, s| unwrap_parse(parser.parse_literal(s));
         let literal_value = |parser: &mut EntityParser, s| {
             let key = unwrap_parse(parser.parse_value_like(s, true, true));
-            let value = parser.raw_value_like(key).clone();
+            let value = *parser.raw_value_like(key);
             assert_eq!(
                 value,
                 ValueLike {
@@ -813,9 +813,9 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.raw_value_like(value_key).clone();
+                let value = *parser.raw_value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "array")));
-                let expected = vec![AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
+                let expected = [AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
                 check_custom_display(parser.value_like(value_key), &["array…", "array[666]"]);
             }
@@ -826,12 +826,10 @@ mod tests {
                 "",
                 value_key
             )) => {
-                let value = parser.raw_value_like(value_key).clone();
+                let value = *parser.raw_value_like(value_key);
                 assert_eq!(value.header, ValueHeader::IdExpression(id_expression(&mut parser, "func")));
-                let expected = vec![
-                        unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
-                        AfterValue::ArrayIndex(literal_value(&mut parser, "666"))
-                    ];
+                let expected = [unwrap_parse(parser.parse_function_call("( 3,'x' )")).into(),
+                        AfterValue::ArrayIndex(literal_value(&mut parser, "666"))];
                 assert_eq!(&parser.raw_value_trailer(value.trailer)[..], &expected[..]);
                 check_custom_display(parser.value_like(value_key), &["func…", "func(…)[666]", "func(3, 'x')[666]"]);
             }

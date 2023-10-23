@@ -112,12 +112,12 @@ impl MeasurementTest {
     // FIXME: Expand JobProperties to handle more complex cases
     pub fn with_job(mut self, actions: &str, resource_usage: JobProperties) -> Self {
         // Name of the mock executable
-        const MOCK_EXE: &'static str = env!("CARGO_BIN_EXE_mock");
+        const MOCK_EXE: &str = env!("CARGO_BIN_EXE_mock");
 
         // Set up a command file, compute path relative to command workdir
         let (mut cmd_file, cmd_path) = self.make_tmpfile();
         writeln!(cmd_file, "{actions}").expect("Failed to write commands to file");
-        let rel_cmd_path = pathdiff::diff_paths(&cmd_path, self.tmpdir.path())
+        let rel_cmd_path = pathdiff::diff_paths(cmd_path, self.tmpdir.path())
             .expect("Failed to compute relative command file path");
 
         // Create a mock input file, compute path relative to main thread workdir
@@ -365,7 +365,7 @@ impl RunningMeasurementTest {
                 // Check input file path
                 remainder = remainder.strip_prefix("Compiled ")?;
                 remainder = remainder.strip_prefix(&rel_path_str)?;
-                remainder = remainder.strip_prefix(" (max-RSS ")?.strip_suffix(")")?;
+                remainder = remainder.strip_prefix(" (max-RSS ")?.strip_suffix(')')?;
 
                 // Check max-RSS
                 let (rss_gb_str, remainder) = remainder.split_once("GB, wall-time ")?;
@@ -386,7 +386,7 @@ impl RunningMeasurementTest {
                         .parse::<f32>()
                         .expect("Failed to parse milliseconds counter")
                         / 1000.0
-                } else if let Some(time_secs_str) = time_str.strip_suffix("s") {
+                } else if let Some(time_secs_str) = time_str.strip_suffix('s') {
                     time_secs_str
                         .parse()
                         .expect("Failed to parse seconds counter")

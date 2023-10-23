@@ -157,9 +157,8 @@ pub(crate) mod tests {
     ///
     /// - Advertised recursion depth is correct
     /// - Display is correct at all recursion depths
-    ///
     pub fn check_custom_display(view: impl CustomDisplay, displays: &[&str]) {
-        assert!(displays.len() > 0, "There is always recursion depth 0...");
+        assert!(!displays.is_empty(), "there is always recursion depth 0");
 
         assert_eq!(view.recursion_depth(), displays.len() - 1);
 
@@ -171,7 +170,7 @@ pub(crate) mod tests {
 
         let full_display = *displays
             .last()
-            .expect("Per initial assert this cannot happen");
+            .expect("per initial assert this cannot happen");
         assert_eq!(actual_display(view.recursion_depth() + 1), full_display);
         assert_eq!(actual_display(usize::MAX), full_display);
     }

@@ -8,16 +8,11 @@ fn anonymous(c: &mut Criterion) {
         b.iter(|| EntityParser::parse_unknown_entity(black_box("<unknown>")))
     });
 
-    // Lambda parsing
-    let mut parser = EntityParser::new();
-    c.bench_function("parse_lambda/pass", |b| {
-        b.iter(|| parser.parse_lambda(black_box("(lambda at /x.cpp:1:2)")))
-    });
-    c.bench_function("parse_lambda/fail", |b| {
-        b.iter(|| parser.parse_lambda(black_box("NotALambda")))
-    });
-
     // Anonymous entity parsing
+    let mut parser = EntityParser::new();
+    c.bench_function("parse_anonymous/lambda", |b| {
+        b.iter(|| parser.parse_anonymous(black_box("(lambda at /x.cpp:1:2)")))
+    });
     c.bench_function("parse_anonymous/empty", |b| {
         b.iter(|| parser.parse_anonymous(black_box("(anonymous)")))
     });

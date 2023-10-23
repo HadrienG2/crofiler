@@ -599,7 +599,7 @@ mod tests {
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
             if *activity_parser == ActivityArgumentType::Nothing {
-                nullary_test(activity_id, activity_parser.clone());
+                nullary_test(activity_id, *activity_parser);
             }
         }
     }

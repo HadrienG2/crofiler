@@ -201,7 +201,7 @@ mod tests {
                         .arg_type()
                     {
                         ActivityArgumentType::String => {
-                            if !first_string_arg.is_some() {
+                            if first_string_arg.is_none() {
                                 let raw_arg =
                                     trace.activity_trace(id).activity().raw_argument().clone();
                                 let parsed_arg = raw_arg.parse(trace).unwrap();
@@ -211,7 +211,7 @@ mod tests {
                         }
 
                         ActivityArgumentType::FilePath => {
-                            if !first_path_arg.is_some() {
+                            if first_path_arg.is_none() {
                                 let raw_arg =
                                     trace.activity_trace(id).activity().raw_argument().clone();
                                 let parsed_arg = raw_arg.parse(trace).unwrap();
@@ -221,7 +221,7 @@ mod tests {
                         }
 
                         ActivityArgumentType::CppEntity => {
-                            if !first_entity_arg.is_some() {
+                            if first_entity_arg.is_none() {
                                 let raw_arg =
                                     trace.activity_trace(id).activity().raw_argument().clone();
                                 let parsed_arg = raw_arg.parse(trace).unwrap();
@@ -231,9 +231,9 @@ mod tests {
                         }
 
                         ActivityArgumentType::Symbol => {
-                            if !first_mangled_arg.is_some()
-                                || !first_demangled_arg.is_some()
-                                || !first_parsed_mangled_arg.is_some()
+                            if first_mangled_arg.is_none()
+                                || first_demangled_arg.is_none()
+                                || first_parsed_mangled_arg.is_none()
                             {
                                 let raw_arg =
                                     trace.activity_trace(id).activity().raw_argument().clone();

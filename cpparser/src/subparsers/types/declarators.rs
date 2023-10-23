@@ -441,7 +441,7 @@ mod tests {
         // Basic pointer to member
         let check_simple_member_ptr =
             |parser: &mut EntityParser, input, expected_path, expected_cv| {
-                let mut display1 = format!(" …::*");
+                let mut display1 = " …::*".to_string();
                 let mut display2 = format!(" {}*", parser.nested_name_specifier(expected_path));
                 if expected_cv != ConstVolatile::default() {
                     let suffix = format!(" {expected_cv}");
@@ -546,7 +546,7 @@ mod tests {
                 let declarator = parser.raw_declarator(key);
                 assert_eq!(declarator.len(), expected_operators.len());
                 for (expected, actual) in expected_operators.iter().zip(declarator.to_vec()) {
-                    let expected = unwrap_parse(parser.parse_decl_operator_imut(*expected));
+                    let expected = unwrap_parse(parser.parse_decl_operator_imut(expected));
                     assert_eq!(expected, actual);
                 }
             })
