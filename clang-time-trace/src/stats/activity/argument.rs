@@ -130,15 +130,7 @@ impl RawActivityArgument {
         parser: &mut EntityParser,
         demangling_buf: &mut String,
     ) -> Result<ParsedSymbol, ActivityArgumentError> {
-        let mut parse_demangled = |entity: Rc<str>| -> ParsedSymbol {
-            if let Ok(parsed) = Self::parse_entity(&entity, parser) {
-                ParsedSymbol::Parsed(parsed)
-            } else {
-                ParsedSymbol::Demangled(entity)
-            }
-        };
-
-        let demangling_result = match MangledSymbol::new_with_options(
+        let demangling_result = MangledSymbol::new_with_options(
             &*symbol,
             &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
         )
@@ -151,7 +143,16 @@ impl RawActivityArgument {
                     .no_return_type()
                     .recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
             )
-        }) {
+        });
+
+        let mut parse_demangled = |entity: Rc<str>| -> ParsedSymbol {
+            if let Ok(parsed) = Self::parse_entity(&entity, parser) {
+                ParsedSymbol::Parsed(parsed)
+            } else {
+                ParsedSymbol::Demangled(entity)
+            }
+        };
+        let parsed = match demangling_result {
             // Mangled symbol was successfully demangled, intern it along with the rest
             Ok(Ok(())) => parse_demangled(demangling_buf.clone().into()),
 
@@ -162,8 +163,7 @@ impl RawActivityArgument {
                 _ => ParsedSymbol::MaybeMangled(symbol),
             },
         };
-
-        match &demangling_result {
+        match &parsed {
             ParsedSymbol::Parsed(_) => {}
 
             // Clang unfortunately occasionally emits mangled symbols that are
@@ -179,8 +179,7 @@ impl RawActivityArgument {
             // ill-formed mangled symbols, so this event is still worth logging.
             ParsedSymbol::MaybeMangled(m) => info!("Failed to demangle symbol {m:?}"),
         }
-
-        Ok(demangling_result)
+        Ok(parsed)
     }
 
     /// Handling of the "<unnamed loop>" constant argument
