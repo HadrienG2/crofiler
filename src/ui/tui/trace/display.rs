@@ -35,7 +35,7 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
 
     // Update TUI state and extract required data from it, or just return if no
     // profile is being displayed yet.
-    let (new_duration_display, profile_stack, sort_config) = match with_state(cursive, |state| {
+    let next_display = with_state(cursive, |state| {
         // Determine the next duration display or return None if no profile
         // is being displayed (it means clang data is still being loaded)
         let new_duration_display = match state.display_config.duration_display? {
@@ -61,7 +61,8 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
             state.profile_stack.clone(),
             state.display_config.sort_config,
         ))
-    }) {
+    });
+    let (new_duration_display, profile_stack, sort_config) = match next_display {
         Some(tuple) => tuple,
         None => return,
     };
@@ -396,12 +397,12 @@ fn select(
 }
 
 /// on_submit callback for hierarchical profiles that recursively spawns another
-/// hierarchical profile lookint at the selected activity's children
+/// hierarchical profile looking at the selected activity's children
 fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
     move |cursive, _row, index| {
         // Access the hierarchical profile's table to check the selected
         // activity and whether it has children / can be zoomed on.
-        let (activity_trace_id, stripped_description, activity_duration) = match cursive
+        let activity = cursive
             .call_on_name(&table_name, |view: &mut ProfileView| {
                 // Access the activity's HierarchicalData
                 let activity = view
@@ -414,8 +415,8 @@ fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
                 let stripped_description = activity.description.strip_prefix('+')?;
                 Some((activity.id, stripped_description.into(), activity.duration))
             })
-            .expect("Failed to access trace profile view")
-        {
+            .expect("Failed to access trace profile view");
+        let (activity_trace_id, stripped_description, activity_duration) = match activity {
             Some(tuple) => tuple,
             None => return,
         };
