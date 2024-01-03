@@ -18,7 +18,7 @@ use std::{
         Arc,
     },
 };
-use sysinfo::{ProcessRefreshKind, RefreshKind, SystemExt};
+use sysinfo::RefreshKind;
 use thiserror::Error;
 
 /// Main thread of the full-build profiling process
@@ -282,9 +282,7 @@ impl<'monitor> MonitorServer<'monitor> {
             assumed_bkg_threads,
             oom_margin: OOM_MARGIN_PER_THREAD
                 * (monitor.concurrency() + assumed_bkg_threads) as u64,
-            refresh_kind: RefreshKind::new()
-                .with_memory()
-                .with_processes(ProcessRefreshKind::new()),
+            refresh_kind: Monitor::refresh_kind(),
             last_available_memory: None,
         };
         result.last_available_memory = Some(result.refresh_and_check_memory());
