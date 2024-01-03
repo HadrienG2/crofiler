@@ -21,7 +21,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use sysinfo::{System, SystemExt};
+use sysinfo::{MemoryRefreshKind, ProcessRefreshKind, RefreshKind, System};
 
 pub use self::main::{assume_oversubscription, MeasureError};
 
@@ -172,14 +172,23 @@ struct Monitor {
 //
 impl Monitor {
     /// Set up the out-of-memory handler
+    #[allow(clippy::assertions_on_constants)]
     pub fn new(concurrency: usize) -> Self {
+        assert!(sysinfo::IS_SUPPORTED_SYSTEM, "this OS isn't supported");
         Self {
-            system: RwLock::new(System::new()),
+            system: RwLock::new(System::new_with_specifics(Self::refresh_kind())),
             elapsed: std::iter::repeat_with(|| CachePadded::new(AtomicUsize::new(0)))
                 .take(concurrency)
                 .collect(),
             stop: StopFlags::new(concurrency),
         }
+    }
+
+    /// Information that we need to refresh
+    pub fn refresh_kind() -> RefreshKind {
+        RefreshKind::new()
+            .with_memory(MemoryRefreshKind::new().with_ram())
+            .with_processes(ProcessRefreshKind::new().with_memory())
     }
 
     /// Get back access to the concurrency

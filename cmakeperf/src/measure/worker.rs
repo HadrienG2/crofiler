@@ -14,7 +14,7 @@ use std::{
     },
     time::Instant,
 };
-use sysinfo::{Pid, PidExt, Process, ProcessExt, Signal, System, SystemExt};
+use sysinfo::{Pid, Process, Signal, System};
 use thiserror::Error;
 use wait_timeout::ChildExt;
 
