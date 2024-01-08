@@ -95,7 +95,7 @@ log = "0.4"
 syslog = "6.1"
 
 # Used for low-level terminal interaction, mostly TTY detection & teminal size
-termion = "2.0"
+termion = "3.0"
 
 # Used for typesetting hierarchical profiles in stdio mode
 termtree = "0.4"
