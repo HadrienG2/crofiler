@@ -156,6 +156,9 @@ pub struct DatabaseEntry {
 
     /// Input file
     file: Box<Path>,
+
+    /// Output file (newer CMake only)
+    output: Option<Box<Path>>,
 }
 //
 impl DatabaseEntry {
@@ -164,11 +167,13 @@ impl DatabaseEntry {
         directory: impl Into<Box<Path>>,
         command: impl Into<Box<str>>,
         file: impl Into<Box<Path>>,
+        output: Option<PathBuf>,
     ) -> Self {
         Self {
             directory: directory.into(),
             command: command.into(),
             file: file.into(),
+            output: output.map(|out| out.into_boxed_path()),
         }
     }
 
@@ -199,6 +204,11 @@ impl DatabaseEntry {
     /// Will return None if basic syntax assumptions do not look fullfilled.
     ///
     pub fn output(&self) -> Option<PathBuf> {
+        // If CMake gives us the output path, use it
+        if let Some(out) = self.output.as_ref() {
+            return Some(out.to_path_buf());
+        }
+
         // Start from working directory provided by cmake
         let mut result = PathBuf::from(&*self.directory);
 
@@ -337,6 +347,7 @@ pub(crate) mod tests {
             directory: Path::new("/").into(),
             command: "xxx".into(),
             file: Path::new("/etc/fstab").into(),
+            output: None,
         };
         assert_eq!(empty.current_dir(), Path::new("/"));
         assert_eq!(empty.program().unwrap().as_ref(), "xxx");
@@ -374,6 +385,7 @@ pub(crate) mod tests {
             directory: tmp_output_base.path().into(),
             command: command.into(),
             file: input_path.clone().into(),
+            output: None,
         };
         assert_eq!(entry.current_dir(), tmp_output_base.path());
         assert_eq!(entry.program().unwrap().as_ref(), "SuperGoodCompiler");
