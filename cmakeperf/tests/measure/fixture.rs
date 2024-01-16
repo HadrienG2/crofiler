@@ -127,8 +127,12 @@ impl MeasurementTest {
 
         // Generate a compilation database entry running that command file
         let command = format!("{MOCK_EXE} {}", rel_cmd_path.display());
-        self.db
-            .push(DatabaseEntry::new(self.tmpdir.path(), command, input_path));
+        self.db.push(DatabaseEntry::new(
+            self.tmpdir.path(),
+            command,
+            input_path,
+            None,
+        ));
 
         // Record expected output in the compilation database
         self.output.insert(rel_input_path, resource_usage);
