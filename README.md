@@ -70,9 +70,12 @@ in order to build `crofiler` from source.
 
 ### Installing `crofiler`
 
-The `crofiler` codebase is currently too fast-moving for binary distribution to
-make sense. Therefore, we currently advise building `crofiler` from source code.
-You can do it as follows:
+You will find pre-built `crofiler` binaries for Linux and macOS in [the
+"Releases" section of this github
+repository](https://github.com/HadrienG2/crofiler/releases).
+
+If you want to build `crofiler` from source code instead, you can do it as
+follows:
 
 ```bash
 git clone https://github.com/HadrienG2/crofiler.git
