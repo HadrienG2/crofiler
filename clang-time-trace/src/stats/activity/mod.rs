@@ -322,6 +322,7 @@ macro_rules! generate_activities {
 }
 //
 generate_activities! {
+    "AAManager" => (AAManager, Symbol),
     "ADCEPass" => (ADCEPass, Symbol),
     "AggressiveInstCombinePass" => (AggressiveInstCombinePass, Symbol),
     "AlignmentFromAssumptionsPass" => (AlignmentFromAssumptionsPass, Symbol),
@@ -375,6 +376,7 @@ generate_activities! {
     "InstCombinePass" => (InstCombinePass, Symbol),
     "InstSimplifyPass" => (InstSimplifyPass, Symbol),
     "InvalidateAnalysisPass<llvm::AAManager>" => (InvalidateAliasAnalysisPass, Symbol),
+    "InvalidateAnalysisPass<llvm::ShouldNotRunFunctionPassesAnalysis>" => (InvalidateShouldNotRunFunctionPasses, Symbol),
     "IPSCCPPass" => (IPSCCPPass, FilePathOrModule),
     "JumpThreadingPass" => (JumpThreadingPass, Symbol),
     "LazyCallGraphAnalysis" => (LazyCallGraphAnalysis, FilePathOrModule),
