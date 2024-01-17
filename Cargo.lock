@@ -107,7 +107,7 @@ checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
 
 [[package]]
 name = "asylum"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "ahash",
  "hashbrown 0.14.3",
@@ -212,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "clang-time-trace"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "assert_matches",
  "cpp_demangle",
@@ -271,7 +271,7 @@ checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 
 [[package]]
 name = "cmakeperf"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "assert_matches",
  "atomic-wait",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "cpparser"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "assert_matches",
  "asylum",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "crofiler"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "assert_matches",
  "clang-time-trace",
@@ -1323,7 +1323,7 @@ dependencies = [
 
 [[package]]
 name = "simpp"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "clap",
  "cpparser",
