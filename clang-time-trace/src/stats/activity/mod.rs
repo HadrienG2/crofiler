@@ -160,7 +160,7 @@ impl Activity {
                     .map(|()| RawActivityArgument::new(arg_type, None)),
 
                 ActivityArgumentType::String
-                | ActivityArgumentType::FilePath
+                | ActivityArgumentType::FilePathOrModule
                 | ActivityArgumentType::CppEntity
                 | ActivityArgumentType::Symbol
                 | ActivityArgumentType::UnnamedLoop => {
@@ -172,9 +172,10 @@ impl Activity {
                             .unwrap_or(ActivityArgumentType::Nothing);
                         if inferred_type != arg.arg_type() {
                             log::info!(
-                                "Argument of known type {arg:?} was wrongly \
-                                inferred to be of type {inferred_type:?}, \
-                                type inference rules should be updated if possible"
+                                "Argument to activity {name}, which is of \
+                                known type {arg:?}, is wrongly inferred to be \
+                                of type {inferred_type:?}. Type inference \
+                                rules should be updated if possible"
                             );
                         }
                     }
@@ -322,54 +323,65 @@ macro_rules! generate_activities {
 //
 generate_activities! {
     "ADCEPass" => (ADCEPass, Symbol),
+    "AggressiveInstCombinePass" => (AggressiveInstCombinePass, Symbol),
     "AlignmentFromAssumptionsPass" => (AlignmentFromAssumptionsPass, Symbol),
-    "Annotation2MetadataPass" => (Annotation2MetadataPass, FilePath),
+    "Annotation2MetadataPass" => (Annotation2MetadataPass, FilePathOrModule),
     "AnnotationRemarksPass" => (AnnotationRemarksPass, Symbol),
+    "AssignmentTrackingPass" => (AssignmentTrackingPass, FilePathOrModule),
     "Backend" => (Backend, Nothing),
     "BDCEPass" => (BDCEPass, Symbol),
-    "CalledValuePropagationPass" => (CalledValuePropagationPass, FilePath),
-    "CGProfilePass" => (CGProfilePass, FilePath),
-    "CGSCCToFunctionPassAdaptor" => (CGSCCToFunctionPassAdaptor, Nothing),
+    "BlockFrequencyAnalysis" => (BlockFrequencyAnalysis, Symbol),
+    "BranchProbabilityAnalysis" => (BranchProbabilityAnalysis, Symbol),
+    "CalledValuePropagationPass" => (CalledValuePropagationPass, FilePathOrModule),
+    "CallGraphAnalysis" => (CallGraphAnalysis, FilePathOrModule),
+    "CGProfilePass" => (CGProfilePass, FilePathOrModule),
+    "CGSCCToFunctionPassAdaptor" => (CGSCCToFunctionPassAdaptor, SymbolOpt),
     "CodeGen Function" => (CodeGenFunction, CppEntity),
     "CodeGenPasses" => (CodeGenPasses, Nothing),
-    "ConstantMergePass" => (ConstantMergePass, FilePath),
+    "ConstantMergePass" => (ConstantMergePass, FilePathOrModule),
+    "ConstraintEliminationPass" => (ConstraintEliminationPass, Symbol),
     "CoroCleanupPass" => (CoroCleanupPass, Symbol),
     "CoroEarlyPass" => (CoroEarlyPass, Symbol),
     "CoroElidePass" => (CoroElidePass, Symbol),
     "CoroSplitPass" => (CoroSplitPass, Nothing),
     "CorrelatedValuePropagationPass" => (CorrelatedValuePropagationPass, Symbol),
-    "DeadArgumentEliminationPass" => (DeadArgumentEliminationPass, FilePath),
+    "DeadArgumentEliminationPass" => (DeadArgumentEliminationPass, FilePathOrModule),
     "DebugConstGlobalVariable" => (DebugConstGlobalVariable, CppEntity),
     "DebugFunction" => (DebugFunction, CppEntity),
     "DebugGlobalVariable" => (DebugGlobalVariable, CppEntity),
     "DebugType" => (DebugType, CppEntity),
-    "DevirtSCCRepeatedPass" => (DevirtSCCRepeatedPass, Nothing),
+    "DevirtSCCRepeatedPass" => (DevirtSCCRepeatedPass, SymbolOpt),
     "DivRemPairsPass" => (DivRemPairsPass, Symbol),
+    "DominatorTreeAnalysis" => (DominatorTreeAnalysis, Symbol),
     "DSEPass" => (DSEPass, Symbol),
     "EarlyCSEPass" => (EarlyCSEPass, Symbol),
-    "EliminateAvailableExternallyPass" => (EliminateAvailableExternallyPass, FilePath),
+    "EliminateAvailableExternallyPass" => (EliminateAvailableExternallyPass, FilePathOrModule),
     "ExecuteCompiler" => (ExecuteCompiler, Nothing),
     "Float2IntPass" => (Float2IntPass, Symbol),
-    "ForceFunctionAttrsPass" => (ForceFunctionAttrsPass, FilePath),
+    "ForceFunctionAttrsPass" => (ForceFunctionAttrsPass, FilePathOrModule),
     "Frontend" => (Frontend, Nothing),
     "FunctionToLoopPassAdaptor" => (FunctionToLoopPassAdaptor, Symbol),
-    "GlobalDCEPass" => (GlobalDCEPass, FilePath),
-    "GlobalOptPass" => (GlobalOptPass, FilePath),
+    "GlobalDCEPass" => (GlobalDCEPass, FilePathOrModule),
+    "GlobalOptPass" => (GlobalOptPass, FilePathOrModule),
+    "GlobalsAA" => (GlobalsAA, FilePathOrModule),
     "GVNPass" => (GVNPass, Symbol),
     "IndVarSimplifyPass" => (IndVarSimplifyPass, UnnamedLoop),
-    "InferFunctionAttrsPass" => (InferFunctionAttrsPass, FilePath),
+    "InferFunctionAttrsPass" => (InferFunctionAttrsPass, FilePathOrModule),
     "InjectTLIMappings" => (InjectTLIMappings, Symbol),
-    "InlinerPass" => (InlinerPass, Nothing),
+    "InlinerPass" => (InlinerPass, SymbolOpt),
+    "InnerAnalysisManagerProxy<CGSCCAnalysisManager, Module>" => (ModuleCGSCCAnalysis, FilePathOrModule),
     "InstantiateClass" => (InstantiateClass, CppEntity),
     "InstantiateFunction" => (InstantiateFunction, CppEntity),
     "InstCombinePass" => (InstCombinePass, Symbol),
     "InstSimplifyPass" => (InstSimplifyPass, Symbol),
     "InvalidateAnalysisPass<llvm::AAManager>" => (InvalidateAliasAnalysisPass, Symbol),
-    "IPSCCPPass" => (IPSCCPPass, FilePath),
+    "IPSCCPPass" => (IPSCCPPass, FilePathOrModule),
     "JumpThreadingPass" => (JumpThreadingPass, Symbol),
+    "LazyCallGraphAnalysis" => (LazyCallGraphAnalysis, FilePathOrModule),
     "LCSSAPass" => (LCSSAPass, Symbol),
     "LibCallsShrinkWrapPass" => (LibCallsShrinkWrapPass, Symbol),
     "LICMPass" => (LICMPass, UnnamedLoopOpt),
+    "LoopAnalysis" => (LoopAnalysis, Symbol),
     "LoopDeletionPass" => (LoopDeletionPass, UnnamedLoop),
     "LoopDistributePass" => (LoopDistributePass, Symbol),
     "LoopFullUnrollPass" => (LoopFullUnrollPass, UnnamedLoop),
@@ -385,41 +397,49 @@ generate_activities! {
     "LowerConstantIntrinsicsPass" => (LowerConstantIntrinsicsPass, Symbol),
     "LowerExpectIntrinsicPass" => (LowerExpectIntrinsicPass, Symbol),
     "MemCpyOptPass" => (MemCpyOptPass, Symbol),
+    "MemorySSAAnalysis" => (MemorySSAAnalysis, Symbol),
     "MergedLoadStoreMotionPass" => (MergedLoadStoreMotionPass, Symbol),
-    "ModuleInlinerWrapperPass" => (ModuleInlinerWrapperPass, FilePath),
-    "ModuleToFunctionPassAdaptor" => (ModuleToFunctionPassAdaptor, FilePath),
-    "ModuleToPostOrderCGSCCPassAdaptor" => (ModuleToPostOrderCGSCCPassAdaptor, FilePath),
+    "ModuleInlinerWrapperPass" => (ModuleInlinerWrapperPass, FilePathOrModule),
+    "ModuleToFunctionPassAdaptor" => (ModuleToFunctionPassAdaptor, FilePathOrModule),
+    "ModuleToPostOrderCGSCCPassAdaptor" => (ModuleToPostOrderCGSCCPassAdaptor, FilePathOrModule),
     "OpenMPOptCGSCCPass" => (OpenMPOptCGSCCPass, Nothing),
-    "OpenMPOptPass" => (OpenMPOptPass, FilePath),
+    "OpenMPOptPass" => (OpenMPOptPass, FilePathOrModule),
     "OptFunction" => (OptFunction, Symbol),
     "Optimizer" => (Optimizer, Nothing),
-    "OptModule" => (OptModule, FilePath),
+    "OptModule" => (OptModule, FilePathOrModule),
     "ParseClass" => (ParseClass, CppEntity),
     "ParseTemplate" => (ParseTemplate, CppEntity),
-    "PassManager<llvm::Function>" => (FunctionPassManager, SymbolOpt),
+    "PassManager<llvm::Function>" => (LlvmFunctionPassManager, SymbolOpt),
     "PassManager<llvm::Loop, llvm::LoopAnalysisManager, llvm::LoopStandardAnalysisResults &, llvm::LPMUpdater &>" => (LoopAnalysisManager, Nothing),
+    "PassManager<Function>" => (FunctionPassManager, SymbolOpt),
+    "PassManager<LazyCallGraph::SCC, CGSCCAnalysisManager, LazyCallGraph &, CGSCCUpdateResult &>" => (LazyCallGraphCGSCCAnalysisPassManager, Symbol),
+    "PassManager<Loop, LoopAnalysisManager, LoopStandardAnalysisResults &, LPMUpdater &>" => (LoopAnalysisPassManager, UnnamedLoop),
     "PerformPendingInstantiations" => (PerformPendingInstantiations, Nothing),
     "PerFunctionPasses" => (PerFunctionPasses, Nothing),
     "PerModulePasses" => (PerModulePasses, Nothing),
-    "PostOrderFunctionAttrsPass" => (PostOrderFunctionAttrsPass, Nothing),
+    "PostDominatorTreeAnalysis" => (PostDominatorTreeAnalysis, Symbol),
+    "PostOrderFunctionAttrsPass" => (PostOrderFunctionAttrsPass, SymbolOpt),
     "PromotePass" => (PromotePass, Symbol),
     "ReassociatePass" => (ReassociatePass, Symbol),
-    "RecomputeGlobalsAAPass" => (RecomputeGlobalsAAPass, FilePath),
-    "RelLookupTableConverterPass" => (RelLookupTableConverterPass, FilePath),
-    "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => (ModuleGlobalsAAPass, FilePath),
+    "RecomputeGlobalsAAPass" => (RecomputeGlobalsAAPass, FilePathOrModule),
+    "RelLookupTableConverterPass" => (RelLookupTableConverterPass, FilePathOrModule),
+    "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>" => (ModuleGlobalsAAPass, FilePathOrModule),
     "RequireAnalysisPass<llvm::OptimizationRemarkEmitterAnalysis, llvm::Function>" => (RequireFunctionOptimizationRemarkEmissionPass, Symbol),
-    "RequireAnalysisPass<llvm::ProfileSummaryAnalysis, llvm::Module>" => (RequireModuleProfileSummaryAnalysisPass, FilePath),
-    "ReversePostOrderFunctionAttrsPass" => (ReversePostOrderFunctionAttrsPass, FilePath),
+    "RequireAnalysisPass<llvm::ProfileSummaryAnalysis, llvm::Module>" => (RequireModuleProfileSummaryAnalysisPass, FilePathOrModule),
+    "RequireAnalysisPass<llvm::GlobalsAA, llvm::Module, llvm::AnalysisManager<Module>>" => (RequireModuleGlobalsAliasAnalysisPass, FilePathOrModule),
+    "ReversePostOrderFunctionAttrsPass" => (ReversePostOrderFunctionAttrsPass, FilePathOrModule),
     "RunLoopPass" => (RunLoopPass, String),
     "RunPass" => (RunPass, String),
+    "ScalarEvolutionAnalysis" => (ScalarEvolutionAnalysis, Symbol),
     "SCCPPass" => (SCCPPass, Symbol),
     "SimpleLoopUnswitchPass" => (SimpleLoopUnswitchPass, UnnamedLoop),
     "SimplifyCFGPass" => (SimplifyCFGPass, Symbol),
     "SLPVectorizerPass" => (SLPVectorizerPass, Symbol),
-    "Source" => (Source, FilePath),
+    "Source" => (Source, FilePathOrModule),
     "SpeculativeExecutionPass" => (SpeculativeExecutionPass, Symbol),
     "SROAPass" => (SROAPass, Symbol),
     "TailCallElimPass" => (TailCallElimPass, Symbol),
+    "TargetIRAnalysis" => (TargetIRAnalysis, Symbol),
     "VectorCombinePass" => (VectorCombinePass, Symbol),
     "WarnMissedTransformationsPass" => (WarnMissedTransformationsPass, Symbol),
 }
@@ -682,7 +702,7 @@ mod tests {
                 Activity {
                     id: id.clone(),
                     arg: RawActivityArgument::new(
-                        ActivityArgumentType::FilePath,
+                        ActivityArgumentType::FilePathOrModule,
                         Some(MOCK_PATH.into()),
                     ),
                 },
@@ -690,7 +710,7 @@ mod tests {
             );
         };
         for (activity_id, activity_parser) in ACTIVITIES.values() {
-            if *activity_parser == ActivityArgumentType::FilePath {
+            if *activity_parser == ActivityArgumentType::FilePathOrModule {
                 path_test(activity_id);
             }
         }

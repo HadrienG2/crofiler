@@ -70,6 +70,7 @@ pub fn display_activity_desc(
         ActivityArgument::UnnamedLoop => {
             super::display_string(&mut output, "<unnamed loop>", config)
         }
+        ActivityArgument::Module => super::display_string(&mut output, "[module]", config),
         ActivityArgument::String(s)
         | ActivityArgument::Symbol(Symbol::Demangled(s))
         | ActivityArgument::Symbol(Symbol::MaybeMangled(s)) => {
@@ -210,7 +211,7 @@ mod tests {
                             }
                         }
 
-                        ActivityArgumentType::FilePath => {
+                        ActivityArgumentType::FilePathOrModule => {
                             if first_path_arg.is_none() {
                                 let raw_arg =
                                     trace.activity_trace(id).activity().raw_argument().clone();

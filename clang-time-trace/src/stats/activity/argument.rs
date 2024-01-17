@@ -82,9 +82,16 @@ impl RawActivityArgument {
 
             ActivityArgumentType::String => Ok(ParsedActivityArgument::String(detail())),
 
-            ActivityArgumentType::FilePath => Ok(ParsedActivityArgument::FilePath(
-                parser.intern_path(&detail()),
-            )),
+            ActivityArgumentType::FilePathOrModule => {
+                let detail = detail();
+                if &*detail == "[module]" {
+                    Ok(ParsedActivityArgument::Module)
+                } else {
+                    Ok(ParsedActivityArgument::FilePath(
+                        parser.intern_path(&detail),
+                    ))
+                }
+            }
 
             ActivityArgumentType::CppEntity => {
                 Self::parse_entity(&detail(), parser).map(ParsedActivityArgument::CppEntity)
@@ -126,10 +133,16 @@ impl RawActivityArgument {
 
     /// Parse a "detail" argument payload that contains a C++ symbol
     fn parse_symbol(
-        symbol: Rc<str>,
+        mut symbol: Rc<str>,
         parser: &mut EntityParser,
         demangling_buf: &mut String,
     ) -> Result<ParsedSymbol, ActivityArgumentError> {
+        // Clang recently got this great idea of surrounding symbol names with
+        // parentheses, which we must undo if needed
+        if symbol.starts_with('(') && symbol.ends_with(')') {
+            symbol = Rc::from(&symbol[1..symbol.len() - 1]);
+        }
+
         let demangling_result = MangledSymbol::new_with_options(
             &*symbol,
             &ParseOptions::default().recursion_limit(CPP_DEMANGLE_RECURSION_LIMIT),
@@ -202,8 +215,8 @@ pub enum ActivityArgumentType {
     /// An arbitrary string
     String,
 
-    /// An interned file path
-    FilePath,
+    /// An file path or the "[module]" constant string
+    FilePathOrModule,
 
     /// A C++ entity (class, function, ...)
     CppEntity,
@@ -224,11 +237,20 @@ pub enum ActivityArgumentType {
 impl ActivityArgumentType {
     /// Try to infer the activity argument type for an activity with a detail argument
     pub(crate) fn infer_from_detail(detail: &str) -> Self {
+        // Clang recently introduced parenthesized symbol names. To handle them
+        // without duplicating all symbol name detection below, we need a
+        // normalization pass that removes the parentheses
+        let mut normalized_symbol_name = detail;
+        if detail.starts_with('(') && detail.ends_with(')') {
+            normalized_symbol_name = &normalized_symbol_name[1..normalized_symbol_name.len() - 1];
+        }
+
         // Let's get rid of the easy grammars first
-        if detail.starts_with("_Z")
-            || detail == "main"
-            || detail.starts_with("__cxx_global_var_init")
-            || detail.starts_with("_GLOBAL__sub_I_")
+        if normalized_symbol_name.starts_with("_Z")
+            || normalized_symbol_name == "main"
+            || normalized_symbol_name == "__clang_call_terminate"
+            || normalized_symbol_name.starts_with("__cxx_global_var_init")
+            || normalized_symbol_name.starts_with("_GLOBAL__sub_I_")
         {
             // clang uses the Itanium ABI for C++ name mangling, so mangled
             // symbols will start with "_Z". We also treat the few non-mangled
@@ -237,9 +259,10 @@ impl ActivityArgumentType {
         } else if detail == "<unnamed loop>" {
             // Always true by definition
             return ActivityArgumentType::UnnamedLoop;
-        } else if Path::new(detail).is_absolute() {
-            // Has been true of every path emitted by Clang to date
-            return ActivityArgumentType::FilePath;
+        } else if Path::new(detail).is_absolute() || detail == "[module]" {
+            // Where older clangs only emitted absolute file paths, recent
+            // clangs also started emitting the unhelpful "[module]" string.
+            return ActivityArgumentType::FilePathOrModule;
         }
 
         // Alas, now we must discriminate between two very
@@ -318,6 +341,9 @@ pub enum ParsedActivityArgument {
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
+
+    /// The "[module]" constant string
+    Module,
 }
 //
 impl ParsedActivityArgument {
@@ -330,6 +356,7 @@ impl ParsedActivityArgument {
             ParsedActivityArgument::CppEntity(e) => ActivityArgument::CppEntity(trace.entity(*e)),
             ParsedActivityArgument::Symbol(m) => ActivityArgument::Symbol(m.resolve(trace)),
             ParsedActivityArgument::UnnamedLoop => ActivityArgument::UnnamedLoop,
+            ParsedActivityArgument::Module => ActivityArgument::Module,
         }
     }
 }
@@ -354,6 +381,9 @@ pub enum ActivityArgument<'trace> {
 
     /// The "<unnamed loop>" constant string (loops can't be named in C++)
     UnnamedLoop,
+
+    /// The "[module]" constant string
+    Module,
 }
 
 /// Stored data about a C++ symbol that we tried to demangle and parse
@@ -459,7 +489,7 @@ mod tests {
         let path_key = parser.intern_path(MOCK_PATH);
         assert_eq!(
             RawActivityArgument {
-                arg_type: ActivityArgumentType::FilePath,
+                arg_type: ActivityArgumentType::FilePathOrModule,
                 detail: Some(MOCK_PATH.into())
             }
             .parse_impl(&mut parser, &mut String::new()),
@@ -580,7 +610,7 @@ mod tests {
 
         assert_eq!(inferred_type("<unnamed loop>"), UnnamedLoop);
 
-        assert_eq!(inferred_type("/test.cpp"), FilePath);
+        assert_eq!(inferred_type("/test.cpp"), FilePathOrModule);
 
         assert_eq!(
             inferred_type("Prologue/Epilogue Insertion & Frame Finalization"),
