@@ -107,7 +107,7 @@ thiserror = "1.0"
 time = "0.3"
 
 # Used to find appropriate points for cutting Unicode strings
-unicode-segmentation = "1.10"
+unicode-segmentation = "1.11"
 
 # Used to evaluate terminal width of strings
 unicode-width = "0.1"
