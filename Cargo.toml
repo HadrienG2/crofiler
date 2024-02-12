@@ -7,7 +7,7 @@ members = ["asylum", "clang-time-trace", "cmakeperf", "cpparser", "simpp"]
 version = "3.0.1"
 edition = "2021"
 repository = "https://github.com/HadrienG2/crofiler"
-rust-version = "1.71.0"
+rust-version = "1.72.0"
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]
