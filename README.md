@@ -65,8 +65,11 @@ Your build system also needs to be able to export a
 We will assume usage of CMake in the remainder of this tutorial, which can do
 this, otherwise please refer to your build system's manual.
 
-You will also need a recent [Rust toolchain](https://www.rust-lang.org/learn/get-started)
-in order to build `crofiler` from source.
+#### Optional
+
+You will additionally need a recent [Rust
+toolchain](https://www.rust-lang.org/learn/get-started) in order to build
+`crofiler` from source.
 
 ### Installing `crofiler`
 
