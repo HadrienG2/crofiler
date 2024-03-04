@@ -9,7 +9,7 @@ use reffers::ARef;
 use std::{
     fmt::{self, Display, Formatter},
     hash::Hash,
-    iter::{DoubleEndedIterator, FusedIterator},
+    iter::FusedIterator,
     marker::PhantomData,
     ops::Range,
 };
