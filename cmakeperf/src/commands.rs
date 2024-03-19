@@ -289,11 +289,7 @@ pub(crate) mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fs_set_times::SystemTimeSpec;
-    use std::{
-        fs::File,
-        io::{self, Write},
-        sync::Mutex,
-    };
+    use std::{fs::File, io::Write, sync::Mutex};
 
     /// Working directory lock
     ///
