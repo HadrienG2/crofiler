@@ -352,7 +352,7 @@ pub enum PathError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lasso::{MiniSpur, Spur};
+    use lasso::MiniSpur;
     use more_asserts::*;
     use pretty_assertions::{assert_eq, assert_ne};
     use std::collections::{HashMap, HashSet};

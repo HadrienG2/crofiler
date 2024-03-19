@@ -429,15 +429,12 @@ pub enum ClangTraceParseError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        ctf::{
-            events::{
-                duration::DurationEvent,
-                metadata::{MetadataOptions, SortIndexArgs},
-            },
-            DisplayTimeUnit, EventCategories,
+    use crate::ctf::{
+        events::{
+            duration::DurationEvent,
+            metadata::{MetadataOptions, SortIndexArgs},
         },
-        stats::activity::argument::ActivityArgumentType,
+        DisplayTimeUnit, EventCategories,
     };
     use assert_matches::assert_matches;
 

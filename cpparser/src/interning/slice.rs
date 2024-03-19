@@ -164,8 +164,8 @@ pub trait SliceItemView<'entities>: CustomDisplay + PartialEq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{display::tests::CustomDisplayMock, EntityParser};
-    use asylum::sequence::{SequenceInterner, SequenceKey};
+    use crate::display::tests::CustomDisplayMock;
+    use asylum::sequence::SequenceInterner;
 
     // Fake slice item to test SliceView
     type TestItem = usize;

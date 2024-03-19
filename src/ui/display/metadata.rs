@@ -25,7 +25,7 @@ pub fn metadata(trace: &ClangTrace, max_cols: u16) -> String {
     let mut display_more = |buf: &mut String, mut extra: String| {
         // Abbreviate what doesn't fit
         if extra.width() > effective_max_cols {
-            extra = "…".to_owned();
+            "…".clone_into(&mut extra);
         }
 
         // Add a line feed if needed
