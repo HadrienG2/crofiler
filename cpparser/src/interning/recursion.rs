@@ -64,6 +64,7 @@ impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
     }
 
     // Prepare to intern a sequence in an iterative fashion, item by item
+    #[allow(unknown_lints, clippy::manual_unwrap_or_default)]
     pub fn entry(&self) -> SequenceEntry<Item, Key> {
         let sequence = {
             let mut inner = self.0.borrow_mut();
