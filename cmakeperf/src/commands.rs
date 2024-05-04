@@ -147,7 +147,7 @@ pub enum DatabaseLoadError {
 //
 // NOTE: allow() directive added as a workaround for
 //       https://github.com/proptest-rs/proptest/issues/447
-#[allow(non_local_definitions)]
+#[allow(unknown_lints, non_local_definitions)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(deny_unknown_fields)]
