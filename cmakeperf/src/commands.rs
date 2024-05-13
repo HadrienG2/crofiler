@@ -144,6 +144,10 @@ pub enum DatabaseLoadError {
 }
 
 /// One entry from the compilation database
+//
+// NOTE: allow() directive added as a workaround for
+//       https://github.com/proptest-rs/proptest/issues/447
+#[allow(unknown_lints, non_local_definitions)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -289,11 +293,7 @@ pub(crate) mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fs_set_times::SystemTimeSpec;
-    use std::{
-        fs::File,
-        io::{self, Write},
-        sync::Mutex,
-    };
+    use std::{fs::File, io::Write, sync::Mutex};
 
     /// Working directory lock
     ///

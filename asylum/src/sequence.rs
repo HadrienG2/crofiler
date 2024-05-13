@@ -295,7 +295,7 @@ impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use lasso::{Key, LargeSpur, MicroSpur, Spur};
+    use lasso::{LargeSpur, MicroSpur};
     use pretty_assertions::assert_eq;
     use std::fmt::Debug;
 
