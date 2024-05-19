@@ -115,14 +115,14 @@ impl<const LEN: usize> KeywordMappings<(), LEN> for [&'static str; LEN] {
 
 /// Parser recognizing any valid C++ identifier
 fn identifier(s: &str) -> IResult<&str> {
-    #[cfg(feature = "unicode_xid")]
+    #[cfg(feature = "unicode-xid")]
     {
         use nom::{bytes::complete::take_while, character::complete::satisfy};
         (satisfy(is_id_start).and(take_while(is_id_continue)))
             .recognize()
             .parse(s)
     }
-    #[cfg(not(feature = "unicode_xid"))]
+    #[cfg(not(feature = "unicode-xid"))]
     {
         debug_assert!(s.is_ascii());
         let bytes = s.as_bytes().split_first();
@@ -144,7 +144,7 @@ fn identifier(s: &str) -> IResult<&str> {
 /// Parser recognizing the end of an identifier, without consuming it
 #[inline]
 fn end_of_identifier(s: &str) -> IResult<()> {
-    #[cfg(feature = "unicode_xid")]
+    #[cfg(feature = "unicode-xid")]
     {
         use nom::{
             character::complete::satisfy,
