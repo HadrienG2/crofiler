@@ -1,5 +1,9 @@
 //! CMake compilation database handling
 
+// NOTE: allow() directive added as a workaround for
+//       https://github.com/proptest-rs/proptest/issues/447
+#![allow(unknown_lints, non_local_definitions)]
+
 use serde::Deserialize;
 use serde_json as json;
 use shlex::Shlex;
@@ -144,10 +148,6 @@ pub enum DatabaseLoadError {
 }
 
 /// One entry from the compilation database
-//
-// NOTE: allow() directive added as a workaround for
-//       https://github.com/proptest-rs/proptest/issues/447
-#[allow(unknown_lints, non_local_definitions)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(deny_unknown_fields)]
