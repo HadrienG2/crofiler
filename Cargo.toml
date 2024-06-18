@@ -4,7 +4,7 @@
 members = ["asylum", "clang-time-trace", "cmakeperf", "cpparser", "simpp"]
 
 [workspace.package]
-version = "3.0.1"
+version = "3.0.2"
 edition = "2021"
 repository = "https://github.com/HadrienG2/crofiler"
 rust-version = "1.72.0"
