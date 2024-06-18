@@ -1,5 +1,6 @@
 //! Interactions with clang
 
+use regex::Regex;
 use std::{
     io,
     process::{Command, ExitStatus},
@@ -31,9 +32,11 @@ pub fn find_clangpp() -> Result<impl AsRef<str> + 'static, ClangError> {
         Some(line) => line,
         None => return Err(ClangError::EmptyVersion),
     };
-    if let Some(version) = version_line.strip_prefix("clang version ") {
-        if let Some((major_version, _)) = version.split_once('.') {
-            if let Ok(major_version) = major_version.parse::<usize>() {
+    let version_regex =
+        Regex::new(r"clang version (?<major_version>\d+)\.(?<minor_version>\d+)").unwrap();
+    if let Some(captures) = version_regex.captures(version_line) {
+        if let Some(major_version) = captures.name("major_version") {
+            if let Ok(major_version) = major_version.as_str().parse::<usize>() {
                 if major_version >= MIN_VERSION {
                     return Ok(CLANG_PROGRAM);
                 } else {

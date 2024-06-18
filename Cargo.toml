@@ -93,6 +93,9 @@ env_logger = "0.10"
 # Used for logging
 log = "0.4"
 
+# Used to parse versions
+regex = "1.10"
+
 # Used for logging in TUI mode
 syslog = "6.1"
 
