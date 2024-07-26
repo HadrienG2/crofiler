@@ -103,7 +103,7 @@ syslog = "6.1"
 termion = "4.0"
 
 # Used for typesetting hierarchical profiles in stdio mode
-termtree = "0.4"
+termtree = "0.5"
 
 # Used to simplify error handling
 thiserror = "1.0"
