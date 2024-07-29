@@ -97,7 +97,7 @@ log = "0.4"
 regex = "1.10"
 
 # Used for logging in TUI mode
-syslog = "6.1"
+syslog = "7.0"
 
 # Used for low-level terminal interaction, mostly TTY detection & teminal size
 termion = "4.0"
