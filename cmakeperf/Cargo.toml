@@ -31,7 +31,7 @@ serde_json = "1.0"
 shlex = "1.3"
 
 # Used to monitor available RAM and command RAM usage during build profiling
-sysinfo = { version = "0.30", default-features = false }
+sysinfo = { version = "0.31", default-features = false }
 
 # Actually only used by tests and the "mock" test binary, but cannot be made a
 # dev-dependency as cargo can't be told that "mock" is part of the test code.
