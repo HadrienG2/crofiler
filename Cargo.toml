@@ -75,7 +75,7 @@ unstable_interner_stats = []
 clang-time-trace = { path = "clang-time-trace" }
 
 # Used for CLI options
-clap = { version = "4.4", features = ["derive", "wrap_help"] }
+clap = { version = "=4.4", features = ["derive", "wrap_help"] }
 
 # Used to measure and process full-build profiles
 cmakeperf = { path = "cmakeperf" }
