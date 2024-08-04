@@ -19,7 +19,7 @@ use log::{error, LevelFilter};
 use std::{
     backtrace::Backtrace,
     fmt::Write,
-    panic::{self, AssertUnwindSafe, PanicInfo},
+    panic::{self, AssertUnwindSafe},
 };
 use syslog::Facility;
 
@@ -160,7 +160,7 @@ fn help_dialog(cursive: &mut Cursive) -> Option<Dialog> {
 /// Set up a panic hook that logs as much info as possible
 fn enable_panic_logging() {
     let default_panic_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
+    panic::set_hook(Box::new(move |panic_info| {
         // Start by telling what happened
         let mut message = String::from("The TUI crashed due to a panic");
 
