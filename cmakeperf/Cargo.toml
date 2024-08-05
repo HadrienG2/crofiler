@@ -49,7 +49,7 @@ assert_matches = "1.5"
 
 # Property-based testing
 proptest = "1.5"
-proptest-derive = "0.4"
+proptest-derive = "0.5"
 
 # Temporary file management
 fs-set-times = "0.20"
