@@ -24,7 +24,7 @@ pub fn display_profile(
     cursive: &mut CursiveRunnable,
     args: CliArgs,
     compilation_database: CompilationDatabase,
-    clangpp: impl AsRef<str> + 'static,
+    clangpp: impl AsRef<str> + Send + Sync + 'static,
     profile: BuildProfile,
 ) {
     // Determine if the profile contains wall-clock time information

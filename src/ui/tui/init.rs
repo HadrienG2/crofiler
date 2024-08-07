@@ -28,7 +28,7 @@ pub fn setup_cursive(state: State) -> CursiveRunnable {
     fn set_global_dialog_callback(
         cursive: &mut Cursive,
         event: impl Into<Event>,
-        mut dialog_factory: impl 'static + FnMut(&mut Cursive) -> Option<Dialog>,
+        mut dialog_factory: impl FnMut(&mut Cursive) -> Option<Dialog> + Send + Sync + 'static,
     ) {
         cursive.set_global_callback(event, move |cursive| {
             if cursive

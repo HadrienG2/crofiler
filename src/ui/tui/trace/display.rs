@@ -18,7 +18,10 @@ use cursive::{
 };
 use cursive_table_view::{TableView, TableViewItem};
 use decorum::Finite;
-use std::{cell::RefCell, cmp::Ordering, rc::Rc};
+use std::{
+    cmp::Ordering,
+    sync::{Arc, Mutex},
+};
 use unicode_width::UnicodeWidthStr;
 
 /// Truth that profiling is in progress
@@ -95,10 +98,10 @@ pub fn switch_duration_unit(cursive: &mut Cursive) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileLayer {
     /// Name of the entity being profiled, for display use
-    parent_name: Rc<str>,
+    parent_name: Arc<str>,
 
     /// Identifier of the table widget displaying the profile
-    table_name: Rc<str>,
+    table_name: Arc<str>,
 
     /// Norm used to compute percentages with respect to this profile's parent.
     parent_percent_norm: Finite<Duration>,
@@ -152,10 +155,10 @@ impl ProfileDisplay {
 /// Display a hierarchical profile (see show_profile for parameters docs)
 pub(super) fn show_hierarchical_profile(
     cursive: &mut Cursive,
-    parent_name: Rc<str>,
+    parent_name: Arc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: ActivityInfoList,
-    get_flat_activities: impl 'static + FnOnce(&mut State) -> ActivityInfoList,
+    get_flat_activities: impl FnOnce(&mut State) -> ActivityInfoList + Send + Sync + 'static,
 ) {
     show_profile(
         cursive,
@@ -170,10 +173,10 @@ pub(super) fn show_hierarchical_profile(
 /// Display a trace profile
 fn show_profile(
     cursive: &mut Cursive,
-    parent_name: Rc<str>,
+    parent_name: Arc<str>,
     parent_percent_norm: Finite<Duration>,
     activity_infos: ActivityInfoList,
-    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> ActivityInfoList>,
+    get_other_activities: Box<dyn FnOnce(&mut State) -> ActivityInfoList + Send + Sync + 'static>,
     kind: ProfileKind,
 ) {
     // Check terminal dimensions
@@ -238,12 +241,12 @@ fn show_profile(
 fn register_profile(
     cursive: &mut Cursive,
     terminal_width: u16,
-    parent_name: Rc<str>,
+    parent_name: Arc<str>,
     parent_percent_norm: Finite<Duration>,
     kind: ProfileKind,
     activity_infos: ActivityInfoList,
     description_width: u16,
-) -> (ProfileDisplay, ActivityData, String, usize, Rc<str>) {
+) -> (ProfileDisplay, ActivityData, String, usize, Arc<str>) {
     with_state(cursive, |state| {
         // Reuse the display configuration used by previous profiling layers, or
         // set up the default configuration if this is the first layer
@@ -276,7 +279,7 @@ fn register_profile(
 
         // Register this new layer in the profile stack
         let profile_id = state.profile_stack.len();
-        let table_name: Rc<str> = format!("{}{profile_id}", ActivityTablePrefix.as_ref()).into();
+        let table_name: Arc<str> = format!("{}{profile_id}", ActivityTablePrefix.as_ref()).into();
         state.profile_stack.push(ProfileLayer {
             parent_name,
             table_name: table_name.clone(),
@@ -303,13 +306,13 @@ type ActivityData = (ActivityInfoList, ActivityDescList);
 
 /// Set up the tabular view that is the heart of a profile
 fn make_profile_view(
-    table_name: Rc<str>,
+    table_name: Arc<str>,
     kind: ProfileKind,
     (activity_infos, activity_descs): ActivityData,
-    get_other_activities: Box<dyn 'static + FnOnce(&mut State) -> ActivityInfoList>,
+    get_other_activities: Box<dyn FnOnce(&mut State) -> ActivityInfoList + Send + Sync + 'static>,
     description_width: u16,
     display_config: ProfileDisplay,
-    update_description: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
+    update_description: impl Fn(&mut Cursive, ActivityTraceId) + Send + Sync + 'static,
 ) -> (impl View, ActivityTraceId) {
     // Set up the children activity table
     let items = make_profile_data(kind, &activity_infos, activity_descs);
@@ -341,14 +344,15 @@ fn make_profile_view(
     let table = table.with_name(table_name.to_string());
 
     // Let F shortcut toggle between hierarchical and flat profile
-    let once_state = RefCell::new(Some((activity_infos, get_other_activities)));
+    let once_state = Mutex::new(Some((activity_infos, get_other_activities)));
     let view = OnEventView::new(table).on_event('f', move |cursive| {
         let kind = match kind {
             ProfileKind::Hierarchical => ProfileKind::Flat,
             ProfileKind::Flat => ProfileKind::Hierarchical,
         };
         let (old_activity_infos, get_other_activities) = once_state
-            .borrow_mut()
+            .lock()
+            .expect("Mutex was poisoned")
             .take()
             .expect("This callback may only be called once, after that the view is destroyed");
         let (parent_name, parent_percent_norm, new_activity_infos) = with_state(cursive, |state| {
@@ -379,7 +383,7 @@ fn make_profile_view(
 
 /// on_select callback for profiles that updates the description pane
 fn select(
-    table_name: Rc<str>,
+    table_name: Arc<str>,
     update_desc: impl Fn(&mut Cursive, ActivityTraceId) + 'static,
 ) -> impl Fn(&mut Cursive, usize, usize) + 'static {
     move |cursive, _row, index| {
@@ -398,7 +402,7 @@ fn select(
 
 /// on_submit callback for hierarchical profiles that recursively spawns another
 /// hierarchical profile looking at the selected activity's children
-fn zoom(table_name: Rc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
+fn zoom(table_name: Arc<str>) -> impl Fn(&mut Cursive, usize, usize) + 'static {
     move |cursive, _row, index| {
         // Access the hierarchical profile's table to check the selected
         // activity and whether it has children / can be zoomed on.

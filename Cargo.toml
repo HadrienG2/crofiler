@@ -81,8 +81,8 @@ clap = { version = "=4.4", features = ["derive", "wrap_help"] }
 cmakeperf = { path = "cmakeperf" }
 
 # Used for TUI display
-cursive = { version = "0.20", default-features = false, features = ["termion-backend"] }
-cursive_table_view = "0.14"
+cursive = { version = "0.21", default-features = false, features = ["termion-backend"] }
+cursive_table_view = "0.15"
 
 # Saner floats, used to simplify TUI code
 decorum = "0.3"

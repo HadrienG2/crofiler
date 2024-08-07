@@ -2,7 +2,10 @@
 
 use cmakeperf::commands::ProductFreshness;
 use cursive::{views::Dialog, Cursive, CursiveRunnable};
-use std::{cell::Cell, fmt::Write, rc::Rc};
+use std::{
+    fmt::Write,
+    sync::{Arc, Mutex},
+};
 
 /// Prompt to be shown when a new profile or trace may need to be created
 pub struct CreatePrompt {
@@ -51,13 +54,17 @@ impl CreatePrompt {
     pub fn show(
         self,
         cursive: &mut Cursive,
-        handle_reply: impl FnOnce(&mut Cursive, bool) + 'static,
+        handle_reply: impl FnOnce(&mut Cursive, bool) + Send + Sync + 'static,
     ) {
         // Make handle_reply callable from multiple button callbacks
-        let handle_reply = Cell::new(Some(handle_reply));
-        let handle_reply = Rc::new(move |cursive: &mut Cursive, should_create| {
+        let handle_reply = Mutex::new(Some(handle_reply));
+        let handle_reply = Arc::new(move |cursive: &mut Cursive, should_create| {
             cursive.pop_layer();
-            let handle_reply = handle_reply.take().expect("This can only be called once");
+            let handle_reply = handle_reply
+                .lock()
+                .expect("Mutex was poisoned")
+                .take()
+                .expect("This can only be called once");
             handle_reply(cursive, should_create)
         });
 
@@ -81,17 +88,18 @@ impl CreatePrompt {
     /// answering the question, in which case the caller should terminate.
     ///
     pub fn ask(self, cursive: &mut CursiveRunnable) -> Option<bool> {
-        let should_create = Rc::new(Cell::default());
+        let should_create = Arc::new(Mutex::default());
         let handle_reply = {
             let should_create = should_create.clone();
             move |cursive: &mut Cursive, create| {
-                should_create.set(Some(create));
+                *should_create.lock().expect("Mutex was poisoned") = Some(create);
                 cursive.quit();
             }
         };
         self.show(cursive, handle_reply);
         cursive.run();
-        should_create.get()
+        let should_create = should_create.lock().expect("Mutex was poisoned").take();
+        should_create
     }
 
     /// Build profile cration prompt when there is no existing build profile
