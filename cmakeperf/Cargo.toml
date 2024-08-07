@@ -35,7 +35,7 @@ sysinfo = { version = "0.30", default-features = false }
 
 # Actually only used by tests and the "mock" test binary, but cannot be made a
 # dev-dependency as cargo can't be told that "mock" is part of the test code.
-tempfile = "3.10"
+tempfile = "3.12"
 
 # Used to generate error types with reasonable boilerplate
 thiserror = "1.0"
