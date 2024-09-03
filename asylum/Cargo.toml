@@ -6,13 +6,13 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-ahash = "0.8"
-hashbrown = { version = "0.14", features = ["raw"] }
-lasso = { version = "0.7", features = ["ahasher"] }
-reffers = { version = "0.7", optional = true }
-thiserror = "1.0"
+ahash = { workspace = true }
+hashbrown = { workspace = true, features = ["raw"] }
+lasso = { workspace = true, features = ["ahasher"] }
+reffers = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-maplit = "1.0"
-more-asserts = "0.3"
-pretty_assertions = "1.2"
+maplit = { workspace = true }
+more-asserts = { workspace = true }
+pretty_assertions = { workspace = true }

@@ -12,47 +12,47 @@ dist = false
 
 [dependencies]
 # Used for communication with jobs during build profiling
-atomic-wait = "1.1"
-crossbeam-deque = "0.8"
-crossbeam-utils = "0.8"
+atomic-wait = { workspace = true }
+crossbeam-deque = { workspace = true }
+crossbeam-utils = { workspace = true }
 
 # Used to parse and produce full-build CSV profiles
-csv = "1.1"
+csv = { workspace = true }
 
 # Used to notify of unexpected clang output
-log = "0.4"
+log = { workspace = true }
 
 # Used to compute relative paths
-pathdiff = "0.2"
+pathdiff = { workspace = true }
 
 # Used to parse the CMake compilation database
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-shlex = "1.3"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+shlex = { workspace = true }
 
 # Used to monitor available RAM and command RAM usage during build profiling
-sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+sysinfo = { workspace = true, features = ["system"] }
 
 # Actually only used by tests and the "mock" test binary, but cannot be made a
 # dev-dependency as cargo can't be told that "mock" is part of the test code.
-tempfile = "3.12"
+tempfile = { workspace = true }
 
 # Used to generate error types with reasonable boilerplate
-thiserror = "1.0"
+thiserror = { workspace = true }
 
 # Used to monitor and cancel build processes
-wait-timeout = "0.2"
+wait-timeout = { workspace = true }
 
 [dev-dependencies]
 # Used to simplify tests
-assert_matches = "1.5"
+assert_matches = { workspace = true }
 
 # Property-based testing
-proptest = "1.5"
-proptest-derive = "0.5"
+proptest = { workspace = true }
+proptest-derive = { workspace = true }
 
 # Temporary file management
-fs-set-times = "0.20"
+fs-set-times = { workspace = true }
 
 # Used for log analysis
-simplelog = { version = "0.12", features = ["test"] }
+simplelog = { workspace = true, features = ["test"] }
