@@ -32,6 +32,52 @@ publish = false
 shared-version = true
 tag-name = "v{{version}}"
 
+[workspace.dependencies]
+ahash = "0.8"
+assert_matches = "1.5"
+atomic-wait = "1.1"
+clap = "=4.4"
+cpp_demangle = "0.4"
+criterion = { version = "0.5", default-features = false }
+crossbeam-deque = "0.8"
+crossbeam-utils = "0.8"
+csv = "1.1"
+cursive = { version = "0.21", default-features = false }
+cursive_table_view = "0.15"
+decorum = "0.3"
+env_logger = "0.11"
+fs-set-times = "0.20"
+hashbrown = "0.14"
+lasso = "0.7"
+log = "0.4"
+maplit = "1.0"
+more-asserts = "0.3"
+nom = "7.1"
+nom-supreme = "0.8"
+pathdiff = "0.2"
+phf = "0.11"
+pretty_assertions = "1.2"
+proptest = "1.5"
+proptest-derive = "0.5"
+reffers = "0.7"
+regex = "1.10"
+serde = "1.0"
+serde_json = "1.0"
+shlex = "1.3"
+simplelog = "0.12"
+strum = "0.26"
+sysinfo = { version = "0.31", default-features = false }
+syslog = "7.0"
+tempfile = "3.12"
+termion = "4.0"
+termtree = "0.4"
+thiserror = "1.0"
+time = "0.3"
+unicode-segmentation = "1.11"
+unicode-width = "0.1"
+unicode-xid = "0.2"
+wait-timeout = "0.2"
+
 [profile.test]
 opt-level = 1
 
@@ -75,51 +121,51 @@ unstable_interner_stats = []
 clang-time-trace = { path = "clang-time-trace" }
 
 # Used for CLI options
-clap = { version = "=4.4", features = ["derive", "wrap_help"] }
+clap = { workspace = true, features = ["derive", "wrap_help"] }
 
 # Used to measure and process full-build profiles
 cmakeperf = { path = "cmakeperf" }
 
 # Used for TUI display
-cursive = { version = "0.21", default-features = false, features = ["termion-backend"] }
-cursive_table_view = "0.15"
+cursive = { workspace = true, features = ["termion-backend"] }
+cursive_table_view = { workspace = true }
 
 # Saner floats, used to simplify TUI code
-decorum = "0.3"
+decorum = { workspace = true }
 
 # Used for logging in stdio mode
-env_logger = "0.11"
+env_logger = { workspace = true }
 
 # Used for logging
-log = "0.4"
+log = { workspace = true }
 
 # Used to parse versions
-regex = "1.10"
+regex = { workspace = true }
 
 # Used for logging in TUI mode
-syslog = "7.0"
+syslog = { workspace = true }
 
 # Used for low-level terminal interaction, mostly TTY detection & teminal size
-termion = "4.0"
+termion = { workspace = true }
 
 # Used for typesetting hierarchical profiles in stdio mode
-termtree = "0.4"
+termtree = { workspace = true }
 
 # Used to simplify error handling
-thiserror = "1.0"
+thiserror = { workspace = true }
 
 # Used to format ISO dates from clang Unix timestamps
-time = "0.3"
+time = { workspace = true }
 
 # Used to find appropriate points for cutting Unicode strings
-unicode-segmentation = "1.11"
+unicode-segmentation = { workspace = true }
 
 # Used to evaluate terminal width of strings
-unicode-width = "0.1"
+unicode-width = { workspace = true }
 
 # Used for cancellable wait on worker processes
-wait-timeout = "0.2"
+wait-timeout = { workspace = true }
 
 [dev-dependencies]
 # Used to simplify tests
-assert_matches = "1.5"
+assert_matches = { workspace = true }
