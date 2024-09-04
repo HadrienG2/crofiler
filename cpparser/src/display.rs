@@ -22,7 +22,7 @@ pub trait CustomDisplay {
     fn display_impl(&self, f: &mut Formatter<'_>, state: &DisplayState) -> Result<(), fmt::Error>;
 
     /// Convenience layer over display_impl, returns a type that implements Display
-    fn display<'a>(&'a self, state: &'a DisplayState) -> CustomDisplayView<Self> {
+    fn display<'a>(&'a self, state: &'a DisplayState) -> CustomDisplayView<'a, Self> {
         CustomDisplayView { inner: self, state }
     }
 
