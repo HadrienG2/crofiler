@@ -459,7 +459,7 @@ impl<'entities> SliceItemView<'entities> for ScopeView<'entities> {
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
     use crate::{display::tests::check_custom_display, tests::unwrap_parse};
     use pretty_assertions::assert_eq;
