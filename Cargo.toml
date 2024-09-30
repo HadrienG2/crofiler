@@ -68,7 +68,7 @@ simplelog = "0.12"
 strum = "0.26"
 sysinfo = { version = "0.31", default-features = false }
 syslog = "7.0"
-tempfile = "3.12"
+tempfile = "3.13"
 termion = "4.0"
 termtree = "0.4"
 thiserror = "1.0"
