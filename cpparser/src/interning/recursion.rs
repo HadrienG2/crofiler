@@ -103,8 +103,8 @@ pub struct SequenceEntry<
     sequence: Vec<Item>,
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
-    SequenceEntry<'interner, Item, Key>
+impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>>
+    SequenceEntry<'_, Item, Key>
 {
     /// Add an item to the sequence that is being interned
     pub fn push(&mut self, item: Item) {
@@ -121,8 +121,8 @@ impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>
     }
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>> Drop
-    for SequenceEntry<'interner, Item, Key>
+impl<Item: Clone + Eq + Hash, Key: InternerKey<ImplKey = Range<usize>>> Drop
+    for SequenceEntry<'_, Item, Key>
 {
     fn drop(&mut self) {
         self.interner

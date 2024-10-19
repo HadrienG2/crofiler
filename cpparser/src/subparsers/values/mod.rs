@@ -321,19 +321,19 @@ impl<'entities> ValueView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for ValueView<'entities> {
+impl PartialEq for ValueView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.key == other.key)
     }
 }
 //
-impl<'entities> Display for ValueView<'entities> {
+impl Display for ValueView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for ValueView<'entities> {
+impl CustomDisplay for ValueView<'_> {
     fn recursion_depth(&self) -> usize {
         self.header()
             .recursion_depth()
@@ -458,13 +458,13 @@ impl<'entities> ValueHeaderView<'entities> {
     }
 }
 //
-impl<'entities> Display for ValueHeaderView<'entities> {
+impl Display for ValueHeaderView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for ValueHeaderView<'entities> {
+impl CustomDisplay for ValueHeaderView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::Literal(_) => 0,
@@ -587,13 +587,13 @@ impl<'entities> AfterValueView<'entities> {
     }
 }
 //
-impl<'entities> Display for AfterValueView<'entities> {
+impl Display for AfterValueView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for AfterValueView<'entities> {
+impl CustomDisplay for AfterValueView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::ArrayIndex(i) => i.recursion_depth(),

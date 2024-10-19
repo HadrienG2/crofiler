@@ -140,19 +140,19 @@ impl<'entities> TypeView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for TypeView<'entities> {
+impl PartialEq for TypeView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.key == other.key)
     }
 }
 //
-impl<'entities> Display for TypeView<'entities> {
+impl Display for TypeView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for TypeView<'entities> {
+impl CustomDisplay for TypeView<'_> {
     fn recursion_depth(&self) -> usize {
         self.attributes()
             .recursion_depth()

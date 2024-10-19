@@ -130,19 +130,19 @@ impl<'entities> TypeSpecifierView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for TypeSpecifierView<'entities> {
+impl PartialEq for TypeSpecifierView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for TypeSpecifierView<'entities> {
+impl Display for TypeSpecifierView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for TypeSpecifierView<'entities> {
+impl CustomDisplay for TypeSpecifierView<'_> {
     fn recursion_depth(&self) -> usize {
         self.simple_type().recursion_depth()
     }
@@ -205,13 +205,13 @@ impl<'entities> SimpleTypeView<'entities> {
     }
 }
 //
-impl<'entities> Display for SimpleTypeView<'entities> {
+impl Display for SimpleTypeView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for SimpleTypeView<'entities> {
+impl CustomDisplay for SimpleTypeView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::IdExpression(i) => i.recursion_depth(),

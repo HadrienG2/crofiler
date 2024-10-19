@@ -240,13 +240,13 @@ impl<'entities> EntityView<'entities> {
     }
 }
 //
-impl<'entities> Display for EntityView<'entities> {
+impl Display for EntityView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for EntityView<'entities> {
+impl CustomDisplay for EntityView<'_> {
     fn recursion_depth(&self) -> usize {
         self.0.recursion_depth()
     }

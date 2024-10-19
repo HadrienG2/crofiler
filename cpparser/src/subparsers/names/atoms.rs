@@ -219,26 +219,26 @@ impl<'entities> IdentifierView<'entities> {
     }
 }
 //
-impl<'entities> AsRef<str> for IdentifierView<'entities> {
+impl AsRef<str> for IdentifierView<'_> {
     fn as_ref(&self) -> &str {
         &self.inner
     }
 }
 //
-impl<'entities> Deref for IdentifierView<'entities> {
+impl Deref for IdentifierView<'_> {
     type Target = str;
     fn deref(&self) -> &str {
         &self.inner
     }
 }
 //
-impl<'entities> PartialEq for IdentifierView<'entities> {
+impl PartialEq for IdentifierView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.key == other.key)
     }
 }
 //
-impl<'entities> Display for IdentifierView<'entities> {
+impl Display for IdentifierView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.inner.as_ref())
     }
