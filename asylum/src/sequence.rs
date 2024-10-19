@@ -232,9 +232,7 @@ pub struct SequenceEntry<
     initial_concatenated_len: usize,
 }
 //
-impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
-    SequenceEntry<'_, Item, K>
-{
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> SequenceEntry<'_, Item, K> {
     /// Add an item to the sequence that is being interned
     pub fn push(&mut self, item: Item) {
         self.interner.concatenated.push(item);
