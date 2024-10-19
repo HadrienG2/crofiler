@@ -287,13 +287,13 @@ impl<'entities> DeclOperatorView<'entities> {
     }
 }
 //
-impl<'entities> Display for DeclOperatorView<'entities> {
+impl Display for DeclOperatorView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for DeclOperatorView<'entities> {
+impl CustomDisplay for DeclOperatorView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::ConstVolatile(_) => 0,

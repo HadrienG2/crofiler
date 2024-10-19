@@ -78,13 +78,13 @@ impl<'entities> LiteralView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for LiteralView<'entities> {
+impl PartialEq for LiteralView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for LiteralView<'entities> {
+impl Display for LiteralView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.value())?;
         let custom_suffix = self.custom_suffix();

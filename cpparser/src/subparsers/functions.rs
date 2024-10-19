@@ -360,19 +360,19 @@ impl<'entities> FunctionSignatureView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for FunctionSignatureView<'entities> {
+impl PartialEq for FunctionSignatureView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for FunctionSignatureView<'entities> {
+impl Display for FunctionSignatureView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for FunctionSignatureView<'entities> {
+impl CustomDisplay for FunctionSignatureView<'_> {
     fn recursion_depth(&self) -> usize {
         self.parameters()
             .recursion_depth()

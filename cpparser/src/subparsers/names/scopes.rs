@@ -260,19 +260,19 @@ impl<'entities> IdExpressionView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for IdExpressionView<'entities> {
+impl PartialEq for IdExpressionView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for IdExpressionView<'entities> {
+impl Display for IdExpressionView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for IdExpressionView<'entities> {
+impl CustomDisplay for IdExpressionView<'_> {
     fn recursion_depth(&self) -> usize {
         self.path()
             .recursion_depth()
@@ -330,19 +330,19 @@ impl<'entities> NestedNameSpecifierView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for NestedNameSpecifierView<'entities> {
+impl PartialEq for NestedNameSpecifierView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for NestedNameSpecifierView<'entities> {
+impl Display for NestedNameSpecifierView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for NestedNameSpecifierView<'entities> {
+impl CustomDisplay for NestedNameSpecifierView<'_> {
     fn recursion_depth(&self) -> usize {
         self.scopes().recursion_depth()
     }
@@ -420,19 +420,19 @@ impl<'entities> ScopeView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for ScopeView<'entities> {
+impl PartialEq for ScopeView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for ScopeView<'entities> {
+impl Display for ScopeView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for ScopeView<'entities> {
+impl CustomDisplay for ScopeView<'_> {
     fn recursion_depth(&self) -> usize {
         (self.id().recursion_depth()).max(self.function_signature().recursion_depth())
     }

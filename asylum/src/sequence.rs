@@ -232,8 +232,8 @@ pub struct SequenceEntry<
     initial_concatenated_len: usize,
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
-    SequenceEntry<'interner, Item, K>
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
+    SequenceEntry<'_, Item, K>
 {
     /// Add an item to the sequence that is being interned
     pub fn push(&mut self, item: Item) {
@@ -281,8 +281,8 @@ impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>>
     }
 }
 //
-impl<'interner, Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Drop
-    for SequenceEntry<'interner, Item, K>
+impl<Item: Clone + Eq + Hash, K: InternerKey<ImplKey = Range<usize>>> Drop
+    for SequenceEntry<'_, Item, K>
 {
     fn drop(&mut self) {
         // Undo any previous interning work

@@ -220,13 +220,13 @@ impl<'entities> UnqualifiedIdView<'entities> {
     }
 }
 //
-impl<'entities> Display for UnqualifiedIdView<'entities> {
+impl Display for UnqualifiedIdView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for UnqualifiedIdView<'entities> {
+impl CustomDisplay for UnqualifiedIdView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::Named {

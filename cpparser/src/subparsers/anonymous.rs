@@ -222,13 +222,13 @@ impl<'entities> AnonymousEntityView<'entities> {
     }
 }
 //
-impl<'entities> Display for AnonymousEntityView<'entities> {
+impl Display for AnonymousEntityView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for AnonymousEntityView<'entities> {
+impl CustomDisplay for AnonymousEntityView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             // FIXME: Bring in simplified path display from crofiler
@@ -291,13 +291,13 @@ impl<'entities> SourceLocationView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for SourceLocationView<'entities> {
+impl PartialEq for SourceLocationView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for SourceLocationView<'entities> {
+impl Display for SourceLocationView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         let file = self.file();
         let (line, column) = self.location();
@@ -330,13 +330,13 @@ impl<'entities> ClangLambdaView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for ClangLambdaView<'entities> {
+impl PartialEq for ClangLambdaView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for ClangLambdaView<'entities> {
+impl Display for ClangLambdaView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "(lambda at {})", self.source_location())
     }
@@ -378,19 +378,19 @@ impl<'entities> LibibertyLambdaView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for LibibertyLambdaView<'entities> {
+impl PartialEq for LibibertyLambdaView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for LibibertyLambdaView<'entities> {
+impl Display for LibibertyLambdaView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for LibibertyLambdaView<'entities> {
+impl CustomDisplay for LibibertyLambdaView<'_> {
     fn recursion_depth(&self) -> usize {
         self.signature().recursion_depth()
     }
@@ -448,13 +448,13 @@ impl<'entities> ClangAnonymousEntityView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for ClangAnonymousEntityView<'entities> {
+impl PartialEq for ClangAnonymousEntityView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for ClangAnonymousEntityView<'entities> {
+impl Display for ClangAnonymousEntityView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "(anonymous")?;
         if let Some(id) = self.identifier() {

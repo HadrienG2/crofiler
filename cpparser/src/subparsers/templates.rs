@@ -159,13 +159,13 @@ impl<'entities> TemplateParametersView<'entities> {
     }
 }
 //
-impl<'entities> Display for TemplateParametersView<'entities> {
+impl Display for TemplateParametersView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for TemplateParametersView<'entities> {
+impl CustomDisplay for TemplateParametersView<'_> {
     fn recursion_depth(&self) -> usize {
         if let Some(list) = &self.0 {
             list.recursion_depth()
@@ -223,13 +223,13 @@ impl<'entities> TemplateParameterView<'entities> {
     }
 }
 //
-impl<'entities> Display for TemplateParameterView<'entities> {
+impl Display for TemplateParameterView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for TemplateParameterView<'entities> {
+impl CustomDisplay for TemplateParameterView<'_> {
     fn recursion_depth(&self) -> usize {
         match self {
             Self::TypeLike(t) => t.recursion_depth(),

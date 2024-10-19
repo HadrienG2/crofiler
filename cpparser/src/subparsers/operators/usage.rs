@@ -238,19 +238,19 @@ impl<'entities> NewExpressionView<'entities> {
     }
 }
 //
-impl<'entities> PartialEq for NewExpressionView<'entities> {
+impl PartialEq for NewExpressionView<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.entities, other.entities) && (self.inner == other.inner)
     }
 }
 //
-impl<'entities> Display for NewExpressionView<'entities> {
+impl Display for NewExpressionView<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.display_impl(f, &DisplayState::default())
     }
 }
 //
-impl<'entities> CustomDisplay for NewExpressionView<'entities> {
+impl CustomDisplay for NewExpressionView<'_> {
     fn recursion_depth(&self) -> usize {
         self.placement()
             .recursion_depth()

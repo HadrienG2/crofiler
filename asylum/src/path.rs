@@ -143,7 +143,7 @@ impl<'parent, Parent: PathResolver + ?Sized> InternedPath<'parent, Parent> {
     }
 }
 //
-impl<'parent, Parent: PathResolver + ?Sized> PartialEq for InternedPath<'parent, Parent> {
+impl<Parent: PathResolver + ?Sized> PartialEq for InternedPath<'_, Parent> {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key && std::ptr::eq(&*self.parent, &*other.parent)
     }
@@ -153,7 +153,7 @@ impl<'parent, Parent: PathResolver + ?Sized> PartialEq for InternedPath<'parent,
 pub trait Captures<'a> {}
 impl<T: ?Sized> Captures<'_> for T {}
 //
-impl<'parent, Parent: PathResolver + ?Sized> Display for InternedPath<'parent, Parent> {
+impl<Parent: PathResolver + ?Sized> Display for InternedPath<'_, Parent> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.to_boxed_path().display())
     }
